@@ -1,7 +1,7 @@
 import { AsymetricFunctions } from './conCrypto.mjs';
 import { Validation } from './index.mjs';
 
-class TxIO_Scripts {
+export class TxIO_Scripts {
     static lock = {
         signature: {
             /**

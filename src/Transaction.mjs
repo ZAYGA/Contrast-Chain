@@ -1,6 +1,6 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-import { Account,TxIO_Builder,Block } from './index.mjs';
+import { Account,TxIO_Builder,Block,TxIO_Scripts } from './index.mjs';
 
 const Transaction = (inputs, outputs, id = '', witnesses = []) => {
     return {
