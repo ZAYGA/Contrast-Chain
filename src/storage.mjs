@@ -1,14 +1,13 @@
 'use strict';
 
-import Compressor from './gzip.min.js';
-import Decompressor from './gunzip.min.js';
-
-import msgpack from './msgpack.min.js';
 import { BlockData, Block } from "./classes.mjs";
 import etc from './etc.mjs';
+import utils from './utils.mjs';
 
+const savedDataPath = etc.path ? etc.path.join(etc.__dirname, 'savedData') : null;
 const powDataPath = etc.path ? etc.path.join(etc.__dirname, 'powData') : null;
 const blocksPath = etc.path ? etc.path.join(powDataPath, 'blocks') : null;
+if (etc.path && !etc.fs.existsSync(savedDataPath)) { etc.fs.mkdirSync(savedDataPath); }
 if (etc.path && !etc.fs.existsSync(powDataPath)) { etc.fs.mkdirSync(powDataPath); }
 if (etc.path && !etc.fs.existsSync(blocksPath)) { etc.fs.mkdirSync(blocksPath); }
 const numberOfBlockFilesInFolder = 1000;
@@ -80,7 +79,8 @@ function loadBlockLocally(blockIndex, extension = 'json') {
     if (extension === 'json') {
         return loadBlockDataJSON(blockIndexStr, blocksFolderPath);
     } else if (extension === 'bin') {
-        return loadBlockDataBinary(blockIndexStr, blocksFolderPath);
+        //return loadBlockDataBinary(blockIndexStr, blocksFolderPath);
+        return loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath);
     }
 }
 function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
@@ -89,13 +89,11 @@ function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
     const blockContent = etc.fs.readFileSync(filePath, 'utf8');
     return Block.blockDataFromJSON(blockContent);
 }
-function loadBlockDataBinary(blockIndexStr, blocksFolderPath) {
+function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
     const blockDataPath = etc.path.join(blocksFolderPath, `${blockIndexStr}.bin`);
     const compressed = etc.fs.readFileSync(blockDataPath);
-    const decompressed = new Decompressor.Zlib.Gunzip(compressed).decompress();
-    const decoded = msgpack.decode(decompressed);
-    // index, supply, coinBase, difficulty, prevHash, Txs, timestamp, hash, nonce)
-    return BlockData(decoded.index, decoded.supply, decoded.coinBase, decoded.difficulty, decoded.prevHash, decoded.Txs, decoded.timestamp, decoded.hash, decoded.nonce);
+    
+    return utils.compression.blockData.fromBinary_v1(compressed);
 }
 //#endregion -----------------------------
 
@@ -106,7 +104,7 @@ function loadBlockDataBinary(blockIndexStr, blocksFolderPath) {
  */
 function saveBlockDataLocally(blockData, extension = 'json') {
     const result = { success: true, message: 'Block ${blockContent.index} saved' };
-
+    
     try {
         const blocksFolderName = `${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
         const blocksFolderPath = etc.path.join(blocksPath, blocksFolderName);
@@ -115,7 +113,8 @@ function saveBlockDataLocally(blockData, extension = 'json') {
         if (extension === 'json') {
             saveBlockDataJSON(blockData, blocksFolderPath);
         } else if (extension === 'bin') {
-            saveBlockDataBinary(blockData, blocksFolderPath);
+            //saveBlockDataBinary(blockData, blocksFolderPath);
+            saveBlockDataBinary_v1(blockData, blocksFolderPath);
         }
     } catch (error) {
         console.log(error.stack);
@@ -148,18 +147,58 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
         return value; // Include in the result
       }), 'utf8');
 }
-function saveBlockDataBinary(blockData, blocksFolderPath) {
-    const encoded = msgpack.encode(blockData);
-    const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+/** 
+ * @param {BlockData} blockData
+ * @param {string} blocksFolderPath
+ */
+function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
+    const compressed = utils.compression.blockData.toBinary_v1(blockData, blocksFolderPath);
+
     const blockDataPath = etc.path.join(blocksFolderPath, `${blockData.index}.bin`);
     etc.fs.writeFileSync(blockDataPath, compressed);
+}
+/*function saveBlockDataBinaryOptimized(blockData, blocksFolderPath) {
+    const miniBlockHeader = utils.compression.blockDataToMiniBlockHeader(blockData);
+    const uint8Header = utils.compression.Uint8FromMiniBlockHeader(miniBlockHeader);
+    // TODO
+}*/
+//#endregion -----------------------------
+
+//#region --- BASIC SAVING/LOADING ---
+/**
+ * Save data to a JSON file
+ * @param {string} fileName - The name of the file
+ * @param {any} data - The data to save
+ */
+function saveJSON(fileName, data) {
+    try {
+        const filePath = etc.path.join(savedDataPath, `${fileName}.json`);
+        etc.fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (error) {
+        return false;
+    }
+}
+/**
+ * Load data from a JSON file
+ * @param {string} fileName - The name of the file
+ * @returns {any} The loaded data
+ */
+function loadJSON(fileName) {
+    try {
+        const filePath = etc.path.join(savedDataPath, `${fileName}.json`);
+        return JSON.parse(etc.fs.readFileSync(filePath, 'utf8'));
+    } catch (error) {
+        return false;
+    }
 }
 //#endregion -----------------------------
 
 const storage = {
     loadBlockchainLocally,
     saveBlockDataLocally,
-    saveBlockchainInfoLocally
+    saveBlockchainInfoLocally,
+    saveJSON,
+    loadJSON
 };
 
 export default storage;

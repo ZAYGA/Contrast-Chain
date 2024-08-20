@@ -1,8 +1,12 @@
 'use strict';
 
 import ed25519 from './noble-ed25519-03-2024.mjs';
+import Compressor from './gzip.min.js';
+import Decompressor from './gunzip.min.js';
+import msgpack from './msgpack.min.js';
 /**
 * @typedef {import("./classes.mjs").Block} Block
+* @typedef {import("./classes.mjs").BlockData} BlockData
 * @typedef {import("./classes.mjs").AddressTypeInfo} AddressTypeInfo
 * @typedef {import("./classes.mjs").Transaction} Transaction
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
@@ -41,7 +45,7 @@ const blockchainSettings = {
     blockReward: 256_000_000,
     minBlockReward: 1_000_000,
     halvingInterval: 52_960, // 1/5 year at 2 min per block
-    maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals
+    maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
     minTransactionFeePerByte: 1,
 };
@@ -60,7 +64,7 @@ const blockchainSettings = {
 
 const addressUtils = {
     params: {
-        argon2DerivationMemory: 2**16,
+        argon2DerivationMemory: 2**16, // 2**16 should be great
         addressDerivationBytes: 16, // the hex return will be double this value
         addressBase58Length: 20,
     },
@@ -115,13 +119,19 @@ const addressUtils = {
      * @param {string} addressBase58 - Address to validate
      * @param {string} pubKeyHex - Public key to derive the address from
      */
-    securityCheck: (addressBase58, pubKeyHex = '') => {
+    securityCheck: async (addressBase58, pubKeyHex = '') => {
         const firstChar = addressBase58.substring(0, 1);
         /** @type {AddressTypeInfo} */
         const addressTypeInfo = addressUtils.glossary[firstChar];
         if (addressTypeInfo === undefined) { throw new Error(`Invalid address firstChar: ${firstChar}`); }
 
-        const bitsArray = convert.hex.toBits(pubKeyHex);
+        const addressBase58Hex = utils.convert.base58.toHex(addressBase58);
+        const concatedUint8 = utils.convert.hex.toUint8Array(`${addressBase58Hex}${pubKeyHex}`);
+        const arrayBuffer = await utils.cryptoLib.subtle.digest('SHA-256', concatedUint8);
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const addressPubKeyHashHex = utils.convert.uint8Array.toHex(uint8Array);
+        
+        const bitsArray = convert.hex.toBits(addressPubKeyHashHex);
         if (!bitsArray) { throw new Error('Failed to convert the public key to bits'); }
 
         const condition = conditionnals.binaryStringStartsWithZeros(bitsArray.join(''), addressTypeInfo.zeroBits);
@@ -155,31 +165,47 @@ const addressUtils = {
     },
 };
 const typeValidation = {
+    /**
+     * @param {string} base58 - Base58 string to validate
+     * @returns {string|false}
+     */
     base58(base58) {
 		for (let i = 0; i < base58.length; i++) {
 			const char = base58[i];
 			if (base58Alphabet.indexOf(char) === -1) {
-				console.error(`Invalid character: ${char}`);
 				return false;
 			}
 		}
 		return base58;
 	},
+    /**
+     * @param {string} hex - Hex string to validate
+     * @returns {string|false}
+     */
     hex(hex) {
         if (hex.length % 2 !== 0) {
-            console.error('Hex string length is not a multiple of 2');
             return false;
         }
 
         for (let i = 0; i < hex.length; i++) {
             const char = hex[i];
             if (isNaN(parseInt(char, 16))) {
-                console.error(`Invalid hex character: ${char}`);
                 return false;
             }
         }
 
         return hex;
+    },
+    /**
+     * @param {string} base64 - Base64 string to validate
+     * @returns {string|false}
+     */
+    uint8Array(uint8Array) {
+        if (uint8Array instanceof Uint8Array === false) {
+            return false;
+        }
+
+        return uint8Array;
     }
 };
 const convert = {
@@ -209,7 +235,7 @@ const convert = {
         /** @param {string} base58 - Base58 string to convert to hex */
         toHex: (base58) => {
             const num = convert.base58.toBigInt(base58);
-            return num.toString(16);
+            return convert.bigInt.toHex(num);
         },
         /** @param {string} base58 - Base58 string to convert to Uint8Array */
         toUint8Array: (base58) => {
@@ -233,12 +259,7 @@ const convert = {
                 num = num * base + BigInt(index);
             }
         
-            let hex = num.toString(16);
-            if (hex.length % 2 !== 0) {
-                hex = '0' + hex;
-            }
-
-            return hex;
+            return convert.bigInt.toHex(num);
         }
     },
     base64: {
@@ -300,21 +321,25 @@ const convert = {
         },
         /** @param {BigInt} num - BigInt to convert to base64 */
         toBase64: (num) => {
-            const hex = num.toString(16);
+            const hex = convert.bigInt.toHex(num);
             return convert.hex.toBase64(hex);
         },
         /** @param {BigInt} num - BigInt to convert to Uint8Array */
         toUint8Array: (num) => {
-            const hex = num.toString(16);
+            const hex = convert.bigInt.toHex(num);
             return convert.hex.toUint8Array(hex);
         },
         /** @param {BigInt} num - BigInt to convert to hex */
         toHex: (num) => {
-            return num.toString(16);
+            let hex = num.toString(16);
+            if (hex.length % 2 !== 0) {
+                hex = '0' + hex;
+            }
+            return hex;
         },
         /** @param {BigInt} num - BigInt to convert to bits */
         toBits: (num) => {
-            const hex = num.toString(16);
+            const hex = convert.bigInt.toHex(num);
             return convert.hex.toBits(hex);
         },
         /** @param {BigInt} num - BigInt to convert to number */
@@ -335,15 +360,21 @@ const convert = {
         toBigInt: (num) => {
             return BigInt(num);
         },
+        /** @param {number} num - Integer to convert to Uint8Array */
+        toUint8Array: (num) => {
+            const hex = convert.number.toHex(num);
+            return convert.hex.toUint8Array(hex);
+        },
+        /** @param {number} num - Integer to convert to Hex */
+        toHex: (num) => {
+            let hex = num.toString(16);
+            if (hex.length % 2 !== 0) {
+                hex = '0' + hex;
+            }
+            return hex;
+        },
         /** @param {number} num - Integer to convert to readable */
         formatNumberAsCurrency: (num) => {
-            // 1_000_000 -> 10,000.00
-            /*if (num < 100) { return `0.${num.toString().padStart(2, '0')}`; }
-            const num2last2 = num.toString().slice(-2);
-            const numRest = num.toString().slice(0, -2);
-            const separedNum = numRest.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-            return `${separedNum}.${num2last2}`;*/
-
             // 1_000_000_000 -> 1,000.000000
             if (num < 1_000_000) { return `0.${num.toString().padStart(6, '0')}`; }
             const num2last6 = num.toString().slice(-6);
@@ -351,6 +382,12 @@ const convert = {
             const separedNum = numRest.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
             return `${separedNum}.${num2last6}`;
         },
+        to4BytesUint8Array: (num) => {
+            let buffer = new ArrayBuffer(4);
+            let view = new DataView(buffer);
+            view.setUint32(0, num, true); // true for little-endian
+            return new Uint8Array(buffer);
+        }
     },
     uint8Array: {
         /** @param {Uint8Array} uint8Array - Uint8Array to convert to base58 */
@@ -500,6 +537,78 @@ const conditionnals = {
     },
 };
 
+const compression = {
+    blockData: {
+        /** @param {BlockData} blockData */
+        toBinary_v1(blockData) {
+            blockData.prevHash = utils.typeValidation.hex(blockData.prevHash) ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
+            blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
+            blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
+
+            for (let i = 0; i < blockData.Txs.length; i++) {
+                const tx = blockData.Txs[i];
+                tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
+                for (let i = 0; i < tx.witnesses.length; i++) {
+                    const signature = tx.witnesses[i].split(':')[0];
+                    const publicKey = tx.witnesses[i].split(':')[1];
+                    tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
+                }
+                for (let j = 0; j < tx.inputs.length; j++) {
+                    const input = tx.inputs[j];
+                    if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
+                        tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
+                        continue;
+                    }
+
+                    for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
+                    tx.inputs[j].TxID = utils.convert.hex.toUint8Array(input.TxID); // safe type: hex
+                };
+                for (let j = 0; j < tx.outputs.length; j++) {
+                    const output = tx.outputs[j];
+                    for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
+                };
+            };
+            
+            const encoded = msgpack.encode(blockData);
+            return new Compressor.Zlib.Gzip(encoded).compress();
+        },
+        /** @param {Uint8Array} binary */
+        fromBinary_v1(binary) {
+            const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
+            const decoded = msgpack.decode(decompressed);
+        
+            // recursively convert Uint8Array to stringHex
+            decoded.prevHash = utils.typeValidation.uint8Array(decoded.prevHash) ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
+            decoded.hash = utils.convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
+            decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
+        
+            for (let i = 0; i < decoded.Txs.length; i++) {
+                const tx = decoded.Txs[i];
+                tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
+                for (let i = 0; i < tx.witnesses.length; i++) {
+                    const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
+                    const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
+                    tx.witnesses[i] = `${signature}:${publicKey}`;
+                }
+                for (let j = 0; j < tx.inputs.length; j++) {
+                    const input = tx.inputs[j];
+                    if (typeof input === 'string') {
+                        continue; }
+                    if (utils.typeValidation.uint8Array(input)) {
+                        tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
+                        continue;
+                    }
+                    tx.inputs[j].TxID = utils.convert.uint8Array.toHex(input.TxID); // safe type: uint8 -> hex
+                };
+            };
+
+            /** @type {BlockData} */
+            const blockData = decoded;
+            return blockData;
+        }
+    }
+};
+
 const miningParams = {
     argon2: {
         time: 1,
@@ -508,7 +617,8 @@ const miningParams = {
         type: 2,
         hashLen: 32,
     },
-    minNonceHexLength: 8,
+    //minNonceHexLength: 8, nonce is now separated between header and coinBase input
+    nonceLength: 4,
 }
 const mining = {
     /**
@@ -561,7 +671,7 @@ const mining = {
         return sum / (NbBlocks - 1);
     },
 
-    generateRandomNonce: (length = miningParams.minNonceHexLength) => {
+    generateRandomNonce: (length = miningParams.nonceLength) => {
         const Uint8 = new Uint8Array(length);
         crypto.getRandomValues(Uint8);
     
@@ -621,6 +731,7 @@ const utils = {
     addressUtils,
     typeValidation,
     convert,
+    compression,
     conditionnals,
     mining,
 };

@@ -42,21 +42,22 @@ export const BlockData = (index, supply, coinBase, difficulty, prevHash, Txs, ti
         coinBase: coinBase,
         difficulty: difficulty,
         prevHash: prevHash,
-        Txs: Txs,
-
+        
         // Proof of work dependent
         timestamp: timestamp,
         hash: hash,
-        nonce: nonce
+        nonce: nonce,
+
+        Txs: Txs
     };
 }
 export class Block {
     /** @param {BlockData} blockData */
     static getBlockStringToHash(blockData) {
-        const txsIDStrArray = blockData.Txs.map(tx => tx.id);
+        const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
         const txsIDStr = txsIDStrArray.join('');
 
-        const signatureStr = `${blockData.prevHash}${blockData.timestamp}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}${blockData.fee}`;
+        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
         return utils.convert.string.toHex(signatureStr);
     }
     /** @param {BlockData} blockData */
@@ -67,12 +68,23 @@ export class Block {
 
         return { hex: newBlockHash.hex, bitsArrayAsString: newBlockHash.bitsArray.join('') };
     }
+    /** @param {BlockData} blockData */
+    static async calculateValidatorHash(blockData) {
+        const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
+        const txsIDStr = txsIDStrArray.join('');
+
+        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
+        const signatureHex = utils.convert.string.toHex(signatureStr);
+
+        const validatorHash = await HashFunctions.SHA256(signatureHex);
+        return validatorHash;
+    }
     /**
      * @param {BlockData} blockData
      * @param {Transaction} coinbaseTx
      */
     static setCoinbaseTransaction(blockData, coinbaseTx) {
-        if (Transaction_Builder.isCoinBaseTransaction(coinbaseTx, 0) === false) { console.error('Invalid coinbase transaction'); return false; }
+        if (Transaction_Builder.isCoinBaseOrFeeTransaction(coinbaseTx, 0) === false) { console.error('Invalid coinbase transaction'); return false; }
 
         Block.removeExistingCoinbaseTransaction(blockData);
         blockData.Txs.unshift(coinbaseTx);
@@ -81,8 +93,11 @@ export class Block {
     static removeExistingCoinbaseTransaction(blockData) {
         if (blockData.Txs.length === 0) { return; }
 
+        const secondTx = blockData.Txs[1]; // if second tx isn't fee Tx : there is no coinbase
+        if (!secondTx || !Transaction_Builder.isCoinBaseOrFeeTransaction(secondTx, 1)) { return; }
+
         const firstTx = blockData.Txs[0];
-        if (firstTx && Transaction_Builder.isCoinBaseTransaction(firstTx, 0)) { blockData.Txs.shift(); }
+        if (firstTx && Transaction_Builder.isCoinBaseOrFeeTransaction(firstTx, 0)) { blockData.Txs.shift(); }
     }
     /** @param {BlockData} blockData - undefined if genesis block */
     static calculateNextCoinbaseReward(blockData) {
@@ -94,13 +109,13 @@ export class Block {
         const maxSupplyWillBeReached = blockData.supply + coinBase >= utils.blockchainSettings.maxSupply;
         return maxSupplyWillBeReached ? utils.blockchainSettings.maxSupply - blockData.supply : coinBase;
     }
-    /** @param {BlockData} blockData */
-    static calculateBlockTotalFees(blockData) {
+    /** @param {Transaction[]} Txs */
+    static calculateTxsTotalFees(Txs) {
         // TODO - calculate the fee
         const fees = [];
-        for (let i = 0; i < blockData.Txs.length; i++) {
-            const Tx = blockData.Txs[i];
-            const fee = Validation.calculateRemainingAmount(Tx, Transaction_Builder.isCoinBaseTransaction(Tx, i));
+        for (let i = 0; i < Txs.length; i++) {
+            const Tx = Txs[i];
+            const fee = Validation.calculateRemainingAmount(Tx, Transaction_Builder.isCoinBaseOrFeeTransaction(Tx, i));
 
             fees.push(fee);
         }
@@ -151,54 +166,50 @@ class TxIO_Scripts {
 /**
  * @typedef {Object} TransactionIO
  * @property {number} amount
- * @property {string} address
+ * @property {string} address - output only
  * @property {string} script
  * @property {number} version
- * @property {number | undefined} index
- * @property {string | undefined} TxID
+ * @property {string | undefined} TxID - input only
+ * @property {number | undefined} blockIndex - input only
  */
 /** Transaction Input/Output data structure
  * @param {number} amount
- * @param {string} address
+ * @param {string} address - output only
  * @param {string} script
  * @param {number} version  
- * @param {string | undefined} TxID
+ * @param {string | undefined} TxID - input only
+ * @param {number | undefined} blockIndex - input only
  * @returns {TransactionIO}
  **/
-const TransactionIO = (amount, address, script, version, TxID = undefined) => {
+const TransactionIO = (amount, script, version, address = undefined, TxID = undefined, blockIndex = undefined) => {
     return {
         amount,
-        address,
         script,
         version,
-        TxID
+        address,
+        TxID,
+        blockIndex
     };
 }
 export class TxIO_Builder {
     /**
      * @param {"input" | "output"} type
      * @param {number} amount
-     * @param {string} address
+     * @param {string} address - output only
      * @param {string} script
      * @param {number} version
-     * @param {number | undefined} index
-     * @param {string | undefined} TxID
+     * @param {string | undefined} TxID - input only
+     * @param {number | undefined} blockIndex - input only
      */
-    static newIO(type, amount, address, script, version, TxID) {
-        if (type !== 'input' && type !== 'output') { throw new Error('Invalid type'); }
-        if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
-        if (amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
-        if (typeof script !== 'string') { throw new Error('Invalid script !== string'); }
-        if (typeof version !== 'number') { throw new Error('Invalid version !== number'); }
-        if (version <= 0) { throw new Error('Invalid version value: <= 0'); }
-
-        utils.addressUtils.conformityCheck(address);
-        
+    static newIO(type, amount, script, version, address, TxID, blockIndex) {
         const TxIO_Script = TxIO_Builder.getAssociatedScript(script);
         if (!TxIO_Script) { 
             throw new Error('Invalid script'); }
 
-        return TransactionIO(amount, address, script, version, TxID);
+        const newTxIO = TransactionIO(amount, script, version, address, TxID, blockIndex);
+        Validation.isValidTransactionIO(newTxIO, type);
+        
+        return newTxIO;
     }
     /**
      * @param {string} script
@@ -222,6 +233,11 @@ export class TxIO_Builder {
         if (txIDs.includes(undefined)) { throw new Error('One UTXO has no TxID'); }
         if (TxIO_Scripts.arrayIncludeDuplicates(txIDs)) { throw new Error('Duplicate TxID in UTXOs'); }
     }
+    /** @param {TransactionIO[]} TxIOs */
+    static cloneTxIO(TxIO) {
+        const TxIOJSON = JSON.stringify(TxIO);
+        return JSON.parse(TxIOJSON);
+    }
 }
 
 /**
@@ -240,10 +256,10 @@ export class TxIO_Builder {
  */
 const Transaction = (inputs, outputs, id = '', witnesses = []) => {
     return {
-        inputs,
-        outputs,
         id,
-        witnesses
+        witnesses,
+        inputs,
+        outputs
     };
 }
 export class Transaction_Builder {
@@ -257,17 +273,36 @@ export class Transaction_Builder {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
 
-        const coinbaseOutput = TxIO_Builder.newIO('output', amount, address, 'signature_v1', 1);
+        const coinbaseOutput = TxIO_Builder.newIO('output', amount, 'signature_v1', 1, address);
         const inputs = [ nonceHex ];
         const outputs = [ coinbaseOutput ];
 
         return Transaction(inputs, outputs);
     }
-    /** @param {TransactionIO[]} UTXOs - The UTXOs used as inputs */
+    /**
+     * @param {BlockData} blockCandidate
+     * @param {string} address
+     */
+    static async createPosRewardTransaction(blockCandidate, address) {
+        if (typeof address !== 'string') { throw new Error('Invalid address'); }
+
+        const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
+        if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
+
+        const posInput = await Block.calculateValidatorHash(blockCandidate);
+        const inputs = [ posInput ];
+        const posOutput = TxIO_Builder.newIO('output', blockFees, 'signature_v1', 1, address);
+        const outputs = [ posOutput ];
+
+        return Transaction(inputs, outputs);
+    }
+    /** @param {Account} senderAccount */
     static createTransferTransaction(
-        UTXOs = [],
+        senderAccount,
         transfers = [ { recipientAddress: 'recipientAddress', amount: 1 } ]
     ) {
+        const senderAddress = senderAccount.address;
+        const UTXOs = senderAccount.UTXOs;
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
         if (transfers.length === 0) { throw new Error('No transfer to make'); }
         
@@ -281,7 +316,7 @@ export class Transaction_Builder {
         if (change < 0) { 
             throw new Error('Negative change => not enough funds'); 
         } else if (change > 0) {
-            const changeOutput = TxIO_Builder.newIO("output", change, UTXOs[0].address, 'signature_v1', 1);
+            const changeOutput = TxIO_Builder.newIO("output", change, 'signature_v1', 1, senderAddress);
             outputs.push(changeOutput);
         }
 
@@ -300,7 +335,7 @@ export class Transaction_Builder {
 
         for (let i = 0; i < transfers.length; i++) {
             const { recipientAddress, amount} = transfers[i];
-            const output = TxIO_Builder.newIO('output', amount, recipientAddress, script, version);
+            const output = TxIO_Builder.newIO('output', amount, script, version, recipientAddress);
             outputs.push(output);
             totalAmount.push(amount);
         }
@@ -310,26 +345,26 @@ export class Transaction_Builder {
         return { outputs, totalSpent };
     }
     /** @param {Transaction} transaction */
-    static async hashTxToGetID(transaction) {
+    static async hashTxToGetID(transaction, hashHexLength = 8) {
         const message = Transaction_Builder.getTransactionStringToHash(transaction);
-        return HashFunctions.SHA256(message);
+        const hashHex = await HashFunctions.SHA256(message);
+        return hashHex.slice(0, hashHexLength);
     }
     /** @param {Transaction} transaction */
-    static getTransactionStringToHash(transaction) { // TODO: find a better unique element to make the hash unique
-        const nonce = utils.mining.generateRandomNonce(); // random nonce to make the hash unique
+    static getTransactionStringToHash(transaction) {
         const inputsStr = JSON.stringify(transaction.inputs);
         const outputsStr = JSON.stringify(transaction.outputs);
-
-        const stringHex = utils.convert.string.toHex(`${nonce}${inputsStr}${outputsStr}`);
+        
+        const stringHex = utils.convert.string.toHex(`${inputsStr}${outputsStr}`);
         return stringHex;
     }
     /** 
      * @param {Transaction} transaction
      * @param {number} TxIndexInTheBlock
      */
-    static isCoinBaseTransaction(transaction, TxIndexInTheBlock) {
+    static isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) {
         if (transaction.inputs.length !== 1) { return false; }
-        if (TxIndexInTheBlock !== 0) { return false; }
+        if (TxIndexInTheBlock !== 0 && TxIndexInTheBlock !== 1) { return false; }
         return typeof transaction.inputs[0] === 'string';
     }
     /** @param {Transaction} transaction */
@@ -354,14 +389,14 @@ export class Transaction_Builder {
     static async createAndSignTransferTransaction(senderAccount, amount, recipientAddress) {
         try {
             const transfer = { recipientAddress, amount };
-            const transaction = Transaction_Builder.createTransferTransaction(senderAccount.UTXOs, [transfer]);
+            const transaction = Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
             const signedTx = await senderAccount.signAndReturnTransaction(transaction);
             signedTx.id = await Transaction_Builder.hashTxToGetID(signedTx);
     
             return { signedTxJSON: Transaction_Builder.getTransactionJSON(signedTx), error: false };
         } catch (error) {
             /** @type {string} */
-            const errorMessage = error.message;
+            const errorMessage = error.stack;
             return { signedTxJSON: false, error: errorMessage };
         }
     }
@@ -379,6 +414,14 @@ export class Wallet {
             P: [],
             U: []
         };
+        /** @type {Object<string, number[]>} */
+        this.accountsGenerationSequences = {
+            W: [],
+            C: [],
+            S: [],
+            P: [],
+            U: []
+        };
     }
     static async restore(mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") {
         const argon2HashResult = await HashFunctions.Argon2(mnemonicHex, "Contrast's Salt Isnt Pepper But It Is Tasty", 27, 1024, 1, 2, 26);
@@ -386,12 +429,32 @@ export class Wallet {
 
         return new Wallet(argon2HashResult.hex);
     }
+    saveAccountsGenerationSequences() {
+        storage.saveJSON('accountsGenerationSequences', this.accountsGenerationSequences);
+    }
+    loadAccountsGenerationSequences() {
+        const accountsGenerationSequences = storage.loadJSON('accountsGenerationSequences');
+        if (!accountsGenerationSequences) { return false; }
+
+        this.accountsGenerationSequences = accountsGenerationSequences;
+        return true;
+    }
     async deriveAccounts(nbOfAccounts = 1, addressPrefix = "C") {
         const nbOfExistingAccounts = this.accounts[addressPrefix].length;
         const iterationsPerAccount = []; // used for control
 
         for (let i = nbOfExistingAccounts; i < nbOfAccounts; i++) {
-            const { account, iterations } = await this.deriveAccount(i, addressPrefix);
+            const seedModifierHex = this.accountsGenerationSequences[addressPrefix][i];
+            if (seedModifierHex) {
+                const account = await this.#deriveAccount(seedModifierHex, addressPrefix);
+                if (!account) { console.error(`accountsGenerationSequences is probably corrupted at index: ${i}`); return false; }
+
+                iterationsPerAccount.push(1);
+                this.accounts[addressPrefix].push(account);
+                continue;
+            }
+
+            const { account, iterations } = await this.tryDerivationUntilValidAccount(i, addressPrefix);
             if (!account) { console.error('deriveAccounts interrupted!'); return false; }
 
             iterationsPerAccount.push(iterations);
@@ -400,12 +463,12 @@ export class Wallet {
         
         const derivedAccounts = this.accounts[addressPrefix].slice(nbOfExistingAccounts);
         if (derivedAccounts.length !== nbOfAccounts) { console.error('Failed to derive all accounts'); return false; }
-        return { derivedAccounts, avgIterations: iterationsPerAccount.reduce((a, b) => a + b, 0) / nbOfAccounts };
+        return { derivedAccounts, avgIterations: (iterationsPerAccount.reduce((a, b) => a + b, 0) / nbOfAccounts).toFixed(2) };
     }
-    async deriveAccount(accountIndex = 0, addressPrefix = "C") {
+    async tryDerivationUntilValidAccount(accountIndex = 0, desiredPrefix = "C") {
         /** @type {AddressTypeInfo} */
-        const addressTypeInfo = utils.addressUtils.glossary[addressPrefix];
-        if (addressTypeInfo === undefined) { throw new Error(`Invalid addressPrefix: ${addressPrefix}`); }
+        const addressTypeInfo = utils.addressUtils.glossary[desiredPrefix];
+        if (addressTypeInfo === undefined) { throw new Error(`Invalid desiredPrefix: ${desiredPrefix}`); }
 
         // To be sure we have enough iterations, but avoid infinite loop
         const maxIterations = 65_536 * (2 ** addressTypeInfo.zeroBits); // max with zeroBits(16): 65 536 * (2^16) => 4 294 967 296
@@ -413,29 +476,36 @@ export class Wallet {
         for (let i = 0; i < maxIterations; i++) {
             const seedModifier = seedModifierStart + i;
             const seedModifierHex = seedModifier.toString(16).padStart(12, '0'); // padStart(12, '0') => 48 bits (6 bytes), maxValue = 281 474 976 710 655
-            const seedHex = this.masterHex + seedModifierHex;
             
             try {
-                const keyPair = await AsymetricFunctions.generateKeyPairFromHash(seedHex);
-                if (!keyPair) { console.error('Failed to generate key pair'); return false; }
-    
-                const addressBase58 = await utils.addressUtils.deriveAddress(HashFunctions.Argon2, keyPair.pubKeyHex);
-                if (!addressBase58) { console.error('Failed to derive address'); return false; }
-    
-                if (addressBase58.substring(0, 1) !== addressPrefix) { continue; }
-                
-                utils.addressUtils.conformityCheck(addressBase58);
-                utils.addressUtils.securityCheck(addressBase58, keyPair.pubKeyHex);
-
-                const account = new Account(keyPair.pubKeyHex, keyPair.privKeyHex, addressBase58);
-                return { account, iterations: i };
+                const account = await this.#deriveAccount(seedModifierHex, desiredPrefix);
+                if (account) {
+                    this.accountsGenerationSequences[desiredPrefix].push(seedModifierHex);
+                    return { account, iterations: i }; 
+                }
             } catch (error) {
-                console.error(error.message);
-                continue;
+                const errorSkippingLog = ['Address does not meet the security level'];
+                if (!errorSkippingLog.includes(error.message.slice(0,40))) { console.error(error.stack); }
             }
         }
 
         return false;
+    }
+    async #deriveAccount(seedModifierHex, desiredPrefix = "C") {
+        const seedHex = await HashFunctions.SHA256(this.masterHex + seedModifierHex);
+
+        const keyPair = await AsymetricFunctions.generateKeyPairFromHash(seedHex);
+        if (!keyPair) { throw new Error('Failed to generate key pair'); }
+
+        const addressBase58 = await utils.addressUtils.deriveAddress(HashFunctions.Argon2, keyPair.pubKeyHex);
+        if (!addressBase58) { throw new Error('Failed to derive address'); }
+
+        if (addressBase58.substring(0, 1) !== desiredPrefix) { return false; }
+        
+        utils.addressUtils.conformityCheck(addressBase58);
+        await utils.addressUtils.securityCheck(addressBase58, keyPair.pubKeyHex);
+
+        return new Account(keyPair.pubKeyHex, keyPair.privKeyHex, addressBase58);
     }
 }
 export class Account {
@@ -452,6 +522,8 @@ export class Account {
         this.address = address;
         /** @type {TransactionIO[]} */
         this.UTXOs = [];
+        /** @type {number} */
+        this.balance = 0;
     }
 
     /** @param {Transaction} transaction */
@@ -462,19 +534,20 @@ export class Account {
         const { signatureHex } = await AsymetricFunctions.signMessage(message, this.#privKey, this.#pubKey);
         if (transaction.witnesses.includes(signatureHex)) { throw new Error('Signature already included'); }
 
-        transaction.witnesses.push(`${signatureHex} ${this.#pubKey}`);
+        transaction.witnesses.push(`${signatureHex}:${this.#pubKey}`);
 
         return transaction;
     }
-    /** @param {string} UTXOsJSON */
-    setUTXOsFromJSON(UTXOsJSON) {
-        if (typeof UTXOsJSON !== 'string') { throw new Error('Invalid UTXOsJSON: not string'); }
+    /**
+     * @param {number} balance
+     * @param {TransactionIO[]} UTXOs
+     */
+    setBalanceAndUTXOs(balance, UTXOs) {
+        if (typeof balance !== 'number') { throw new Error('Invalid balance'); }
+        if (!Array.isArray(UTXOs)) { throw new Error('Invalid UTXOs'); }
 
-        /** @type {TransactionIO[]} */
-        const parsedUTXOsJSON = JSON.parse(UTXOsJSON);
-        if (!Array.isArray(parsedUTXOsJSON)) { throw new Error(`parsedUTXOsJSON isn't an array`); }
-
-        this.UTXOs = parsedUTXOsJSON;
+        this.balance = balance;
+        this.UTXOs = UTXOs;
     }
 }
 
@@ -493,30 +566,38 @@ class Validation {
         if (!Array.isArray(transaction.witnesses)) { throw new Error('Invalid transaction witnesses'); }
 
         for (let i = 0; i < transaction.inputs.length; i++) {
-            if (isCoinBase) { continue; } // coinbase -> no input
-            Validation.isValidTransactionIO(transaction.inputs[i]);
+            if (isCoinBase && typeof transaction.inputs[i] !== 'string') { throw new Error('Invalid coinbase input'); }
+            if (isCoinBase) { continue; }
+            Validation.isValidTransactionIO(transaction.inputs[i], 'input');
         }
 
         for (let i = 0; i < transaction.outputs.length; i++) {
-            const TxID_Check = isCoinBase // not coinbase -> output not linked to TxID
-            Validation.isValidTransactionIO(transaction.outputs[i], TxID_Check);
+            Validation.isValidTransactionIO(transaction.outputs[i], 'output');
         }
     }
     /** Used by isConformTransaction()
      * @param {TransactionIO} TxIO - transaction input/output
-     * @param {boolean} TxID_Check - check if the TxID is present and valid
+     * @param {string} type - 'input' | 'output'
      */
-    static isValidTransactionIO(TxIO, TxID_Check = true) {
-        if (typeof TxIO.amount !== 'number') { throw new Error('Invalid amount'); }
-        if (TxIO.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
+    static isValidTransactionIO(TxIO, type) { // type: 'input' | 'output'
+        if (typeof TxIO.amount !== 'number') { throw new Error('Invalid amount !== number'); }
+
+        if (TxIO.amount < 0) { throw new Error('Invalid amount value: < 0'); }
+        if (type === 'input' && TxIO.amount === 0) { throw new Error('Invalid amount value: = 0'); }
+        if (TxIO.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
+
         if (typeof TxIO.script !== 'string') { throw new Error('Invalid script !== string'); }
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
-        if (TxID_Check && typeof TxIO.TxID !== 'string') {
-             throw new Error('Invalid TxID'); }
+        if (type === 'input' && typeof TxIO.blockIndex !== 'number') { throw new Error('Invalid blockIndex !== number'); }
+        if (type === 'input' && TxIO.blockIndex < 0) { throw new Error('Invalid blockIndex value: < 0'); }
+        if (type === 'input' && TxIO.blockIndex % 1 !== 0) { throw new Error('Invalid blockIndex value: not integer'); }
+        if (type === 'input' && typeof TxIO.TxID !== 'string') { throw new Error('Invalid TxID !== string'); }
+        if (type === 'input' && TxIO.TxID.length !== 8) { throw new Error('Invalid TxID length !== 8'); }
 
-        utils.addressUtils.conformityCheck(TxIO.address);
+        if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
+        if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
     }
 
     /** ==> Second validation, low computation cost.
@@ -545,34 +626,35 @@ class Validation {
      * @param {Transaction} transaction
      */
     static async controlTransactionHash(transaction) {
-        const message = Transaction_Builder.getTransactionStringToHash(transaction);
-        const hash = await HashFunctions.SHA256(message);
-        if (hash !== transaction.id) { throw new Error('Invalid transaction hash'); }
+        const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
+        if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
     }
 
     /** ==> Fourth validation, medium computation cost.
      * 
      * - control the signature of the inputs
+     * @param {Object<string, TransactionIO>} referencedUTXOs
      * @param {Transaction} transaction
      */
-    static async executeTransactionInputsScripts(transaction) {
-        //const addresses = transaction.inputs.map(input => input.address);
-        
+    static async executeTransactionInputsScripts(referencedUTXOs, transaction) {
         // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
         const opAlreadyPassed = [];
-        const witnessParts = transaction.witnesses[0].split(' ');
+        const witnessParts = transaction.witnesses[0].split(':');
         const signature = witnessParts[0];
         const pubKeyHex = witnessParts[1];
 
         for (let i = 0; i < transaction.inputs.length; i++) {
-            //const input = transaction.inputs[i];
-            const { address, script } = transaction.inputs[i];
-            const operation = `${address}${script}`;
+            const { TxID, blockIndex, script } = transaction.inputs[i];
+            const reference = `${blockIndex}:${TxID}`;
+            const referencedUTXO = referencedUTXOs[reference];
+            if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
+
+            const operation = `${referencedUTXO.address}${script}`;
             if (opAlreadyPassed.includes(operation)) {
                 continue; }
 
-            utils.addressUtils.conformityCheck(address);
-            utils.addressUtils.securityCheck(address, pubKeyHex);
+            utils.addressUtils.conformityCheck(referencedUTXO.address);
+            await utils.addressUtils.securityCheck(referencedUTXO.address, pubKeyHex);
             
             const message = Transaction_Builder.getTransactionStringToHash(transaction);
             Validation.executeTransactionInputScripts(script, signature, message, pubKeyHex);
@@ -597,15 +679,15 @@ class Validation {
     /** ==> Fifth validation, high computation cost.
      * 
      * - control the address/pubKey correspondence
+     * @param {Object<string, TransactionIO>} referencedUTXOs
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(transaction) {
+    static async addressOwnershipConfirmation(referencedUTXOs, transaction) {
         const witnessesAddresses = [];
-        const alreadyKnownAddresses = [];
 
         // derive witnesses addresses
         for (let i = 0; i < transaction.witnesses.length; i++) {
-            const witnessParts = transaction.witnesses[i].split(' ');
+            const witnessParts = transaction.witnesses[i].split(':');
             const pubKeyHex = witnessParts[1];
             const derivedAddressBase58 = await utils.addressUtils.deriveAddress(HashFunctions.Argon2, pubKeyHex);
             if (witnessesAddresses.includes(derivedAddressBase58)) { throw new Error('Duplicate witness'); }
@@ -613,12 +695,13 @@ class Validation {
             witnessesAddresses.push(derivedAddressBase58);
         }
 
-        // control the input addresses presence in the witnesses
+        // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const { address } = transaction.inputs[i];
-            if (witnessesAddresses.includes(address) === false) { throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(address)}`); }
-
-            alreadyKnownAddresses.push(address);
+            const { blockIndex, TxID } = transaction.inputs[i];
+            const reference = `${blockIndex}:${TxID}`;
+            const referencedUTXO = referencedUTXOs[reference];
+            if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
+            if (witnessesAddresses.includes(referencedUTXO.address) === false) { throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
         }
     }
 }
@@ -626,9 +709,60 @@ class MemPool {
     constructor() {
         /** @type {Transaction[]} */
         this.transactions = [];
+        /** @type {function[]} */
+        this.callStack = [];
+        /** @type {string = 'idle' | 'active' | 'pausing' | 'paused'} */
+        this.state = 'idle';
     }
 
-    getMostLucrativeTransactions(maxTxs = 1000) { //TODO: improve the selection - use bytes weight instead of maxTx
+    async stackLoop(delayMS = 20) {
+        this.state = 'active';
+
+        while (true) {
+            await new Promise(resolve => setTimeout(resolve, delayMS));
+
+            if (this.state === 'idle' && this.callStack.length === 0) { continue; }
+            if (this.state === 'paused') { continue; }
+            if (this.state === 'pausing') { this.state = 'paused'; continue; }
+            if (this.state === 'idle') { this.state = 'active'; }
+
+            const functionToCall = this.callStack.shift();
+            if (!functionToCall) { this.state = 'idle'; continue; }
+            try {
+                await functionToCall();
+            } catch (error) {
+                const errorSkippingLog = ['Conflicting UTXOs'];
+                if (!errorSkippingLog.includes(error.message)) { console.error(error.stack); }
+            }
+        }
+    }
+    async pauseStackAndAwaitPaused() {
+        if (this.state === 'paused') { return; }
+
+        this.pauseStackLoop();
+        while (this.state !== 'paused') {
+            await new Promise(resolve => setTimeout(resolve, 20));
+        }
+    }
+    pauseStackLoop() {
+        this.state = 'pausing';
+    }
+    resumeStackLoop() {
+        this.state = 'active';
+    }
+    /** Add a function to the stack
+     * @param {function} func
+     * @param {boolean} firstPlace
+     */
+    addFunctionToStack(func, firstPlace = false) {
+        if (firstPlace) { 
+            this.callStack.unshift(func);
+        } else {
+            this.callStack.push(func);
+        }
+    }
+
+    getMostLucrativeTransactions(maxTxs = 1000) { //TODO: selection - use fee/byte instead of maxTx
         /*const sortedTxs = this.transactions.sort((a, b) => {
             const aFee = a.fee;
             const bFee = b.fee;
@@ -639,7 +773,6 @@ class MemPool {
 
         return this.transactions.slice(0, maxTxs);
     }
-
     /**
      * Remove the transactions included in the block from the mempool
      * @param {Transaction[]} Txs
@@ -651,12 +784,57 @@ class MemPool {
         const filteredTxs = this.transactions.filter(tx => !txIDs.includes(tx.id));
         this.transactions = filteredTxs;
     }
+    /**
+     * @param {Transaction} transactionA
+     * @param {Transaction} transactionB
+     */
+    #isTransactionsUsingTheSameInput(transactionA, transactionB) {
+        const inputsReferencesA = transactionA.inputs.map(input => `${input.blockIndex}:${input.TxID}`);
+        for (let i = 0; i < transactionB.inputs.length; i++) {
+            const reference = `${transactionB.inputs[i].blockIndex}:${transactionB.inputs[i].TxID}`;
+            if (!inputsReferencesA.includes(reference)) { continue; }
 
-    /** @param {Transaction} transaction */
-    async pushTransaction(transaction) {
-        const startTime = Date.now();
-        if (this.transactions.map(tx => tx.id).includes(transaction.id)) { throw new Error('Transaction already in mempool'); }
+            return true;
+        }
+
+        return false;
+    }
+    /** 
+     * @param {string} memPoolTxIndex
+     * @param {Transaction} transaction
+     * @param {string} TxidToReplace
+     */
+    #getReplacementFunction(memPoolTxIndex, transaction, TxidToReplace) {
+        const memPoolTx = this.transactions[memPoolTxIndex];
+        if (TxidToReplace !== memPoolTx.id) { throw new Error('Transaction already in mempool but ID does not match replaceExistingTxID'); }
         
+        const newFee = Validation.calculateRemainingAmount(transaction, false);
+        const oldFee = Validation.calculateRemainingAmount(memPoolTx, false);
+        if (newFee <= oldFee) { throw new Error('New transaction fee is not higher than the existing one'); }
+
+        return () => {
+            this.transactions.splice(i, 1);
+            this.transactions.push(transaction);
+        }
+    }
+    /**
+     * @param {Object<string, TransactionIO>} referencedUTXOs
+     * @param {Transaction} transaction
+     * @param {false | string} replaceExistingTxID
+     */
+    async pushTransaction(referencedUTXOs, transaction, replaceExistingTxID) {
+        const startTime = Date.now();
+
+        let txInclusionFunction = () => { this.transactions.push(transaction); };
+        for (let i = 0; i < this.transactions.length; i++) {
+            if (this.transactions[i].id !== transaction.id) { continue; }
+            if (!this.#isTransactionsUsingTheSameInput(this.transactions[i], transaction)) { continue; }
+
+            if (!replaceExistingTxID) { throw new Error('Conflicting UTXOs'); }
+
+            txInclusionFunction = this.#getReplacementFunction(i, transaction, replaceExistingTxID);
+        }
+
         const isCoinBase = false;
 
         // First control format of : amount, address, script, version, TxID
@@ -669,38 +847,38 @@ class MemPool {
         await Validation.controlTransactionHash(transaction);
 
         // Fourth validation: medium computation cost.
-        await Validation.executeTransactionInputsScripts(transaction);
+        await Validation.executeTransactionInputsScripts(referencedUTXOs, transaction);
 
         // Fifth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(transaction);
+        await Validation.addressOwnershipConfirmation(referencedUTXOs, transaction);
 
-        // Time passed we need to recheck before pushing the transaction
-        if (this.transactions.map(tx => tx.id).includes(transaction.id)) { throw new Error('Transaction already in mempool'); }
-
-        this.transactions.push(transaction);
+        txInclusionFunction();
         console.log(`Transaction pushed in mempool in ${Date.now() - startTime}ms`);
     }
 }
 class HotData { // Used to store, addresses's UTXOs and balance.
     constructor() {
-        /** @type {Object<string, UTXO[]>} */
+        /** @type {Object<string, TransactionIO[]>} */
         this.addressUTXOs = {};
         /** @type {Object<string, number>} */
         this.addressBalances = {};
+        /** @type {Object<string, TransactionIO>} */
+        this.referencedUTXOs = {};
     }
 
-    /** @param {Block[]} chain */
+    /** @param {BlockData[]} chain */
     digestChain(chain) {
         for (let i = 0; i < chain.length; i++) {
-            //console.log(`Digesting block ${i}`);
-            const Txs = chain[i].Txs;
-            this.digestBlockTransactions(Txs, false);
+            const blockData = chain[i];
+            //const Txs = blockData.Txs;
+            //this.digestBlockTransactions(blockData.index, Txs);
+            this.digestBlock(blockData);
         }
     }
     /** @param {BlockData} blockData */
     digestBlock(blockData) {
         const Txs = blockData.Txs;
-        this.digestBlockTransactions(Txs);
+        this.digestBlockTransactions(blockData.index, Txs);
 
         const supplyFromBlock = blockData.supply;
         const coinBase = blockData.coinBase;
@@ -719,22 +897,19 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         const addresses = Object.keys(this.addressBalances);
         return addresses.reduce((a, b) => a + this.addressBalances[b], 0);
     }
-    /** @param {Transaction[]} Txs */
-    digestBlockTransactions(Txs, logs = true) {
+    /**
+     * @param {number} blockIndex
+     * @param {Transaction[]} Txs
+     */
+    digestBlockTransactions(blockIndex, Txs) {
         if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
+        //console.log(`Digesting block ${blockIndex} with ${Txs.length} transactions`);
 
         for (let i = 0; i < Txs.length; i++) {
             const transaction = Txs[i];
-            this.#digestTransactionInputs(transaction, i);
-            this.#digestTransactionOutputs(transaction);
+            this.#digestTransactionInputs(transaction, i); // Reverse function's call ?
+            this.#digestTransactionOutputs(blockIndex, transaction);
         }
-
-        if (!logs) { return }; //Debug  log only :
-
-        const address = Txs[0].outputs[0].address;
-        const remainingUTXOs = this.addressUTXOs[address] ? this.addressUTXOs[address].length : 0;
-        const balance = this.addressBalances[address] ? this.addressBalances[address] : 0;
-        console.log(`remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, '.')} ] ${remainingUTXOs} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
     }
     /**
      * Will add or remove the amount from the address balance
@@ -754,17 +929,28 @@ class HotData { // Used to store, addresses's UTXOs and balance.
      * @param {number} TxIndexInTheBlock
      */
     #digestTransactionInputs(transaction, TxIndexInTheBlock) {
-        if ( Transaction_Builder.isCoinBaseTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
+        if ( Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
         for (let i = 0; i < TxInputs.length; i++) {
             
             TxIO_Builder.checkMissingTxID(TxInputs);
             
-            const { address, amount } = TxInputs[i];
-            this.#changeBalance(address, -amount);
+            const usedUTXO = this.#getCorrespondingUTXO(TxInputs[i]);
+            const { address, amount } = usedUTXO;
             this.#removeUTXO(address, TxInputs[i]);
+            this.#changeBalance(address, -amount);
         }
+
+        return true;
+    }
+    /** @param {TransactionIO} inputUtxo */
+    #getCorrespondingUTXO(inputUtxo) {
+        const reference = `${inputUtxo.blockIndex}:${inputUtxo.TxID}`;
+        if (this.referencedUTXOs[reference] === undefined) {
+            throw new Error('Fatal error : UTXO used in input not found in HotData!'); }
+
+        return this.referencedUTXOs[reference];
     }
     /**
      * @param {string} address
@@ -773,35 +959,59 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     #removeUTXO(address, utxo) {
         if (this.addressUTXOs[address] === undefined) { throw new Error(`${address} has no UTXOs`); }
 
-        const index = this.addressUTXOs[address].findIndex(utxoInArray => utxoInArray.TxID === utxo.TxID);
-        if (index === -1) { 
+        const addressUtxoIndex = this.addressUTXOs[address].findIndex(utxoInArray =>
+            utxoInArray.TxID === utxo.TxID && utxoInArray.blockIndex === utxo.blockIndex);
+        if (addressUtxoIndex === -1) { 
             throw new Error(`${address} isn't owning UTXO: ${utxo.TxID}`); }
 
-        this.addressUTXOs[address].splice(index, 1);
+        if (this.referencedUTXOs[`${utxo.blockIndex}:${utxo.TxID}`] === undefined) { throw new Error('UTXO not found in referencedUTXOs'); }
+
+        this.addressUTXOs[address].splice(addressUtxoIndex, 1);
         if (this.addressUTXOs[address].length === 0) { delete this.addressUTXOs[address]; }
+        delete this.referencedUTXOs[`${utxo.blockIndex}:${utxo.TxID}`];
     }
-    /** @param {Transaction} transaction */
-    #digestTransactionOutputs(transaction) {
+    /**
+     * @param {number} blockIndex
+     * @param {Transaction} transaction
+     */
+    #digestTransactionOutputs(blockIndex, transaction) {
         const TxID = transaction.id;
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
+            // UXTO would be used as input, then we add TxID and blockIndex
             TxOutputs[i].TxID = TxID;
+            TxOutputs[i].blockIndex = blockIndex;
+            const reference = `${blockIndex}:${TxID}`;
+            const clonedOutput = TxIO_Builder.cloneTxIO(TxOutputs[i]);
+            this.referencedUTXOs[reference] = clonedOutput;
             
             const { address, amount } = TxOutputs[i];
-            this.#changeBalance(address, amount);
+            if (amount === 0) { continue; } // no need to add UTXO with 0 amount
+            delete TxOutputs[i].address; // not included in UTXO input
 
             if (this.addressUTXOs[address] === undefined) { this.addressUTXOs[address] = []; }
             this.addressUTXOs[address].push(TxOutputs[i]);
+            this.#changeBalance(address, amount);
         }
     }
     /** @param {string} address */
-    getUTXOsJSON(address) {
-        const UTXOs = this.addressUTXOs[address] ? this.addressUTXOs[address] : [];
-        return JSON.stringify(UTXOs);
+    getBalanceAndUTXOs(address) {
+        // clone values to avoid modification
+        const balance = this.addressBalances[address] ? JSON.parse(JSON.stringify(this.addressBalances[address])) : 0;
+        const UTXOs = [];
+        if (this.addressUTXOs[address]) {
+            for (let i = 0; i < this.addressUTXOs[address].length; i++) {
+                UTXOs.push(TxIO_Builder.cloneTxIO(this.addressUTXOs[address][i]));
+            }
+        }
+        return { balance, UTXOs };
     }
 }
 export class FullNode {
-    constructor(chain) {
+    /** @param {Account} validatorAccount */
+    constructor(validatorAccount, chain) {
+        /** @type {Account} */
+        this.validatorAccount = validatorAccount;
         /** @type {BlockData[]} */
         this.chain = chain || [];
         /** @type {BlockData} */
@@ -810,11 +1020,16 @@ export class FullNode {
         this.memPool = new MemPool();
         this.hotData = new HotData();
     }
-
-    static load(saveBlocksInfo = true) {
+    /** @param {Account} validatorAccount */
+    static async load(validatorAccount, saveBlocksInfo = true) {
         const chain = storage.loadBlockchainLocally('bin');
-        const node = new FullNode(chain);
+        const controlChain = storage.loadBlockchainLocally('json');
+        FullNode.controlChainIntegrity(chain, controlChain);
+
+        const node = new FullNode(validatorAccount, chain);
         node.hotData.digestChain(chain);
+        // TODO: mempool digest mempool from other validator node
+        node.memPool.stackLoop(20);
 
         if (saveBlocksInfo) { // basic informations .csv
             const blocksInfo = node.#getBlocksMiningInfo();
@@ -823,42 +1038,72 @@ export class FullNode {
 
         // TODO: Get the Txs from the mempool and add them
         // TODO: Verify the Txs
-        const Txs = node.memPool.getMostLucrativeTransactions();
-        node.blockCandidate = node.#createBlockCandidate(Txs);
+
+        const lastBlockData = chain[chain.length - 1] ? chain[chain.length - 1] : undefined;
+        node.blockCandidate = await node.#createBlockCandidate(lastBlockData);
 
         return node;
     }
     /**
-     * @param {string} nonceHex
-     * @param {number} hashTime
-     * @param {Transaction} coinbaseTxSigned
+     * @param {BlockData[]} chain
+     * @param {BlockData[]} controlChain
      */
-    async blockProposal(nonceHex = '',  hashTime = 0, coinbaseTxSigned = undefined) {
-        if (typeof nonceHex !== 'string') { throw new Error('Invalid nonceHex'); }
-        if (typeof hashTime !== 'number') { throw new Error('Invalid hashTime'); }
-        if (nonceHex.length < utils.mining.minNonceHexLength) { throw new Error('Invalid nonce length'); } 
-
-        const blockCandidate = Block.cloneBlockData(this.blockCandidate);
-        blockCandidate.timestamp = hashTime;
-        blockCandidate.nonce = nonceHex;
-        Block.setCoinbaseTransaction(blockCandidate, coinbaseTxSigned);
-
-        const { hex, bitsArrayAsString } = await Block.calculateHash(blockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate.difficulty);
-
-        blockCandidate.hash = hex;
+    static controlChainIntegrity(chain, controlChain) {
+        // Control the chain integrity
+        for (let i = 0; i < controlChain.length; i++) {
+            const controlBlock = controlChain[i];
+            const block = chain[i];
+            FullNode.controlObjectEqualValues(controlBlock, block);
+        }
+    }
+    /**
+     * @param {object} object1
+     * @param {object} object2
+     */
+    static controlObjectEqualValues(object1, object2) {
+        for (const key in object1) {
+            const value1 = object1[key];
+            const value2 = object2[key];
+            if (typeof value1 === 'object') {
+                FullNode.controlObjectEqualValues(value1, value2);
+            } else if (value1 !== value2) {
+                throw new Error(`Control failed - key: ${key}`);
+            }
+        }
+    }
+    
+    /** @param {BlockData} minerBlockCandidate */
+    async blockProposal(minerBlockCandidate) {
+        if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
         
-        if (this.chain.length < 20) { storage.saveBlockDataLocally(blockCandidate, 'json'); }
-        const saveResult = storage.saveBlockDataLocally(blockCandidate, 'bin');
+        //TODO : VALIDATE THE BLOCK
+        // TODO verify if coinBase Tx release the correct amount of coins
+        const { hex, bitsArrayAsString } = await Block.calculateHash(minerBlockCandidate);
+        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate.difficulty);
+
+        if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
+        
+        const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
+        if (this.chain.length < 20) { storage.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
+        const saveResult = storage.saveBlockDataLocally(blockDataCloneToSave, 'bin');
         if (!saveResult.success) { throw new Error(saveResult.message); }
 
-        //TODO : VALIDATE THE BLOCK BEFORE PUSHING IT !!
-        this.chain.push(blockCandidate);
-        this.hotData.digestBlock(blockCandidate);
-        this.memPool.digestBlockTransactions(blockCandidate.Txs);
-        
-        const TransactionsToInclude = this.memPool.getMostLucrativeTransactions(1000);
-        const newBlockCandidate = this.#createBlockCandidate(TransactionsToInclude);
+        const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
+        this.chain.push(blockDataCloneToDigest);
+        this.hotData.digestBlock(blockDataCloneToDigest);
+
+        await this.memPool.pauseStackAndAwaitPaused();
+        this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
+        this.memPool.resumeStackLoop();
+
+        // simple log for debug ----------------------
+        const powMinerTx = minerBlockCandidate.Txs[0];
+        const address = powMinerTx.outputs[0].address;
+        const { balance, UTXOs } = this.hotData.getBalanceAndUTXOs(address);
+        console.log(`remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        // -------------------------------------------
+
+        const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate);
         this.blockCandidate = newBlockCandidate; // Can be sent to the network
 
         return true;
@@ -866,32 +1111,34 @@ export class FullNode {
     /** @param {Transaction} signedTxJSON */
     async addTransactionJSONToMemPool(signedTxJSON) {
         if (!signedTxJSON) { throw new Error('Invalid transaction'); }
-        try {
-            const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-            await this.memPool.pushTransaction(signedTansaction);
-        } catch (error) {
-            console.info(`[ Tx_Refused }----------{ ${error.message} ]`);
-        }
+        const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
+        this.memPool.addFunctionToStack(async () => {
+            await this.memPool.pushTransaction(this.hotData.referencedUTXOs, signedTansaction);
+        });
     }
 
     // TODO: Fork management
-
     // Private methods
-    /** @param {Transaction[]} Txs */
-    #createBlockCandidate(Txs = []) {
-        if (this.chain.length === 0) {
-            const coinbaseReward = utils.blockchainSettings.blockReward;
-            const prevHash = 'ContrastGenesisBlock';
-            return BlockData(0, 0, coinbaseReward, 1, prevHash, Txs);
+    /** @param {BlockData | undefined} lastBlockData */
+    async #createBlockCandidate(lastBlockData) {
+        const Txs = this.memPool.getMostLucrativeTransactions(1000);
+
+        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 'ContrastGenesisBlock', Txs);
+        if (lastBlockData) {
+            const newDifficulty = utils.mining.difficultyAdjustment(this.chain);
+            const lastBlockData = this.chain[this.chain.length - 1];
+            const clone = Block.cloneBlockData(lastBlockData);
+            const supply = clone.supply + clone.coinBase;
+            const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
+            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, clone.hash, Txs);
         }
 
-        const newDifficulty = utils.mining.difficultyAdjustment(this.chain);
-        const lastBlockData = this.chain[this.chain.length - 1];
-        const clone = Block.cloneBlockData(lastBlockData);
-        const supply = clone.supply + clone.coinBase;
-        const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
+        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.validatorAccount.address);
+        posFeeTx.id = await Transaction_Builder.hashTxToGetID(posFeeTx);
+        const signedPosFeeTx = await this.validatorAccount.signAndReturnTransaction(posFeeTx);
+        blockCandidate.Txs.unshift(signedPosFeeTx);
 
-        return BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, clone.hash, Txs);
+        return blockCandidate;
     }
     #getBlocksMiningInfo() {
         const blocksInfo = [];
@@ -924,15 +1171,15 @@ export class Miner {
 
     /** @param {BlockData} blockCandidate */
     async minePow(blockCandidate) {
-        const nonce = utils.mining.generateRandomNonce();
+        const headerNonce = utils.mining.generateRandomNonce();
+        const coinbaseNonce = utils.mining.generateRandomNonce();
         const minerAddress = this.minerAccount.address;
 
-        const blockFees = Block.calculateBlockTotalFees(blockCandidate);
-        const coinbaseTx = Transaction_Builder.createCoinbaseTransaction(nonce.Hex, minerAddress, blockCandidate.coinBase + blockFees);
+        const coinbaseTx = Transaction_Builder.createCoinbaseTransaction(coinbaseNonce.Hex, minerAddress, blockCandidate.coinBase);
         coinbaseTx.id = await Transaction_Builder.hashTxToGetID(coinbaseTx);
 
         blockCandidate.timestamp = Date.now();
-        blockCandidate.nonce = nonce.Hex;
+        blockCandidate.nonce = headerNonce.Hex;
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
         const { hex, bitsArrayAsString } = await Block.calculateHash(blockCandidate);
@@ -941,6 +1188,6 @@ export class Miner {
         blockCandidate.hash = hex;
         console.log(`POW -> [index:${blockCandidate.index}] | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
 
-        return { validBlockCandidate: blockCandidate, nonceHex: blockCandidate.nonce, hashTime: blockCandidate.timestamp, coinbaseTx };
+        return { validBlockCandidate: blockCandidate};
     }
 }

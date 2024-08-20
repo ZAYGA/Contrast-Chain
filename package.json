@@ -2,7 +2,7 @@
   "name": "contrast-chain",
   "version": "1.0.0",
   "description": "The ultra lightweight L1.",
-  "main": "test-NodeJS-FrontES6.mjs",
+  "main": "",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
