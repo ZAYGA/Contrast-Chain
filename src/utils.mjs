@@ -1,14 +1,13 @@
 'use strict';
 
-import ed25519 from './noble-ed25519-03-2024.mjs';
-import Compressor from './gzip.min.js';
-import Decompressor from './gunzip.min.js';
-import msgpack from './msgpack.min.js';
+import ed25519 from './externalLibs/noble-ed25519-03-2024.mjs';
+import Compressor from './externalLibs/gzip.min.js';
+import Decompressor from './externalLibs/gunzip.min.js';
+import msgpack from './externalLibs/msgpack.min.js';
 /**
-* @typedef {import("./classes.mjs").Block} Block
-* @typedef {import("./classes.mjs").BlockData} BlockData
-* @typedef {import("./classes.mjs").AddressTypeInfo} AddressTypeInfo
-* @typedef {import("./classes.mjs").Transaction} Transaction
+* @typedef {import("./Block.mjs").Block} Block
+* @typedef {import("./Block.mjs").BlockData} BlockData
+* @typedef {import("./Transaction.mjs").Transaction} Transaction
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
 */
 
@@ -28,7 +27,7 @@ async function getArgon2Lib() {
         a.limits.timeCost.min = 1; // ByPass the minimum time cost
         return a;
     } else {
-        const argon2Import = await import('./argon2-ES6.min.mjs');
+        const argon2Import = await import('./externalLibs/argon2-ES6.min.mjs');
         const a = argon2Import.default;
         window.argon2 = a;
         return a;
@@ -48,6 +47,8 @@ const blockchainSettings = {
     maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
     minTransactionFeePerByte: 1,
+    //maxBlockSize: 1_000_000, // 1MB
+    maxBlockSize: 200_000, // 200KB
 };
 /*const blockchainSettings = { // Not used ATM
     targetBlockTime: 600_000, // 10 min
@@ -62,6 +63,12 @@ const blockchainSettings = {
 };
 };*/
 
+class AddressTypeInfo {
+    name = '';
+    description = '';
+    zeroBits = 0;
+    nbOfSigners = 1;
+}
 const addressUtils = {
     params: {
         argon2DerivationMemory: 2**16, // 2**16 should be great
@@ -544,7 +551,7 @@ const compression = {
             blockData.prevHash = utils.typeValidation.hex(blockData.prevHash) ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
             blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
             blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
-
+            
             for (let i = 0; i < blockData.Txs.length; i++) {
                 const tx = blockData.Txs[i];
                 tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
@@ -561,7 +568,7 @@ const compression = {
                     }
 
                     for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
-                    tx.inputs[j].TxID = utils.convert.hex.toUint8Array(input.TxID); // safe type: hex
+                    tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
                 };
                 for (let j = 0; j < tx.outputs.length; j++) {
                     const output = tx.outputs[j];
@@ -598,7 +605,7 @@ const compression = {
                         tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                         continue;
                     }
-                    tx.inputs[j].TxID = utils.convert.uint8Array.toHex(input.TxID); // safe type: uint8 -> hex
+                    tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
                 };
             };
 

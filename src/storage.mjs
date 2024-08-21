@@ -1,6 +1,6 @@
 'use strict';
 
-import { BlockData, Block } from "./classes.mjs";
+import { BlockData, Block } from "./index.mjs";
 import etc from './etc.mjs';
 import utils from './utils.mjs';
 
