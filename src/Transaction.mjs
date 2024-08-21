@@ -89,6 +89,7 @@ export class Transaction_Builder {
             throw new Error('Invalid fee: not integer'); }
         if (fee < 0) {
             throw new Error('Negative fee'); }
+            
 
         const change = remainingAmount - fee;
         if (change <= 0) {
@@ -108,15 +109,15 @@ export class Transaction_Builder {
         const outputsClone = TxIO_Builder.cloneTxIO(outputs);
         outputsClone.push(changeOutput);
         
-        const transaction = Transaction(UTXOs, outputsClone);
+        const transaction = Transaction(UTXOs, outputsClone, '0360bb18', ["6a6e432aaba4c7f241f9dcc9ea1c7df94e2533b53974182b86d3acd83029667cc940ce6eea166c97953789d169af562a54d6c96028a5ca7dba95047a15bfd20c:846a6a7c422c4b9a7e8600d3a14750c736b6ee6e7905a245eaa6c2c63ff93a5b"]);
         
         return Transaction_Builder.getWeightOfTransaction(transaction);
     }
     static getWeightOfTransaction(transaction) {
-        const transactionJSON = JSON.stringify(transaction);
-        const TransactionBinary = utils.convert.string.toUint8Array(transactionJSON);
-        const transactionWeight = TransactionBinary.byteLength;
-
+        const clone = Transaction_Builder.cloneTransaction(transaction);
+        const compressedTx = utils.compression.transaction.toBinary_v1(clone);
+        const transactionWeight = compressedTx.byteLength;
+        console.log(`[TRANSACTION] weight: ${transactionWeight} bytes`);
         return transactionWeight;
     }
     /**

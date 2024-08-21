@@ -288,7 +288,7 @@ class MemPool {
         await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
 
         txInclusionFunction();
-        console.log(`Transaction pushed in mempool in ${Date.now() - startTime}ms`);
+        console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
     }
 }
 

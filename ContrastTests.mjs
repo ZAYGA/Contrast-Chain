@@ -7,7 +7,7 @@ import contrast from './src/contrast.mjs';
 */
 
 const testParams = {
-    nbOfAccounts: 10,
+    nbOfAccounts: 100,
     addressType: 'W',
     testTxEachNbBlock: 10
 }
@@ -51,8 +51,12 @@ async function account1SendToAllOthers(node, accounts) {
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
-        console.log(`SEND: ${senderAccount.address} -> ${transfers.length} users`);
-        console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        console.log(`SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
+        console.log(`Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        const fee = JSON.parse(signedTxJSON)
+        if (fee <= 0) {
+            console.log('Transaction fee is invalid.');};
+            
         node.addTransactionJSONToMemPool(signedTxJSON);
     } else {
         console.log(error);

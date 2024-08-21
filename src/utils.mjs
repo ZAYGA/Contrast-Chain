@@ -545,6 +545,55 @@ const conditionnals = {
 };
 
 const compression = {
+    prepareTransaction: {
+        /** @param {Transaction} tx */
+        toBinary_v1(tx) {
+            tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
+            for (let i = 0; i < tx.witnesses.length; i++) {
+                const signature = tx.witnesses[i].split(':')[0];
+                const publicKey = tx.witnesses[i].split(':')[1];
+                tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
+            }
+            for (let j = 0; j < tx.inputs.length; j++) {
+                const input = tx.inputs[j];
+                if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
+                    tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
+                    continue;
+                }
+
+                for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
+                tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
+            };
+            for (let j = 0; j < tx.outputs.length; j++) {
+                const output = tx.outputs[j];
+                for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
+            };
+            
+            return tx;
+        },
+        /** @param {Transaction} decodedTx */
+        fromBinary_v1(decodedTx) {
+            const tx = decodedTx;
+            tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
+            for (let i = 0; i < tx.witnesses.length; i++) {
+                const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
+                const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
+                tx.witnesses[i] = `${signature}:${publicKey}`;
+            }
+            for (let j = 0; j < tx.inputs.length; j++) {
+                const input = tx.inputs[j];
+                if (typeof input === 'string') {
+                    continue; }
+                if (utils.typeValidation.uint8Array(input)) {
+                    tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
+                    continue;
+                }
+                tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
+            };
+
+            return tx;
+        }
+    },
     blockData: {
         /** @param {BlockData} blockData */
         toBinary_v1(blockData) {
@@ -553,27 +602,7 @@ const compression = {
             blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
             
             for (let i = 0; i < blockData.Txs.length; i++) {
-                const tx = blockData.Txs[i];
-                tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
-                for (let i = 0; i < tx.witnesses.length; i++) {
-                    const signature = tx.witnesses[i].split(':')[0];
-                    const publicKey = tx.witnesses[i].split(':')[1];
-                    tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
-                }
-                for (let j = 0; j < tx.inputs.length; j++) {
-                    const input = tx.inputs[j];
-                    if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
-                        tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
-                        continue;
-                    }
-
-                    for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
-                    tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
-                };
-                for (let j = 0; j < tx.outputs.length; j++) {
-                    const output = tx.outputs[j];
-                    for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
-                };
+                blockData.Txs[i] = compression.prepareTransaction.toBinary_v1(blockData.Txs[i]);
             };
             
             const encoded = msgpack.encode(blockData);
@@ -590,28 +619,21 @@ const compression = {
             decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
         
             for (let i = 0; i < decoded.Txs.length; i++) {
-                const tx = decoded.Txs[i];
-                tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
-                for (let i = 0; i < tx.witnesses.length; i++) {
-                    const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
-                    const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
-                    tx.witnesses[i] = `${signature}:${publicKey}`;
-                }
-                for (let j = 0; j < tx.inputs.length; j++) {
-                    const input = tx.inputs[j];
-                    if (typeof input === 'string') {
-                        continue; }
-                    if (utils.typeValidation.uint8Array(input)) {
-                        tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
-                        continue;
-                    }
-                    tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
-                };
+                decoded.Txs[i] = compression.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
             };
 
             /** @type {BlockData} */
             const blockData = decoded;
             return blockData;
+        }
+    },
+    transaction: {
+        /** @param {Transaction} tx */
+        toBinary_v1(tx) {
+            tx = compression.prepareTransaction.toBinary_v1(tx);
+
+            const encoded = msgpack.encode(tx);
+            return new Compressor.Zlib.Gzip(encoded).compress();
         }
     }
 };
