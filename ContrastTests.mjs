@@ -101,7 +101,7 @@ async function nodeSpecificTest(accounts) {
             const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(minerAccount, amountToSend, receiverAccount.address);
             if (signedTxJSON) {
                 console.log(`SEND: ${minerAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
-                console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id.slice(0, 12)}... to mempool.`);
+                console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
                 node.addTransactionJSONToMemPool(signedTxJSON);
             } else {
                 console.log(error);
