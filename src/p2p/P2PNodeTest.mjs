@@ -2,6 +2,7 @@ import P2PNode from './P2PNode.mjs';
 import { MockFullNode } from './MockFullNode.mjs';
 import assert from 'assert';
 import { EventEmitter } from 'events';
+import { Transaction_Builder } from '../index.mjs';
 
 export class P2PNodeTest extends EventEmitter {
     constructor() {
@@ -96,7 +97,7 @@ export class P2PNodeTest extends EventEmitter {
 
     async testTransactionPropagation() {
         console.log("=== Running transaction propagation test ===");
-        const newTransaction = { id: 'tx1', data: 'test transaction' };
+        const newTransaction = Transaction_Builder.createTransaction('tx1', 'testAddress123', 100);
         
         const realPeerId = this.nodes[0].peerManager.peers.keys().next().value;
         if (!realPeerId) {
@@ -238,9 +239,9 @@ export class P2PNodeTest extends EventEmitter {
         try {
             //await this.setup();
 
-            // await this.testPeerDiscovery();
-            // await this.testBlockPropagation();
-            // await this.testTransactionPropagation();
+            //await this.testPeerDiscovery();
+            //await this.testBlockPropagation();
+            //await this.testTransactionPropagation();
             await this.testConsensusProcess();
             // await this.testPeerBanning();
             // await this.testIntegrity();       
@@ -267,7 +268,7 @@ export class P2PNodeTest extends EventEmitter {
             console.log("=== Test environment cleaned up ===");
         }
     }
-    
+
     async testConsensusProcess(numValidators = 4, numMiners = 5) {
         console.log("=== Running consensus process test with multiple validators and miners ===");
 

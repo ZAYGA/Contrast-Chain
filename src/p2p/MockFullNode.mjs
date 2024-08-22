@@ -1,4 +1,11 @@
+import { Block, BlockData } from '../Block.mjs';
+import { Transaction, Transaction_Builder } from '../Transaction.mjs';
+import { FullNode } from '../Node.mjs';
+import { Miner } from '../Miner.mjs';
+import { Account } from '../Account.mjs';
+import utils from '../utils.mjs';
 import crypto from 'crypto';
+import {Validation} from '../Validation.mjs';
 
 export class MockFullNode {
     constructor(role) {
@@ -7,47 +14,66 @@ export class MockFullNode {
         this.role = role;
         this.pendingBlocks = new Map();
         this.difficulty = 4; // Proof-of-work difficulty (number of leading zeros)
-        this.validatorAccount = { address: crypto.randomBytes(20).toString('hex') };
+        
+        // Create a proper Account instance
+        const privateKey = crypto.randomBytes(32).toString('hex');
+        const publicKey = crypto.randomBytes(32).toString('hex');
+        const address = this.generateMockAddress();
+        this.validatorAccount = new Account(publicKey, privateKey, address);
+        
+        this.miner = new Miner(this.validatorAccount);
+    }
+
+    // Generate a mock address that conforms to the expected format
+    generateMockAddress() {
+        const addressChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let address = 'C'; // Start with 'C' to match the expected format
+        for (let i = 0; i < 19; i++) {
+            address += addressChars[Math.floor(Math.random() * addressChars.length)];
+        }
+        return address;
     }
 
     // Generate a block candidate with current mempool transactions
     async createBlockCandidate() {
-
-        this.blockCandidate = {
-            index: this.chain.length,
-            prevHash: this.getLastBlock().hash,
-            transactions: Array.from(this.mempool.values()),
-            timestamp: Date.now(),
-        };
+        const lastBlock = this.getLastBlock();
+        const newIndex = lastBlock.index + 1;
+        const newSupply = lastBlock.supply + lastBlock.coinBase;
+        const coinBase = Block.calculateNextCoinbaseReward(lastBlock);
+        const difficulty = utils.mining.difficultyAdjustment(this.chain);
+        
+        const transactions = Array.from(this.mempool.values());
+        
+        this.blockCandidate = BlockData(
+            newIndex,
+            newSupply,
+            coinBase,
+            difficulty,
+            lastBlock.hash,
+            transactions,
+            Date.now()
+        );
+        
+        console.log(`Created block candidate with difficulty: ${difficulty}`);
         return this.blockCandidate;
     }
+
     // Simulate mining by performing proof-of-work
     async mineBlock(blockCandidate) {
         if (this.role !== 'Miner') {
             throw new Error('Only Miner nodes can mine blocks');
         }
-
-        console.log(`Mining block ${blockCandidate.index}...`);
-
-        // Proof-of-work simulation
-        let nonce = 0;
-        let hash = '';
-        const target = '0'.repeat(this.difficulty);
-
-        // Loop until we find a hash that meets the difficulty requirement
-        while (!hash.startsWith(target)) {
-            nonce++;
-            hash = this.calculateHash(blockCandidate, nonce);
+    
+        console.log(`Mining block ${blockCandidate.index} with difficulty ${blockCandidate.difficulty}...`);
+    
+        try {
+            const { validBlockCandidate } = await this.miner.minePow(blockCandidate);
+            console.log(`Block mined! Index: ${validBlockCandidate.index}, Hash: ${validBlockCandidate.hash}`);
+            return validBlockCandidate;
+        } catch (error) {
+            console.error('Error mining block:', error);
+            throw error;
         }
-
-        console.warn(`Block mined! Index: ${blockCandidate.index}, Nonce: ${nonce}, Hash: ${hash}`);
-
-        return { ...blockCandidate, nonce, hash };
-    }
-    // Calculate the hash for a block candidate and nonce
-    calculateHash(blockCandidate, nonce) {
-        const data = `${blockCandidate.index}${blockCandidate.prevHash}${JSON.stringify(blockCandidate.transactions)}${blockCandidate.timestamp}${nonce}`;
-        return crypto.createHash('sha256').update(data).digest('hex');
     }
 
     // Validate a mined block
@@ -55,26 +81,24 @@ export class MockFullNode {
         if (this.role !== 'Validator') {
             throw new Error('Only Validator nodes can validate mined blocks');
         }
-
+    
         if (this.hasBlock(minedBlock.hash)) {
-            console.warn(`Block ${minedBlock.index} already in chain, ignoring`);
+            console.warn(`Block ${minedBlock.index} already exists. Ignoring.`);
             return false;
         }
-
+    
         console.log(`Validating mined block ${minedBlock.index}...`);
-
-        // Check if the block meets proof-of-work requirements
-        if (!this.isValidBlock(minedBlock)) {
+    
+        if (!await this.isValidBlock(minedBlock)) {
             console.warn(`Block ${minedBlock.index} is invalid`);
             return false;
         }
-
-        // Add block to the chain if valid
+    
         this.chain.push(minedBlock);
-        console.warn(`Block ${minedBlock.index} added to chain by ${this.role} with id ${this.id}`);
+        console.log(`Block ${minedBlock.index} added to chain by ${this.role} with id ${this.id}`);
         return true;
     }
-    
+
     async verifyIfLastBlockAndAddToChain(blockData) {
         console.log(`Proposing block ${blockData.index} to MockFullNode`);
 
@@ -106,21 +130,26 @@ export class MockFullNode {
         console.log(`Block ${blockData.index} added to chain in ${this.role}. New chain length: ${this.chain.length}`);
         return true;
     }
-    // Check if a block is valid
-    isValidBlock(block) {
 
+    // Check if a block is valid
+    async isValidBlock(block) {
         if (block.index === 0) {
             return true; // Genesis block is always valid
         }
-        const target = '0'.repeat(this.difficulty);
-        const hash = this.calculateHash(block, block.nonce);
-
-        // Ensure block index and previous hash are correct
-        const isCorrectIndex = block.index === this.chain.length;
-        const isCorrectPrevHash = block.prevHash === this.getLastBlock().hash;
-        const meetsDifficulty = hash.startsWith(target);
-
-        return isCorrectIndex && isCorrectPrevHash && meetsDifficulty;
+    
+        const lastBlock = this.getLastBlock();
+        const isCorrectIndex = block.index === lastBlock.index + 1;
+        const isCorrectPrevHash = block.prevHash === lastBlock.hash;
+    
+        const { bitsArrayAsString } = await Block.calculateHash(block);
+        try {
+            utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, block.difficulty);
+        } catch (error) {
+            console.warn(`Block ${block.index} does not meet difficulty requirements`);
+            return false;
+        }
+    
+        return isCorrectIndex && isCorrectPrevHash;
     }
 
     // Check if a block with a given hash exists in the chain
@@ -152,17 +181,15 @@ export class MockFullNode {
     // Add a transaction to the mempool (after basic validation)
     async addTransactionJSONToMemPool(transactionJSON) {
         try {
-            const transaction = JSON.parse(transactionJSON);
-
             // Basic validation (e.g., check for unique transaction ID)
-            if (!transaction.id || this.hasTransaction(transaction.id)) {
+            if (!transactionJSON.id || this.hasTransaction(transactionJSON.id)) {
                 console.log("Transaction is invalid or already exists in the mempool");
                 return false;
             }
-
+            Validation.isConformTransaction(transactionJSON, false);
             // Add transaction to mempool
-            this.mempool.set(transaction.id, transaction);
-            console.log(`Transaction ${transaction.id} added to mempool`);
+            this.mempool.set(transactionJSON.id, transactionJSON);
+            console.log(`Transaction ${transactionJSON.id} added to mempool`);
             return true;
         } catch (error) {
             console.error("Failed to add transaction to mempool:", error);
@@ -216,7 +243,6 @@ export class MockFullNode {
     checkBlock(block) {
         return true;
     }
-
 }
 
 export default MockFullNode;

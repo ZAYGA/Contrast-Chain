@@ -71,9 +71,11 @@ export class Block {
     /** @param {BlockData} blockData */
     static async calculateHash(blockData) {
         const blockSignatureHex = Block.getBlockStringToHash(blockData);
-        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, blockSignatureHex, blockData.nonce);
+        const salt = blockData.nonce || crypto.randomBytes(16).toString('hex'); // Ensure salt is at least 16 bytes
+    
+        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, blockSignatureHex, salt);
         if (!newBlockHash) { throw new Error('Invalid block hash'); }
-
+        console.log(`Block hash: ${newBlockHash.hex}`);
         return { hex: newBlockHash.hex, bitsArrayAsString: newBlockHash.bitsArray.join('') };
     }
     /** @param {BlockData} blockData */

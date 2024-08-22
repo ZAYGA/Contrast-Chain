@@ -144,6 +144,7 @@ export class MessageHandler extends EventEmitter {
         const transaction = this.parseJSON(message.transaction);
 
         if (!this.fullNode.hasTransaction(transaction.id)) {
+            console.log(`Received new transaction ${transaction.id} from peer ${peerId}`);
             const success = await this.fullNode.addTransactionJSONToMemPool(transaction);
             if (success) {
                 this.broadcast({ type: 'TRANSACTION', transaction: message.transaction }, peerId);
@@ -243,19 +244,21 @@ export class MessageHandler extends EventEmitter {
     }
 
     async handleBlockCandidate(peerId, message) {
-        const peer = this.peerManager.getPeer(peerId);
         const blockCandidate = JSON.parse(message.blockCandidate);
-        const validatorId = message.validatorId;
-        const stake = message.stake;
-
-        if (peer.bestHeight < this.fullNode.getBlockchainHeight()) {
-            //console.warn(`Received block candidate from peer ${peerId}, but peer is behind in chain.`);
+        console.log(`Received block candidate with difficulty: ${blockCandidate.difficulty}`);
+    
+        if (typeof blockCandidate.difficulty !== 'number' || blockCandidate.difficulty <= 0) {
+            console.error(`Invalid difficulty in block candidate: ${blockCandidate.difficulty}`);
             return;
         }
-
+    
         if (this.fullNode.role === 'Miner') {
-            const minedBlock = await this.fullNode.mineBlock(blockCandidate);
-            this.broadcast({ type: 'MINED_BLOCK', minedBlock: JSON.stringify(minedBlock) });
+            try {
+                const minedBlock = await this.fullNode.mineBlock(blockCandidate);
+                this.broadcast({ type: 'MINED_BLOCK', minedBlock: JSON.stringify(minedBlock) });
+            } catch (error) {
+                console.error('Error mining block:', error);
+            }
         }
     }
 
