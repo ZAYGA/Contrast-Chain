@@ -75,34 +75,8 @@ export class MockFullNode {
         console.warn(`Block ${minedBlock.index} added to chain by ${this.role} with id ${this.id}`);
         return true;
     }
-    // Check if a block is valid
-    isValidBlock(block) {
-
-        if (block.index === 0) {
-            return true; // Genesis block is always valid
-        }
-        const target = '0'.repeat(this.difficulty);
-        const hash = this.calculateHash(block, block.nonce);
-
-        // Ensure block index and previous hash are correct
-        const isCorrectIndex = block.index === this.chain.length;
-        const isCorrectPrevHash = block.prevHash === this.getLastBlock().hash;
-        const meetsDifficulty = hash.startsWith(target);
-
-        return isCorrectIndex && isCorrectPrevHash && meetsDifficulty;
-    }
-
-    // Check if a block with a given hash exists in the chain
-    hasBlock(hash) {
-        return this.chain.some(block => block.hash === hash);
-    }
-
-    // Get the height of the blockchain (last block index)
-    getBlockchainHeight() {
-        return this.chain.length - 1;
-    }
-
-    async verifyLastBlock(blockData) {
+    
+    async verifyIfLastBlockAndAddToChain(blockData) {
         console.log(`Proposing block ${blockData.index} to MockFullNode`);
 
         // Check if the proposing peer is on the same or ahead in the chain
@@ -133,6 +107,33 @@ export class MockFullNode {
         console.log(`Block ${blockData.index} added to chain in ${this.role}. New chain length: ${this.chain.length}`);
         return true;
     }
+    // Check if a block is valid
+    isValidBlock(block) {
+
+        if (block.index === 0) {
+            return true; // Genesis block is always valid
+        }
+        const target = '0'.repeat(this.difficulty);
+        const hash = this.calculateHash(block, block.nonce);
+
+        // Ensure block index and previous hash are correct
+        const isCorrectIndex = block.index === this.chain.length;
+        const isCorrectPrevHash = block.prevHash === this.getLastBlock().hash;
+        const meetsDifficulty = hash.startsWith(target);
+
+        return isCorrectIndex && isCorrectPrevHash && meetsDifficulty;
+    }
+
+    // Check if a block with a given hash exists in the chain
+    hasBlock(hash) {
+        return this.chain.some(block => block.hash === hash);
+    }
+
+    // Get the height of the blockchain (last block index)
+    getBlockchainHeight() {
+        return this.chain.length - 1;
+    }
+
     // Process any pending blocks that couldn't be added initially
     processPendingBlocks() {
         let added = true;
@@ -216,7 +217,6 @@ export class MockFullNode {
     checkBlock(block) {
         return true;
     }
-
 
 }
 

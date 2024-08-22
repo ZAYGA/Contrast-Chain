@@ -27,6 +27,11 @@ class P2PNode extends EventEmitter {
         this.knownPeers = new Set(); 
         this.id = crypto.randomBytes(16).toString('hex');
     }
+
+    /**
+     * Starts the P2P node by initializing the network protocol, starting peer discovery,
+     * and connecting to seed nodes.
+     */
     async start() {
         await this.networkProtocol.start();
         await this.startPeerDiscovery();
@@ -117,17 +122,6 @@ class P2PNode extends EventEmitter {
         }
     }
 
-    async synchronizeWithPeers() {
-        console.log("Synchronizing blockchain height with peers...");
-        const peers = this.peerManager.getAllPeers();
-        
-        for (const peer of peers) {
-            this.networkProtocol.requestBlocks(peer.peerId, this.fullNode.getBlockchainHeight());
-        }
-        
-        
-    }
-
     async startValidatorProcess() {
         try {
             if (!await this.ensureNodeIsSynced()) {
@@ -173,13 +167,20 @@ class P2PNode extends EventEmitter {
         return true;
     }
 
+    async synchronizeWithPeers() {
+        console.log("Synchronizing blockchain height with peers...");
+        const peers = this.peerManager.getAllPeers();
+        
+        for (const peer of peers) {
+            this.networkProtocol.requestBlocks(peer.peerId, this.fullNode.getBlockchainHeight());
+        }
+        
+    }
     async getNetworkHeight() {
         const peerHeights = await Promise.all(
             this.peerManager.getAllPeers().map(peer => 
                 new Promise(resolve => {
                     this.networkProtocol.sendToPeer(peer.id, { type: 'GET_HEIGHT' });
-                    // Assume we have a way to receive the height response
-                    // This is a placeholder and needs to be implemented
                     setTimeout(() => resolve(peer.bestHeight), 2000);
                 })
             )
@@ -363,11 +364,14 @@ class P2PNode extends EventEmitter {
         }
     }
 
+    // UNUSED METHODS
+
     startBloomFilterMaintenance() {
         setInterval(() => {
             this.updateBloomFilter();
         }, 600000); // Update every 10 minutes
     }
+
     updateBloomFilter() {
         console.log('Updating Bloom filter...');
         // Recreate the Bloom filter
@@ -428,8 +432,6 @@ class P2PNode extends EventEmitter {
         this.peerManager.getAllPeers().forEach(peer => peer.disconnect('Node shutting down'));
         // Perform any other necessary cleanup
     }
-
-    // UNUSED METHODS
 
     initializeBloomFilter = () => {
         this.bloomFilter = new BloomFilter(10000, 1);

@@ -81,31 +81,6 @@ export class MessageHandler extends EventEmitter {
         this.p2pNode.handleHeightResponse(peerId, message.height);
     }
 
-    addHandler(type, handler) {
-        this.handlers.set(type, handler);
-    }
-
-
-
-    // Reusable Helper Methods
-
-    sendToPeer(peerId, message) {
-        this.networkProtocol.sendToPeer(peerId, message);
-    }
-
-    broadcast(message, excludePeerId = null) {
-        this.networkProtocol.broadcast(message, excludePeerId);
-    }
-
-    parseJSON(data, fallbackValue = {}) {
-        try {
-            return JSON.parse(data);
-        } catch (error) {
-            console.error("Failed to parse JSON:", error);
-            return fallbackValue;
-        }
-    }
-
     // Core Message Handlers
 
     async handleGetPeers(peerId) {
@@ -147,7 +122,7 @@ export class MessageHandler extends EventEmitter {
             return;
         }
 
-        const isValid = await this.fullNode.verifyLastBlock(blockData);
+        const isValid = await this.fullNode.verifyIfLastBlockAndAddToChain(blockData);
         if (isValid) {
             console.log(`Block ${blockData.index} added to chain.`);
             this.gossipBlock(blockData, peerId);
@@ -194,7 +169,7 @@ export class MessageHandler extends EventEmitter {
         if (this.fullNode.role !== 'Validator') return;
 
         if (this.blockValidationLock) {
-            console.log(`Block validation in progress, ignoring block ${message} from peer ${peerId}`);
+            //console.log(`Block validation in progress, ignoring block ${message} from peer ${peerId}`);
             return;
         }
 
@@ -383,6 +358,30 @@ export class MessageHandler extends EventEmitter {
                 size: bloomFilter._size
             }
         };
+    }
+
+    
+    // Reusable Helper Methods
+
+    sendToPeer(peerId, message) {
+        this.networkProtocol.sendToPeer(peerId, message);
+    }
+
+    broadcast(message, excludePeerId = null) {
+        this.networkProtocol.broadcast(message, excludePeerId);
+    }
+
+    parseJSON(data, fallbackValue = {}) {
+        try {
+            return JSON.parse(data);
+        } catch (error) {
+            console.error("Failed to parse JSON:", error);
+            return fallbackValue;
+        }
+    }
+
+    addHandler(type, handler) {
+        this.handlers.set(type, handler);
     }
 }
 

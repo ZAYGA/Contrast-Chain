@@ -157,90 +157,6 @@ export class P2PNodeTest extends EventEmitter {
     
         console.log("=== Peer banning test passed ===\n");
     }
-    async testBloomFilter() {
-        console.log("=== Running Bloom filter test ===");
-        const node = this.nodes[0];
-        const testAddress1 = "testAddress123";
-        const testAddress2 = "testAddress456";
-        const nonExistentAddress = "nonExistentAddress789";
-    
-        console.log("Setting up mock wallet with addresses");
-        node.fullNode.wallet = { getAllAddresses: () => [testAddress1, testAddress2] };
-    
-        console.log("Initializing and updating Bloom filter");
-        node.initializeBloomFilter();
-        node.updateBloomFilter();
-    
-        console.log("Testing Bloom filter contents");
-        assert(node.bloomFilter.has(testAddress1), "Bloom filter should contain testAddress1");
-        assert(node.bloomFilter.has(testAddress2), "Bloom filter should contain testAddress2");
-        assert(!node.bloomFilter.has(nonExistentAddress), "Bloom filter should not contain non-existent address");
-    
-        console.log("Testing false positive rate");
-        let falsePositives = 0;
-        const testIterations = 1000;
-        for (let i = 0; i < testIterations; i++) {
-            const randomAddress = `randomAddress${Math.random().toString(36).substring(7)}`;
-            if (node.bloomFilter.has(randomAddress)) {
-                falsePositives++;
-            }
-        }
-        const falsePositiveRate = falsePositives / testIterations;
-        console.log(`False positive rate: ${falsePositiveRate.toFixed(4)}`);
-        assert(falsePositiveRate < 0.1, "False positive rate should be reasonably low");
-    
-        console.log("Testing peer Bloom filter update");
-        const peerId = node.peerManager.peers.keys().next().value;
-        if (!peerId) {
-            throw new Error("No peers connected for Bloom filter test");
-        }
-    
-        let sentFilterloadMessage = null;
-        node.networkProtocol.sendToPeer = (id, message) => {
-            if (message.type === 'FILTERLOAD') {
-                sentFilterloadMessage = message;
-            }
-        };
-    
-        node.updateBloomFilter();
-
-        // wait for the filter to be sent
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        assert(sentFilterloadMessage, "FILTERLOAD message should have been sent");
-        assert(sentFilterloadMessage.filter.bitArray.length > 0, "FILTERLOAD message should contain non-empty bit array");
-    
-        console.log("Testing mempool request handling");
-        const mockTransactions = [
-            { id: 'tx1', outputs: [{ address: testAddress1 }] },
-            { id: 'tx2', outputs: [{ address: nonExistentAddress }] },
-            { id: 'tx3', outputs: [{ address: testAddress2 }] }
-        ];
-        node.fullNode.getMempoolTransactions = () => mockTransactions;
-    
-        let sentInvMessage = null;
-        node.networkProtocol.sendToPeer = (id, message) => {
-            if (message.type === 'INV') {
-                sentInvMessage = message;
-            }
-        };
-    
-        await node.messageHandler.handleMempool(peerId);
-    
-        assert(sentInvMessage, "INV message should have been sent");
-        assert.strictEqual(sentInvMessage.type, 'INV', "Sent message should be of type INV");
-        assert.strictEqual(sentInvMessage.inv.length, 2, "INV should contain 2 relevant transactions");
-        assert(sentInvMessage.inv.some(inv => inv.hash === 'tx1'), "INV should contain tx1");
-        assert(sentInvMessage.inv.some(inv => inv.hash === 'tx3'), "INV should contain tx3");
-        assert(!sentInvMessage.inv.some(inv => inv.hash === 'tx2'), "INV should not contain tx2");
-    
-        console.log("Testing dynamic address addition");
-        const newAddress = "newTestAddress789";
-        node.addAddressToBloomFilter(newAddress);
-        assert(node.bloomFilter.has(newAddress), "Bloom filter should contain newly added address");
-    
-        console.log("=== Bloom filter test passed ===\n");
-    }
 
     async testSync() {
         console.log("=== Running sync test ===");
@@ -351,7 +267,7 @@ export class P2PNodeTest extends EventEmitter {
             console.log("=== Test environment cleaned up ===");
         }
     }
-
+    
     async testConsensusProcess(numValidators = 4, numMiners = 5) {
         console.log("=== Running consensus process test with multiple validators and miners ===");
 
@@ -410,6 +326,92 @@ export class P2PNodeTest extends EventEmitter {
 
         console.log("=== Consensus process test completed ===");
     }
+
+    async testBloomFilter() {
+        console.log("=== Running Bloom filter test ===");
+        const node = this.nodes[0];
+        const testAddress1 = "testAddress123";
+        const testAddress2 = "testAddress456";
+        const nonExistentAddress = "nonExistentAddress789";
+    
+        console.log("Setting up mock wallet with addresses");
+        node.fullNode.wallet = { getAllAddresses: () => [testAddress1, testAddress2] };
+    
+        console.log("Initializing and updating Bloom filter");
+        node.initializeBloomFilter();
+        node.updateBloomFilter();
+    
+        console.log("Testing Bloom filter contents");
+        assert(node.bloomFilter.has(testAddress1), "Bloom filter should contain testAddress1");
+        assert(node.bloomFilter.has(testAddress2), "Bloom filter should contain testAddress2");
+        assert(!node.bloomFilter.has(nonExistentAddress), "Bloom filter should not contain non-existent address");
+    
+        console.log("Testing false positive rate");
+        let falsePositives = 0;
+        const testIterations = 1000;
+        for (let i = 0; i < testIterations; i++) {
+            const randomAddress = `randomAddress${Math.random().toString(36).substring(7)}`;
+            if (node.bloomFilter.has(randomAddress)) {
+                falsePositives++;
+            }
+        }
+        const falsePositiveRate = falsePositives / testIterations;
+        console.log(`False positive rate: ${falsePositiveRate.toFixed(4)}`);
+        assert(falsePositiveRate < 0.1, "False positive rate should be reasonably low");
+    
+        console.log("Testing peer Bloom filter update");
+        const peerId = node.peerManager.peers.keys().next().value;
+        if (!peerId) {
+            throw new Error("No peers connected for Bloom filter test");
+        }
+    
+        let sentFilterloadMessage = null;
+        node.networkProtocol.sendToPeer = (id, message) => {
+            if (message.type === 'FILTERLOAD') {
+                sentFilterloadMessage = message;
+            }
+        };
+    
+        node.updateBloomFilter();
+
+        // wait for the filter to be sent
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        assert(sentFilterloadMessage, "FILTERLOAD message should have been sent");
+        assert(sentFilterloadMessage.filter.bitArray.length > 0, "FILTERLOAD message should contain non-empty bit array");
+    
+        console.log("Testing mempool request handling");
+        const mockTransactions = [
+            { id: 'tx1', outputs: [{ address: testAddress1 }] },
+            { id: 'tx2', outputs: [{ address: nonExistentAddress }] },
+            { id: 'tx3', outputs: [{ address: testAddress2 }] }
+        ];
+        node.fullNode.getMempoolTransactions = () => mockTransactions;
+    
+        let sentInvMessage = null;
+        node.networkProtocol.sendToPeer = (id, message) => {
+            if (message.type === 'INV') {
+                sentInvMessage = message;
+            }
+        };
+    
+        await node.messageHandler.handleMempool(peerId);
+    
+        assert(sentInvMessage, "INV message should have been sent");
+        assert.strictEqual(sentInvMessage.type, 'INV', "Sent message should be of type INV");
+        assert.strictEqual(sentInvMessage.inv.length, 2, "INV should contain 2 relevant transactions");
+        assert(sentInvMessage.inv.some(inv => inv.hash === 'tx1'), "INV should contain tx1");
+        assert(sentInvMessage.inv.some(inv => inv.hash === 'tx3'), "INV should contain tx3");
+        assert(!sentInvMessage.inv.some(inv => inv.hash === 'tx2'), "INV should not contain tx2");
+    
+        console.log("Testing dynamic address addition");
+        const newAddress = "newTestAddress789";
+        node.addAddressToBloomFilter(newAddress);
+        assert(node.bloomFilter.has(newAddress), "Bloom filter should contain newly added address");
+    
+        console.log("=== Bloom filter test passed ===\n");
+    }
+
 }    
 
 // Run the tests

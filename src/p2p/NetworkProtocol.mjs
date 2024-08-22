@@ -19,6 +19,7 @@ class NetworkProtocol extends EventEmitter {
     generateNodeId() {
         return crypto.randomBytes(32).toString('hex');
     }
+
     monitorPeers() {
         setInterval(() => {
             const now = Date.now();
@@ -73,6 +74,40 @@ class NetworkProtocol extends EventEmitter {
         });
     }
 
+    broadcast(message, exceptPeerId = null) {
+        //console.log(`Broadcasting message: ${message.type}`);
+        this.peerManager.getAllPeers().forEach(peer => {
+            if (peer.id !== exceptPeerId) {
+                try {
+                    //console.log(`Sending ${message.type} to peer ${peer.id}`);
+                    peer.send(message);
+                } catch (error) {
+                    console.error(`Error broadcasting to peer ${peer.id}:`, error);
+                    //this.peerManager.updatePeerScore(peer.id, -1);
+                }
+            }
+        });
+    }
+    handleMessage(peerId, data) {
+        // console.log(`Received data from ${peerId}: ${data}`);
+        try {
+            const messages = this.parseMessages(data);
+            for (const message of messages) {
+                const messageHash = this.hashMessage(message);  // Generate a hash of the message
+                
+                if (this.seenMessages.has(messageHash)) {
+                    //console.log(`Ignoring duplicate message from peer ${peerId}`);
+                    continue;
+                }
+                //console.log(`Received message of type ${message.type} from ${peerId}`);
+                this.seenMessages.add(messageHash);
+                this.messageHandler.handle(peerId, message);
+            }
+        } catch (error) {
+            console.error(`Error parsing message from ${peerId}:`, error);
+        }
+    }
+    
     handleConnection(socket) {
         const peerId = `${socket.remoteAddress}:${socket.remotePort}`;
         console.log(`Handling connection from ${peerId}`);
@@ -117,8 +152,6 @@ class NetworkProtocol extends EventEmitter {
             socket.destroy();
         }
     }
-    
-
 
     attemptReconnect(peerId, host, port, attempt = 1) {
         const maxAttempts = 5;
@@ -146,26 +179,6 @@ class NetworkProtocol extends EventEmitter {
         }, delay);
     }
 
-    handleMessage(peerId, data) {
-        // console.log(`Received data from ${peerId}: ${data}`);
-        try {
-            const messages = this.parseMessages(data);
-            for (const message of messages) {
-                const messageHash = this.hashMessage(message);  // Generate a hash of the message
-                
-                if (this.seenMessages.has(messageHash)) {
-                    //console.log(`Ignoring duplicate message from peer ${peerId}`);
-                    continue;
-                }
-                //console.log(`Received message of type ${message.type} from ${peerId}`);
-                this.seenMessages.add(messageHash);
-                this.messageHandler.handle(peerId, message);
-            }
-        } catch (error) {
-            console.error(`Error parsing message from ${peerId}:`, error);
-        }
-    }
-    
     hashMessage(message) {
         const messageString = JSON.stringify(message);
         return crypto.createHash('sha256').update(messageString).digest('hex');
@@ -188,20 +201,6 @@ class NetworkProtocol extends EventEmitter {
         this.synchronizeChain(peer.id);
     }
 
-    broadcast(message, exceptPeerId = null) {
-        console.log(`Broadcasting message: ${message.type}`);
-        this.peerManager.getAllPeers().forEach(peer => {
-            if (peer.id !== exceptPeerId) {
-                try {
-                    //console.log(`Sending ${message.type} to peer ${peer.id}`);
-                    peer.send(message);
-                } catch (error) {
-                    console.error(`Error broadcasting to peer ${peer.id}:`, error);
-                    //this.peerManager.updatePeerScore(peer.id, -1);
-                }
-            }
-        });
-    }
 
     sendToPeer(peerId, message) {
         // console.log(`Sending message of type ${message.type} to peer ${peerId}`);
@@ -294,6 +293,7 @@ class NetworkProtocol extends EventEmitter {
             
         }
     }
+
     gossipMessage(message, excludePeerId = null) {
         const peers = this.peerManager.getAllPeers();
         
