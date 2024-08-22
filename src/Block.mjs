@@ -44,6 +44,21 @@ export const BlockData = (index, supply, coinBase, difficulty, prevHash, Txs, ti
         Txs
     };
 }
+
+BlockData.fromJSON = function(json) {
+    const data = typeof json === 'string' ? JSON.parse(json) : json;
+    return BlockData(
+        data.index,
+        data.supply,
+        data.coinBase,
+        data.difficulty,
+        data.prevHash,
+        data.Txs, // Note: You might need to parse transactions individually if they're not already in the correct format
+        data.timestamp,
+        data.hash,
+        data.nonce
+    );
+};
 export class Block {
     /** @param {BlockData} blockData */
     static getBlockStringToHash(blockData) {
@@ -122,11 +137,9 @@ export class Block {
     }
     /** @param {string} blockDataJSON */
     static blockDataFromJSON(blockDataJSON) {
-        const parsed = JSON.parse(blockDataJSON);
-        //const Txs = Block.TransactionsFromJSON(parsed.Txs);
-        /** @type {BlockData} */
-        return BlockData(parsed.index, parsed.supply, parsed.coinBase, parsed.difficulty, parsed.prevHash, parsed.Txs, parsed.timestamp, parsed.hash, parsed.nonce);
+        return BlockData.fromJSON(blockDataJSON);
     }
+
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {
         const JSON = Block.dataAsJSON(blockData);
