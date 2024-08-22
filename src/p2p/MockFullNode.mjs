@@ -10,7 +10,6 @@ export class MockFullNode {
         this.validatorAccount = { address: crypto.randomBytes(20).toString('hex') };
     }
 
-
     // Generate a block candidate with current mempool transactions
     async createBlockCandidate() {
 

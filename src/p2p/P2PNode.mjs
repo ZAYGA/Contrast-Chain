@@ -166,16 +166,7 @@ class P2PNode extends EventEmitter {
     
         return true;
     }
-
-    async synchronizeWithPeers() {
-        console.log("Synchronizing blockchain height with peers...");
-        const peers = this.peerManager.getAllPeers();
-        
-        for (const peer of peers) {
-            this.networkProtocol.requestBlocks(peer.peerId, this.fullNode.getBlockchainHeight());
-        }
-        
-    }
+    
     async getNetworkHeight() {
         const peerHeights = await Promise.all(
             this.peerManager.getAllPeers().map(peer => 
