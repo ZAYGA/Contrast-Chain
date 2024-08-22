@@ -2,7 +2,7 @@ import storage from './storage.mjs';
 //import { BlockData, Block, Transaction, Transaction_Builder, Validation, TransactionIO, TxIO_Builder } from './index.mjs';
 import { Validation } from './Validation.mjs';
 import { Transaction, Transaction_Builder } from './Transaction.mjs';
-import { BlockData, Block } from './Block.mjs';
+import { BlockMiningData, BlockData, Block } from './Block.mjs';
 import { TransactionIO, TxIO_Builder } from './TxIO.mjs';
 import utils from './utils.mjs';
 
@@ -258,6 +258,8 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.addressesBalances = {};
         /** @type {ReferencedUTXOs[]} */
         this.referencedUTXOsByBlock = [];
+        /** @type {BlockMiningData[]} */
+        this.blockMiningData = [];
     }
 
     #calculateTotalOfBalances() {
@@ -431,11 +433,13 @@ class HotData { // Used to store, addresses's UTXOs and balance.
 
         const currencySupply = utils.convert.number.formatNumberAsCurrency(totalSupply);
         const currencyBalances = utils.convert.number.formatNumberAsCurrency(totalOfBalances);
-        //console.log(`supplyFromBlock+coinBase: ${readableSupply} - totalOfBalances: ${readableBalances}`);
-        if (totalOfBalances !== totalSupply) { 
+
+        if (totalOfBalances !== totalSupply) {
             console.info(`supplyFromBlock+coinBase: ${currencySupply} - totalOfBalances: ${currencyBalances}`);
             throw new Error('Invalid total of balances'); 
         }
+
+        this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
     }
 }
 
@@ -444,8 +448,6 @@ export class FullNode {
     constructor(validatorAccount, chain) {
         /** @type {Account} */
         this.validatorAccount = validatorAccount;
-        /** @type {BlockData[]} */
-        this.chain = chain || [];
         /** @type {BlockData} */
         this.blockCandidate = null;
 
@@ -456,7 +458,7 @@ export class FullNode {
     }
 
     /** @param {Account} validatorAccount */
-    static async load(validatorAccount, saveBlocksInfo = true) {
+    static async load(validatorAccount, saveBlocksInfo = false) {
         const chain = storage.loadBlockchainLocally('bin');
         const controlChain = storage.loadBlockchainLocally('json');
         FullNode.controlChainIntegrity(chain, controlChain);
@@ -466,7 +468,7 @@ export class FullNode {
         // TODO: mempool digest mempool from other validator node
 
         if (saveBlocksInfo) { // basic informations .csv
-            const blocksInfo = node.#getBlocksMiningInfo();
+            const blocksInfo = node.#getBlocksMiningInfo(chain);
             storage.saveBlockchainInfoLocally(blocksInfo);
         }
 
@@ -527,12 +529,11 @@ export class FullNode {
         if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
         
         const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        if (this.chain.length < 2000) { storage.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
+        if (this.blockCandidate.index < 2000) { storage.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
         const saveResult = storage.saveBlockDataLocally(blockDataCloneToSave, 'bin');
         if (!saveResult.success) { throw new Error(saveResult.message); }
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        this.chain.push(blockDataCloneToDigest);
         
         this.hotData.digestBlock(blockDataCloneToDigest);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
@@ -574,8 +575,7 @@ export class FullNode {
 
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 'ContrastGenesisBlock', Txs);
         if (lastBlockData) {
-            const newDifficulty = utils.mining.difficultyAdjustment(this.chain);
-            const lastBlockData = this.chain[this.chain.length - 1];
+            const newDifficulty = utils.mining.difficultyAdjustment(this.hotData.blockMiningData);
             const clone = Block.cloneBlockData(lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
@@ -589,18 +589,18 @@ export class FullNode {
 
         return blockCandidate;
     }
-    #getBlocksMiningInfo() {
+    #getBlocksMiningInfo(chain) { // DEPRECATED
         const blocksInfo = [];
 
-        for (let i = 0; i < this.chain.length; i++) {
-            const block = this.chain[i];
+        for (let i = 0; i < chain.length; i++) {
+            const block = chain[i];
 
             blocksInfo.push({ 
                 blockIndex: block.index,
                 coinbaseReward: block.coinBase,
                 timestamp: block.timestamp,
                 difficulty: block.difficulty,
-                timeBetweenBlocks: i === 0 ? 0 : block.timestamp - this.chain[i - 1].timestamp
+                timeBetweenBlocks: i === 0 ? 0 : block.timestamp - chain[i - 1].timestamp
             });
         }
 

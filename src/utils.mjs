@@ -5,6 +5,7 @@ import Compressor from './externalLibs/gzip.min.js';
 import Decompressor from './externalLibs/gunzip.min.js';
 import msgpack from './externalLibs/msgpack.min.js';
 /**
+* @typedef {import("./Block.mjs").BlockMiningData} BlockMiningData
 * @typedef {import("./Block.mjs").Block} Block
 * @typedef {import("./Block.mjs").BlockData} BlockData
 * @typedef {import("./Transaction.mjs").Transaction} Transaction
@@ -743,11 +744,11 @@ const miningParams = {
 }
 const mining = {
     /**
-    * @param {Block[]} chain
+    * @param {BlockMiningData[]} blockMiningData
     * @returns {number} - New difficulty
     */
-    difficultyAdjustment: (chain, logs = true) => {
-        const lastBlock = chain[chain.length - 1];
+    difficultyAdjustment: (blockMiningData, logs = true) => {
+        const lastBlock = blockMiningData[blockMiningData.length - 1];
         const blockIndex = lastBlock.index;
         const difficulty = lastBlock.difficulty;
 
@@ -782,11 +783,11 @@ const mining = {
         return newDifficulty;
     },
 
-    /** @param {Block[]} chain */
-    getAverageBlockTime: (chain) => {
-        const NbBlocks = Math.min(chain.length, blockchainSettings.blocksBeforeAdjustment);
-        const olderBlock = chain[chain.length - NbBlocks];
-        const newerBlock = chain[chain.length - 1];
+    /** @param {BlockMiningData[]} blockMiningData */
+    getAverageBlockTime: (blockMiningData) => {
+        const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
+        const olderBlock = blockMiningData[blockMiningData.length - NbBlocks];
+        const newerBlock = blockMiningData[blockMiningData.length - 1];
         const sum = newerBlock.timestamp - olderBlock.timestamp
 
         return sum / (NbBlocks - 1);
