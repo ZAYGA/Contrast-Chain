@@ -10,6 +10,10 @@ export class AddressTypeInfo {
     nbOfSigners = 1;
 }
 
+class generatedAccount {
+    address = '';
+    seedModifierHex = '';
+}
 export class Wallet {
     constructor(masterHex) {
         /** @type {string} */
@@ -22,8 +26,8 @@ export class Wallet {
             P: [],
             U: []
         };
-        /** @type {Object<string, number[]>} */
-        this.accountsGenerationSequences = {
+        /** @type {Object<string, generatedAccount[]>} */
+        this.accountsGenerated = {
             W: [],
             C: [],
             S: [],
@@ -37,17 +41,14 @@ export class Wallet {
 
         return new Wallet(argon2HashResult.hex);
     }
-    saveAccountsGenerationSequences() {
-        storage.saveJSON('accountsGenerationSequences', this.accountsGenerationSequences);
-        // save as object with addressPrefix as key and array of seedModifierHex as value
-        const tosave= [];
-       
+    saveAccounts() {
+        storage.saveJSON('accounts', this.accountsGenerated);
     }
-    loadAccountsGenerationSequences() {
-        const accountsGenerationSequences = storage.loadJSON('accountsGenerationSequences');
-        if (!accountsGenerationSequences) { return false; }
+    loadAccounts() {
+        const accountsGenerated = storage.loadJSON('accounts');
+        if (!accountsGenerated) { return false; }
 
-        this.accountsGenerationSequences = accountsGenerationSequences;
+        this.accountsGenerated = accountsGenerated;
         return true;
     }
     async deriveAccounts(nbOfAccounts = 1, addressPrefix = "C") {
@@ -55,13 +56,10 @@ export class Wallet {
         const iterationsPerAccount = []; // used for control
 
         for (let i = nbOfExistingAccounts; i < nbOfAccounts; i++) {
-            const seedModifierHex = this.accountsGenerationSequences[addressPrefix][i];
-            //const { address, seedModifierHex } = this.accountsGenerationSequences[addressPrefix][i];
-            if (seedModifierHex) {
+            if (this.accountsGenerated[addressPrefix][i]) { // from saved account
+                const { address, seedModifierHex } = this.accountsGenerated[addressPrefix][i];
                 const keyPair = await this.#deriveKeyPair(seedModifierHex);
-                //const account = Account(keyPair.pubKeyHex, keyPair.privKeyHex, address);
-                const account = await this.#deriveAccount(keyPair, addressPrefix);
-                if (!account) { console.error(`accountsGenerationSequences is probably corrupted at index: ${i}`); return false; }
+                const account = new Account(keyPair.pubKeyHex, keyPair.privKeyHex, address);
 
                 iterationsPerAccount.push(1);
                 this.accounts[addressPrefix].push(account);
@@ -95,7 +93,7 @@ export class Wallet {
                 const keyPair = await this.#deriveKeyPair(seedModifierHex);
                 const account = await this.#deriveAccount(keyPair, desiredPrefix);
                 if (account) {
-                    this.accountsGenerationSequences[desiredPrefix].push(seedModifierHex);
+                    this.accountsGenerated[desiredPrefix].push({ address: account.address, seedModifierHex });
                     return { account, iterations: i }; 
                 }
             } catch (error) {

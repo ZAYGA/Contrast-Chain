@@ -77,23 +77,25 @@ export class Transaction_Builder {
 
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'signature_v1', 1);
         const totalInputAmount = UTXOs.reduce((a, b) => a + b.amount, 0);
+
         const remainingAmount = totalInputAmount - totalSpent;
         if (remainingAmount <= 0) { 
             throw new Error(`Not enough funds: ${totalInputAmount} - ${totalSpent} = ${remainingAmount}`); }
 
         // logic of fee estimation will be removed in the future
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
-        const feePerByte = Math.round(Math.random() * 10); // temporary
+        const feePerByte = Math.round(Math.random() * 10) + 1; // temporary
         const fee = feePerByte * estimatedWeight;
         if (fee % 1 !== 0) {
             throw new Error('Invalid fee: not integer'); }
-        if (fee < 0) {
-            throw new Error('Negative fee'); }
-            
+        if (fee <= 0) {
+            throw new Error(`Invalid fee: ${fee} <= 0`); }
+        
+        console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         const change = remainingAmount - fee;
         if (change <= 0) {
-            throw new Error('Negative change => not enough funds');
+            throw new Error('(change <= 0) not enough funds');
         } else if (change > 0) {
             const changeOutput = TxIO_Builder.newIO("output", change, 'signature_v1', 1, senderAddress);
             outputs.push(changeOutput);
@@ -103,8 +105,16 @@ export class Transaction_Builder {
         
         return Transaction(UTXOs, outputs);
     }
+    /** @param {TransactionIO[]} UTXOs */
+    static getTotalUTXOsAmount(UTXOs) { // DEPRECATED ??
+        let totalAmount = 0;
+        for (let i = 0; i < UTXOs.length; i++) {
+            totalAmount += UTXOs[i].amount;
+        }
+        return totalAmount;
+    }
     static simulateTransactionToEstimateWeight(UTXOs, outputs) {
-        const change = 1_000_000;
+        const change = 26_152_659_654_321;
         const changeOutput = TxIO_Builder.newIO("output", change, 'signature_v1', 1, 'Cv6XXKBTALRPSCzuU6k4');
         const outputsClone = TxIO_Builder.cloneTxIO(outputs);
         outputsClone.push(changeOutput);
@@ -125,7 +135,7 @@ export class Transaction_Builder {
      * @param {string} script
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1,}], script = 'signature_v1', version = 1) {
+    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], script = 'signature_v1', version = 1) {
         const outputs = [];
         let totalSpent = 0;
 

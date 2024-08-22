@@ -6,6 +6,7 @@ import { BlockData, Block } from './Block.mjs';
 import { TransactionIO, TxIO_Builder } from './TxIO.mjs';
 import utils from './utils.mjs';
 
+const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
 /**
  * An object that associates utxoTxID to arrays of TransactionIO.
  * @typedef {{ [utxoTxID: string]: TransactionIO[] }} ReferencedUTXOs
@@ -23,59 +24,8 @@ class MemPool {
         this.transactionsByFeePerByte = {};
         /** @type {ReferencedTransactions[]} */
         this.referencedTransactionsByBlock = [];
-
-        /** @type {function[]} */
-        this.callStack = [];
-        /** @type {string = 'idle' | 'active' | 'pausing' | 'paused'} */
-        this.state = 'idle';
     }
 
-    async stackLoop(delayMS = 20) {
-        this.state = 'active';
-
-        while (true) {
-            await new Promise(resolve => setTimeout(resolve, delayMS));
-
-            if (this.state === 'idle' && this.callStack.length === 0) { continue; }
-            if (this.state === 'paused') { continue; }
-            if (this.state === 'pausing') { this.state = 'paused'; continue; }
-            if (this.state === 'idle') { this.state = 'active'; }
-
-            const functionToCall = this.callStack.shift();
-            if (!functionToCall) { this.state = 'idle'; continue; }
-            try {
-                await functionToCall();
-            } catch (error) {
-                const errorSkippingLog = ['Conflicting UTXOs'];
-                if (!errorSkippingLog.includes(error.message)) { console.error(error.stack); }
-            }
-        }
-    }
-    async pauseStackAndAwaitPaused() {
-        if (this.state === 'paused') { return; }
-
-        this.pauseStackLoop();
-        while (this.state !== 'paused') {
-            await new Promise(resolve => setTimeout(resolve, 20));
-        }
-    }
-    pauseStackLoop() {
-        this.state = 'pausing';
-    }
-    resumeStackLoop() {
-        this.state = 'active';
-    }
-    /** Add a function to the stack
-     * @param {function} func
-     * @param {boolean} firstPlace
-     */
-    addFunctionToStack(func, firstPlace = false) {
-        if (firstPlace) { 
-            this.callStack.unshift(func);
-        } else {
-            this.callStack.push(func);
-        }
-    }
     /** @param {Transaction} transaction */
     #addTransactionToTransactionsByFeePerByte(transaction) {
         const feePerByte = transaction.feePerByte;
@@ -163,6 +113,8 @@ class MemPool {
             const collidingTx = this.#caughtTransactionsUTXOCollision(tx);
             if (!collidingTx) { continue; }
             
+            if (tx.id === collidingTx.id) { 
+                console.log(`[MEMPOOL] transaction: ${tx.id} confirmed!`); }
             this.#fullyRemoveTransactionFromMempool(collidingTx);
         }
     }
@@ -233,7 +185,7 @@ class MemPool {
      * @param {false | string} replaceExistingTxID
      */
     submitTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
-        this.addFunctionToStack(() => this.#pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID));
+        callStack.push(() => this.#pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID));
     }
     /**
      * should be used with the callstack
@@ -243,52 +195,58 @@ class MemPool {
      */
     async #pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
         const startTime = Date.now();
-        const isCoinBase = false;
-
-        // First control format of : amount, address, script, version, TxID
-        Validation.isConformTransaction(transaction, isCoinBase);
-
-        // Second control : input > output
-        const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
-
-        // Calculate fee per byte
-        const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
-        const feePerByte = fee / TxWeight;
-        transaction.byteWeight = TxWeight;
-        transaction.feePerByte = feePerByte;
-
-        // Manage the mempool inclusion and collision
-        let txInclusionFunction = () => {
-            this.#fullyAddTransactionToMempool(transaction);
-        };
-
-        const identicalIDTransaction = this.transactionsByID[transaction.id];
-        const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
-        if (collidingTx) {
-            if (!replaceExistingTxID) { throw new Error('Conflicting UTXOs'); }
-            if (replaceExistingTxID !== collidingTx.id) { throw new Error('Invalid replaceExistingTxID'); }
-            if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
-
-            txInclusionFunction = () => {
-                this.#fullyRemoveTransactionFromMempool(collidingTx);
+        try {
+            const isCoinBase = false;
+    
+            // First control format of : amount, address, script, version, TxID
+            Validation.isConformTransaction(transaction, isCoinBase);
+    
+            // Second control : input > output
+            const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
+    
+            // Calculate fee per byte
+            const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
+            const feePerByte = fee / TxWeight;
+            transaction.byteWeight = TxWeight;
+            transaction.feePerByte = feePerByte;
+    
+            // Manage the mempool inclusion and collision
+            let txInclusionFunction = () => {
                 this.#fullyAddTransactionToMempool(transaction);
             };
+    
+            const identicalIDTransaction = this.transactionsByID[transaction.id];
+            const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
+            if (collidingTx) {
+                //TODO: active in production
+                if (!replaceExistingTxID) { throw new Error(`Conflicting UTXOs with: ${collidingTx.id}`); }
+                if (replaceExistingTxID !== collidingTx.id) { throw new Error('Invalid replaceExistingTxID'); }
+                if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
+    
+                txInclusionFunction = () => {
+                    this.#fullyRemoveTransactionFromMempool(collidingTx);
+                    this.#fullyAddTransactionToMempool(transaction);
+                };
+            }
+    
+            if (!this.#transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction)) {
+                throw new Error('UTXOs(one at least) are spent'); }
+    
+            // Third validation: medium computation cost.
+            await Validation.controlTransactionHash(transaction);
+    
+            // Fourth validation: medium computation cost.
+            await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction);
+    
+            // Fifth validation: high computation cost.
+            await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
+    
+            txInclusionFunction();
+            console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
+        } catch (error) {
+            console.log(`[MEMPOOL] transaction: ${transaction.id} rejected in ${Date.now() - startTime}ms =reason> ${error.message}`);
+            throw error;
         }
-
-        if (!this.#transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction)) {
-            throw new Error('UTXOs(one at least) are spent'); }
-
-        // Third validation: medium computation cost.
-        await Validation.controlTransactionHash(transaction);
-
-        // Fourth validation: medium computation cost.
-        await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction);
-
-        // Fifth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
-
-        txInclusionFunction();
-        console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
     }
 }
 
@@ -383,7 +341,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     #removeUTXO(address, utxoBlockHeight, utxoTxID, vout) {
         this.#deleteUTXOFromaddressUTXOs(address, utxoBlockHeight, utxoTxID, vout);
         this.#deleteCorrespondingUTXOFromReferenced(utxoBlockHeight, utxoTxID, vout);
-        console.log(`[HotData]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
+        // console.log(`[HotData]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
     }
     /**
      * @param {number} blockIndex
@@ -454,9 +412,11 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     }
     /** @param {BlockData[]} chain */
     digestChain(chain) {
+        const progressLogger = new utils.ProgressLogger(chain.length);
         for (let i = 0; i < chain.length; i++) {
             const blockData = chain[i];
             this.digestBlock(blockData);
+            progressLogger.logProgress(i);
         }
     }
     /** @param {BlockData} blockData */
@@ -478,6 +438,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         }
     }
 }
+
 export class FullNode {
     /** @param {Account} validatorAccount */
     constructor(validatorAccount, chain) {
@@ -491,37 +452,7 @@ export class FullNode {
         this.memPool = new MemPool();
         this.hotData = new HotData();
 
-        /** @type {function[]} */
-        this.callStack = [];
-        /** @type {string = 'idle' | 'active' | 'pausing' | 'paused'} */
-        this.state = 'idle';
-    }
-    async #stackLoop(delayMS = 20) {
-        this.state = 'active';
-
-        while (true) {
-            await new Promise(resolve => setTimeout(resolve, delayMS));
-
-            const functionToCall = this.callStack.shift();
-            if (!functionToCall) { continue; }
-            try {
-                await functionToCall();
-            } catch (error) {
-                const errorSkippingLog = ['Invalid block index:']; // ['Conflicting UTXOs'];
-                if (!errorSkippingLog.includes(error.message.slice(0, 20))) { console.error(error.stack); }
-            }
-        }
-    }
-    /** Add a function to the stack
-     * @param {function} func
-     * @param {boolean} firstPlace
-     */
-    addFunctionToStack(func, firstPlace = false) {
-        if (firstPlace) { 
-            this.callStack.unshift(func);
-        } else {
-            this.callStack.push(func);
-        }
+        this.callStack = callStack;
     }
 
     /** @param {Account} validatorAccount */
@@ -533,7 +464,6 @@ export class FullNode {
         const node = new FullNode(validatorAccount, chain);
         node.hotData.digestChain(chain);
         // TODO: mempool digest mempool from other validator node
-        node.memPool.stackLoop(20);
 
         if (saveBlocksInfo) { // basic informations .csv
             const blocksInfo = node.#getBlocksMiningInfo();
@@ -546,7 +476,7 @@ export class FullNode {
         const lastBlockData = chain[chain.length - 1] ? chain[chain.length - 1] : undefined;
         node.blockCandidate = await node.#createBlockCandidate(lastBlockData);
 
-        node.#stackLoop(20);
+        //node.#stackLoop(20);
         return node;
     }
     /**
@@ -579,7 +509,7 @@ export class FullNode {
     
     /** @param {BlockData} minerBlockCandidate */
     submitPowProposal(minerBlockCandidate) {
-        this.addFunctionToStack(() => this.#blockProposal(minerBlockCandidate));
+        callStack.push(() => this.#blockProposal(minerBlockCandidate));
     }
     /** 
      * should be used with the callstack
@@ -604,20 +534,18 @@ export class FullNode {
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         this.chain.push(blockDataCloneToDigest);
         
-        await this.memPool.pauseStackAndAwaitPaused(); // pause the mempool stack
         this.hotData.digestBlock(blockDataCloneToDigest);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.referencedUTXOsByBlock);
-        this.memPool.resumeStackLoop(); // resume the mempool stack
 
         // simple log for debug ----------------------
         const powMinerTx = minerBlockCandidate.Txs[0];
         const address = powMinerTx.outputs[0].address;
         const { balance, UTXOs } = this.hotData.getBalanceAndUTXOs(address);
-        console.log(`[Height:${minerBlockCandidate.index}] remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        console.log(`[FullNode] Height:${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
         // -------------------------------------------
 
-        this.addFunctionToStack(async () => {
+        callStack.push(async () => {
             const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate);
             this.blockCandidate = newBlockCandidate; // Can be sent to the network
         }, true);
@@ -639,12 +567,10 @@ export class FullNode {
     // Private methods
     /** @param {BlockData | undefined} lastBlockData */
     async #createBlockCandidate(lastBlockData) {
-        await this.memPool.pauseStackAndAwaitPaused();
         const Txs = this.memPool.getMostLucrativeTransactionsBatch(1000);
         if (Txs.length > 1) {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
         }
-        this.memPool.resumeStackLoop();
 
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 'ContrastGenesisBlock', Txs);
         if (lastBlockData) {

@@ -69,6 +69,8 @@ export class Validation {
     static calculateRemainingAmount(transaction, isCoinBaseOrFeeTx) {
         const inputsAmount = transaction.inputs.reduce((a, b) => a + b.amount, 0);
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
+        // 288 921 831 007
+        // 288 920 831 007 + 1 000 000
         const fee = inputsAmount - outputsAmount;
         if (fee < 0) { throw new Error('Negative transaction'); }
         if (isCoinBaseOrFeeTx && fee !== 0) { throw new Error('Invalid coinbase transaction'); }

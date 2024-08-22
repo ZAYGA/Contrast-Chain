@@ -63,6 +63,98 @@ const blockchainSettings = {
 };
 };*/
 
+class CallStack {
+    /** @type {function[]} */
+    stack = [];
+    /** @type {string[]} */
+    errorSkippingLogArray = [];
+    emptyResolves = [];
+
+    static buildNewStack(errorSkippingLogArray = []) {
+        const newCallStack = new CallStack();
+        newCallStack.errorSkippingLogArray = errorSkippingLogArray;
+        newCallStack.#stackLoop();
+        return newCallStack;
+    }
+
+    /** @param {number} delayMS */
+    async #stackLoop(delayMS = 20) {
+        while (true) {
+            if (this.stack.length === 0) {
+                if (this.emptyResolves) {
+                    // resolve the promises
+                    this.emptyResolves.forEach(resolve => resolve());
+                    this.emptyResolves = []; // Reset the array
+                }
+                await new Promise(resolve => setTimeout(resolve, delayMS)); 
+                continue;
+            }
+
+            await new Promise(resolve => setImmediate(resolve));
+            await this.#executeNextFunction();
+        }
+    }
+    async #executeNextFunction() {
+        const functionToCall = this.stack.shift();
+        if (!functionToCall) { return; }
+        try {
+            await functionToCall();
+        } catch (error) {
+            for (let i = 0; i < this.errorSkippingLogArray.length; i++) {
+                if (error.message.includes(this.errorSkippingLogArray[i])) { return; }
+            }
+            console.error(error.stack);
+        }
+    }
+    /** Add a function to the stack
+     * @param {function} func
+     * @param {boolean} firstPlace
+     */
+    push(func, firstPlace = false) {
+        if (firstPlace) { 
+            this.stack.unshift(func);
+        } else {
+            this.stack.push(func);
+        }
+    }
+
+    /** Function used in debug for testing only, to avoid stack overflow
+     * @param {number} timeout */
+    async breathe(timeout = 1000) { // timeout in ms
+        while (this.stack.length > 10) {
+            await this.#executeNextFunction();
+        }
+
+        if (this.stack.length === 0) { return Promise.resolve(); }
+
+        // otherwise, return a promise that resolves when the stack becomes empty
+        return new Promise((resolve, reject) => {
+            this.emptyResolves.push(resolve); // Add the resolve to the array
+
+            
+            setTimeout(() => { // Consider the stack as empty after the timeout
+                resolve();
+            }, timeout);
+        });
+    }
+}
+class ProgressLogger {
+    constructor(total) {
+        this.total = total;
+        this.stepSizePercent = 10;
+        this.lastLoggedStep = 0;
+    }
+
+    logProgress(current) {
+        const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
+        const currentStep = Math.floor(progress / this.stepSizePercent);
+
+        if (currentStep > this.lastLoggedStep) {
+            this.lastLoggedStep = currentStep;
+            console.log(`[HotData] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
+        }
+    }
+}
 class AddressTypeInfo {
     name = '';
     description = '';
@@ -757,6 +849,8 @@ const utils = {
     cryptoLib,
     argon2: argon2Lib,
     blockchainSettings,
+    CallStack,
+    ProgressLogger,
     addressUtils,
     typeValidation,
     convert,
