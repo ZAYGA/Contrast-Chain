@@ -5,6 +5,26 @@ import { Transaction_Builder } from './Transaction.mjs';
 import { Validation } from './Validation.mjs';
 
 /**
+* @typedef {Object} BlockMiningData
+* @property {number} index - The block height
+* @property {number} difficulty - The difficulty of the block
+* @property {number} timestamp - The timestamp of the block
+*/
+/**
+* @param {number} index - The block height
+* @param {number} difficulty - The difficulty of the block
+* @param {number} timestamp - The timestamp of the block
+* @returns {BlockMiningData}
+ */
+export const BlockMiningData = (index, difficulty, timestamp) => {
+    return {
+        index,
+        difficulty,
+        timestamp
+    };
+}
+
+/**
 * @typedef {Object} BlockData
 * @property {number} index - The index of the block
 * @property {number} supply - The total supply before the coinbase reward

@@ -5,6 +5,7 @@ import Compressor from './externalLibs/gzip.min.js';
 import Decompressor from './externalLibs/gunzip.min.js';
 import msgpack from './externalLibs/msgpack.min.js';
 /**
+* @typedef {import("./Block.mjs").BlockMiningData} BlockMiningData
 * @typedef {import("./Block.mjs").Block} Block
 * @typedef {import("./Block.mjs").BlockData} BlockData
 * @typedef {import("./Transaction.mjs").Transaction} Transaction
@@ -63,6 +64,98 @@ const blockchainSettings = {
 };
 };*/
 
+class CallStack {
+    /** @type {function[]} */
+    stack = [];
+    /** @type {string[]} */
+    errorSkippingLogArray = [];
+    emptyResolves = [];
+
+    static buildNewStack(errorSkippingLogArray = []) {
+        const newCallStack = new CallStack();
+        newCallStack.errorSkippingLogArray = errorSkippingLogArray;
+        newCallStack.#stackLoop();
+        return newCallStack;
+    }
+
+    /** @param {number} delayMS */
+    async #stackLoop(delayMS = 20) {
+        while (true) {
+            if (this.stack.length === 0) {
+                if (this.emptyResolves) {
+                    // resolve the promises
+                    this.emptyResolves.forEach(resolve => resolve());
+                    this.emptyResolves = []; // Reset the array
+                }
+                await new Promise(resolve => setTimeout(resolve, delayMS)); 
+                continue;
+            }
+
+            await new Promise(resolve => setImmediate(resolve));
+            await this.#executeNextFunction();
+        }
+    }
+    async #executeNextFunction() {
+        const functionToCall = this.stack.shift();
+        if (!functionToCall) { return; }
+        try {
+            await functionToCall();
+        } catch (error) {
+            for (let i = 0; i < this.errorSkippingLogArray.length; i++) {
+                if (error.message.includes(this.errorSkippingLogArray[i])) { return; }
+            }
+            console.error(error.stack);
+        }
+    }
+    /** Add a function to the stack
+     * @param {function} func
+     * @param {boolean} firstPlace
+     */
+    push(func, firstPlace = false) {
+        if (firstPlace) { 
+            this.stack.unshift(func);
+        } else {
+            this.stack.push(func);
+        }
+    }
+
+    /** Function used in debug for testing only, to avoid stack overflow
+     * @param {number} timeout */
+    async breathe(timeout = 1000) { // timeout in ms
+        while (this.stack.length > 10) {
+            await this.#executeNextFunction();
+        }
+
+        if (this.stack.length === 0) { return Promise.resolve(); }
+
+        // otherwise, return a promise that resolves when the stack becomes empty
+        return new Promise((resolve, reject) => {
+            this.emptyResolves.push(resolve); // Add the resolve to the array
+
+            
+            setTimeout(() => { // Consider the stack as empty after the timeout
+                resolve();
+            }, timeout);
+        });
+    }
+}
+class ProgressLogger {
+    constructor(total) {
+        this.total = total;
+        this.stepSizePercent = 10;
+        this.lastLoggedStep = 0;
+    }
+
+    logProgress(current) {
+        const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
+        const currentStep = Math.floor(progress / this.stepSizePercent);
+
+        if (currentStep > this.lastLoggedStep) {
+            this.lastLoggedStep = currentStep;
+            console.log(`[HotData] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
+        }
+    }
+}
 class AddressTypeInfo {
     name = '';
     description = '';
@@ -76,11 +169,12 @@ const addressUtils = {
         addressBase58Length: 20,
     },
     glossary: {
-        W: { name: 'Weak', description: 'No condition', zeroBits: 0, nbOfSigners: 1 },
-        C: { name: 'Contrast', description: '16 times harder to generate', zeroBits: 4, nbOfSigners: 1 },
-        S: { name: 'Secure', description: '256 times harder to generate', zeroBits: 8, nbOfSigners: 1 },
-        P: { name: 'Powerful', description: '4096 times harder to generate', zeroBits: 12, nbOfSigners: 1 },
-        U: { name: 'Ultimate', description: '65536 times harder to generate', zeroBits: 16, nbOfSigners: 1 },
+        W: { name: 'Weak', description: 'No condition', zeroBits: 0 },
+        C: { name: 'Contrast', description: '16 times harder to generate', zeroBits: 4 },
+        S: { name: 'Secure', description: '256 times harder to generate', zeroBits: 8 },
+        P: { name: 'Powerful', description: '4096 times harder to generate', zeroBits: 12 },
+        U: { name: 'Ultimate', description: '65536 times harder to generate', zeroBits: 16 },
+        M: { name: 'MultiSig', description: 'Multi-signature address', zeroBits: 0 }
     },
 
     /**
@@ -542,9 +636,65 @@ const conditionnals = {
         const intValue = parseInt(string, 2);
         return intValue >= minValue;
     },
+    /**
+     * Check if the array contains duplicates
+     * @param {Array} array
+     */
+    arrayIncludeDuplicates(array) {
+        return (new Set(array)).size !== array.length;
+    }
 };
 
 const compression = {
+    prepareTransaction: {
+        /** @param {Transaction} tx */
+        toBinary_v1(tx) {
+            tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
+            for (let i = 0; i < tx.witnesses.length; i++) {
+                const signature = tx.witnesses[i].split(':')[0];
+                const publicKey = tx.witnesses[i].split(':')[1];
+                tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
+            }
+            for (let j = 0; j < tx.inputs.length; j++) {
+                const input = tx.inputs[j];
+                if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
+                    tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
+                    continue;
+                }
+
+                for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
+                tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
+            };
+            for (let j = 0; j < tx.outputs.length; j++) {
+                const output = tx.outputs[j];
+                for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
+            };
+            
+            return tx;
+        },
+        /** @param {Transaction} decodedTx */
+        fromBinary_v1(decodedTx) {
+            const tx = decodedTx;
+            tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
+            for (let i = 0; i < tx.witnesses.length; i++) {
+                const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
+                const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
+                tx.witnesses[i] = `${signature}:${publicKey}`;
+            }
+            for (let j = 0; j < tx.inputs.length; j++) {
+                const input = tx.inputs[j];
+                if (typeof input === 'string') {
+                    continue; }
+                if (utils.typeValidation.uint8Array(input)) {
+                    tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
+                    continue;
+                }
+                tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
+            };
+
+            return tx;
+        }
+    },
     blockData: {
         /** @param {BlockData} blockData */
         toBinary_v1(blockData) {
@@ -553,27 +703,7 @@ const compression = {
             blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
             
             for (let i = 0; i < blockData.Txs.length; i++) {
-                const tx = blockData.Txs[i];
-                tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
-                for (let i = 0; i < tx.witnesses.length; i++) {
-                    const signature = tx.witnesses[i].split(':')[0];
-                    const publicKey = tx.witnesses[i].split(':')[1];
-                    tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
-                }
-                for (let j = 0; j < tx.inputs.length; j++) {
-                    const input = tx.inputs[j];
-                    if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
-                        tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
-                        continue;
-                    }
-
-                    for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
-                    tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
-                };
-                for (let j = 0; j < tx.outputs.length; j++) {
-                    const output = tx.outputs[j];
-                    for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
-                };
+                blockData.Txs[i] = compression.prepareTransaction.toBinary_v1(blockData.Txs[i]);
             };
             
             const encoded = msgpack.encode(blockData);
@@ -590,28 +720,21 @@ const compression = {
             decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
         
             for (let i = 0; i < decoded.Txs.length; i++) {
-                const tx = decoded.Txs[i];
-                tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
-                for (let i = 0; i < tx.witnesses.length; i++) {
-                    const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
-                    const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
-                    tx.witnesses[i] = `${signature}:${publicKey}`;
-                }
-                for (let j = 0; j < tx.inputs.length; j++) {
-                    const input = tx.inputs[j];
-                    if (typeof input === 'string') {
-                        continue; }
-                    if (utils.typeValidation.uint8Array(input)) {
-                        tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
-                        continue;
-                    }
-                    tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
-                };
+                decoded.Txs[i] = compression.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
             };
 
             /** @type {BlockData} */
             const blockData = decoded;
             return blockData;
+        }
+    },
+    transaction: {
+        /** @param {Transaction} tx */
+        toBinary_v1(tx) {
+            tx = compression.prepareTransaction.toBinary_v1(tx);
+
+            const encoded = msgpack.encode(tx);
+            return new Compressor.Zlib.Gzip(encoded).compress();
         }
     }
 };
@@ -629,11 +752,11 @@ const miningParams = {
 }
 const mining = {
     /**
-    * @param {Block[]} chain
+    * @param {BlockMiningData[]} blockMiningData
     * @returns {number} - New difficulty
     */
-    difficultyAdjustment: (chain, logs = true) => {
-        const lastBlock = chain[chain.length - 1];
+    difficultyAdjustment: (blockMiningData, logs = true) => {
+        const lastBlock = blockMiningData[blockMiningData.length - 1];
         const blockIndex = lastBlock.index;
         const difficulty = lastBlock.difficulty;
 
@@ -646,7 +769,7 @@ const mining = {
         const modulus = blockIndex % blockchainSettings.blocksBeforeAdjustment;
         if (modulus !== 0) { return difficulty; }
 
-        const averageBlockTimeMS = mining.getAverageBlockTime(chain);
+        const averageBlockTimeMS = mining.getAverageBlockTime(blockMiningData);
         const deviation = 1 - (averageBlockTimeMS / blockchainSettings.targetBlockTime);
         const deviationPercentage = deviation * 100; // over zero = too fast / under zero = too slow
 
@@ -668,11 +791,11 @@ const mining = {
         return newDifficulty;
     },
 
-    /** @param {Block[]} chain */
-    getAverageBlockTime: (chain) => {
-        const NbBlocks = Math.min(chain.length, blockchainSettings.blocksBeforeAdjustment);
-        const olderBlock = chain[chain.length - NbBlocks];
-        const newerBlock = chain[chain.length - 1];
+    /** @param {BlockMiningData[]} blockMiningData */
+    getAverageBlockTime: (blockMiningData) => {
+        const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
+        const olderBlock = blockMiningData[blockMiningData.length - NbBlocks];
+        const newerBlock = blockMiningData[blockMiningData.length - 1];
         const sum = newerBlock.timestamp - olderBlock.timestamp
 
         return sum / (NbBlocks - 1);
@@ -735,6 +858,8 @@ const utils = {
     cryptoLib,
     argon2: argon2Lib,
     blockchainSettings,
+    CallStack,
+    ProgressLogger,
     addressUtils,
     typeValidation,
     convert,

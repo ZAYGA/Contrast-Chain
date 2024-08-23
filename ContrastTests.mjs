@@ -22,11 +22,11 @@ async function userSendToNextUser(node, accounts) {
         const senderAccount = accounts[i];
         const receiverAccount = i === accounts.length - 1 ? accounts[0] : accounts[i + 1];
 
-        const amountToSend = Math.floor(Math.random() * (1_000_000 - 1000) + 1000);
+        const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
         const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
         if (signedTxJSON) {
-            console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
-            console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id.slice(0, 12)}... to mempool.`);
+            console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
+            console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
             node.addTransactionJSONToMemPool(signedTxJSON);
         } else {
             console.log(error);
@@ -51,8 +51,12 @@ async function account1SendToAllOthers(node, accounts) {
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
-        console.log(`SEND: ${senderAccount.address} -> ${transfers.length} users`);
-        console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
+        console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        const fee = JSON.parse(signedTxJSON)
+        if (fee <= 0) {
+            console.log('[TEST] Transaction fee is invalid.');};
+            
         node.addTransactionJSONToMemPool(signedTxJSON);
     } else {
         console.log(error);
@@ -84,6 +88,17 @@ async function nodeSpecificTest(accounts) {
     if (!miner) { console.error('Failed to load Miner.'); return; }
 
     for (let i = 0; i < 1_000_000; i++) {
+        // user Send To Next User
+        /*if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 5 === 0) {
+            try {
+                refreshAllBalances(node, accounts);
+                await userSendToNextUser(node, accounts);
+            } catch (error) {
+                console.error(error);
+            }
+        }*/
+
+        // user send to multiple users
         if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 7 === 0) {
             try {
                 refreshAllBalances(node, accounts);
@@ -93,6 +108,7 @@ async function nodeSpecificTest(accounts) {
             }
         }
 
+        // simple user to user transactions
         if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
             const { balance, UTXOs } = node.hotData.getBalanceAndUTXOs(minerAccount.address); // should be provided by network
             minerAccount.setBalanceAndUTXOs(balance, UTXOs);
@@ -116,27 +132,22 @@ async function nodeSpecificTest(accounts) {
             if (!validBlockCandidate) { throw new Error('Not valid nonce.'); }
 
             node.submitPowProposal(validBlockCandidate);
-            // verify the block as FullNode
-            /*const blockProposalSucceed = await node.blockProposal(validBlockCandidate);
-            if (!blockProposalSucceed) { throw new Error('Block proposal rejected.'); }
-    
-            if (validBlockCandidate.hash !== node.blockCandidate.prevHash) { throw new Error('Fatal error: Block proposal accepted but prevHash does not match.'); }*/
         } catch (error) {
             const errorIncludesPOWerror = error.message.includes('unlucky--'); // mining invalid nonce/hash
             const errorSkippingLog = ['Not valid nonce.'];
             if (errorIncludesPOWerror === false && errorSkippingLog.includes(error.message) === false) { console.error(error.stack); }
-
-            /*const errorRequieringReturn = [
-                'Fatal error: Block proposal accepted but prevHash does not match.',
-                'Block proposal rejected.'
-            ];
-            if (errorRequieringReturn.includes(error.message)) { return; }*/
         }
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        //console.log(`await ${node.callStack.stack.length} stack to be empty.`);
+        await node.callStack.breathe();
+        /*if (node.callStack.stack.length === 0) { 
+            console.log(`stack is empty.`); 
+        } else {
+            console.log(`stack is not empty. ${node.callStack.stack.length} remaining.`);
+        }*/
     }
 
-    console.log('Node test completed. - stop mining');
+    console.log('[TEST] Node test completed. - stop mining');
 }
 async function test() {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
@@ -145,15 +156,15 @@ async function test() {
     if (!wallet) { console.error('Failed to restore wallet.'); return; }
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 
-    wallet.loadAccountsGenerationSequences();
+    wallet.loadAccounts();
     
     const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
     if (!derivedAccounts) { console.error('Failed to derive addresses.'); return; }
     timings.deriveAccounts = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 
-    wallet.saveAccountsGenerationSequences();
+    wallet.saveAccounts();
     
-    console.log(`account0 address: [ ${contrast.utils.addressUtils.formatAddress(derivedAccounts[0].address, ' ')} ]`);
+    console.log(`[TEST] account0 address: [ ${contrast.utils.addressUtils.formatAddress(derivedAccounts[0].address, ' ')} ]`);
     
     console.log(
 `__Timings -----------------------
