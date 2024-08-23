@@ -1,7 +1,7 @@
 import { HashFunctions } from './conCrypto.mjs';
-import { Transaction_Builder } from './Transaction.mjs';
+import { Transaction, Transaction_Builder } from './Transaction.mjs';
 import utils from './utils.mjs';
-import { TxIO_Builder } from './TxIO.mjs';
+import { UTXO_Creation_Conditions, TxIO_Scripts, TransactionIO } from './TxIO.mjs';
 
 /**
  * An object that associates TxID to arrays of TransactionIO.
@@ -69,8 +69,6 @@ export class Validation {
     static calculateRemainingAmount(transaction, isCoinBaseOrFeeTx) {
         const inputsAmount = transaction.inputs.reduce((a, b) => a + b.amount, 0);
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
-        // 288 921 831 007
-        // 288 920 831 007 + 1 000 000
         const fee = inputsAmount - outputsAmount;
         if (fee < 0) { throw new Error('Negative transaction'); }
         if (isCoinBaseOrFeeTx && fee !== 0) { throw new Error('Invalid coinbase transaction'); }
@@ -91,7 +89,51 @@ export class Validation {
         if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
     }
 
-    /** ==> Fourth validation, medium computation cost.
+    /** ==> Fourth validation, low computation cost.
+     * 
+     * - control the right to create outputs using the script
+     * @param {Transaction} transaction
+     */
+    static async controlTransactionOutputsScriptsConditions(transaction) {
+        for (let i = 0; i < transaction.outputs.length; i++) {
+            const inScript = transaction.inputs[i] ? transaction.inputs[i].script : undefined;
+            const inAmount = transaction.inputs[i] ? transaction.inputs[i].amount : undefined;
+            const inAddress = transaction.inputs[i] ? transaction.inputs[i].address : undefined;
+
+            const outScript = transaction.outputs[i] ? transaction.outputs[i].script : undefined;
+            const outAmount = transaction.outputs[i] ? transaction.outputs[i].amount : undefined;
+            const outAddress = transaction.outputs[i] ? transaction.outputs[i].address : undefined;
+
+            const { scriptName, scriptParams } = TxIO_Scripts.decomposeScriptString(outScript);
+            const utxoCreationConditions = UTXO_Creation_Conditions[scriptName];
+            if (!utxoCreationConditions) { throw new Error('Invalid script, cannot find associated conditions'); }
+
+            if (utxoCreationConditions.inputAddressEqualOuputAddress && inAddress !== outAddress) {
+                throw new Error('Invalid script, input address !== output address');
+            }
+
+            if (transaction.inputs.length > utxoCreationConditions.maxTransactionInputs) {
+                throw new Error(`Invalid transaction inputs amount: > ${utxoCreationConditions.maxTransactionInputs}`);
+            }
+
+            if (utxoCreationConditions.allInputsSameAddress) {
+                for (let j = 0; j < transaction.inputs.length; j++) {
+                    if (transaction.inputs[j].address !== inAddress) {
+                        throw new Error('Invalid script, all inputs address !== same');
+                    }
+                }
+            }
+
+            for (let j = 0; j < utxoCreationConditions.requiredParams; j++) {
+                const requiredParam = utxoCreationConditions.requiredParams[j];
+                if (scriptParams.includes(requiredParam) === false) {
+                    throw new Error('Invalid script parameters');
+                }
+            }
+        }
+    }
+
+    /** ==> Fifth validation, medium computation cost.
      * 
      * - control the signature of the inputs
      * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
@@ -99,7 +141,7 @@ export class Validation {
      */
     static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) {
         // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
-        const opAlreadyPassed = [];
+        /*const opAlreadyPassed = [];
         const witnessParts = transaction.witnesses[0].split(':');
         const signature = witnessParts[0];
         const pubKeyHex = witnessParts[1];
@@ -118,28 +160,39 @@ export class Validation {
 
             utils.addressUtils.conformityCheck(address);
             await utils.addressUtils.securityCheck(address, pubKeyHex);
-            
-            const message = Transaction_Builder.getTransactionStringToHash(transaction);
-            Validation.executeTransactionInputScripts(script, signature, message, pubKeyHex);
+        }*/
 
-            opAlreadyPassed.push(operation);
+        const startTime = Date.now();
+        const scriptMemory = {};
+        for (let i = 0; i < transaction.inputs.length; i++) {
+            const { script } = transaction.inputs[i];
+            if (script === undefined) { throw new Error('Invalid input'); }
+
+            const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
+            const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
+            if (!scriptFunction) { throw new Error('Invalid script'); }
+            
+            await scriptFunction(scriptMemory, referencedUTXOsByBlock, transaction, i, scriptParams);
         }
+        const endTime = Date.now();
+        console.log(`[VALIDATION] .executeTransactionInputsScripts() took ${endTime - startTime} ms`);
     }
-    /** // TODO: TRANSFORM SCRIPT LOGIC TO HUMAN READABLE LOGIC -> INPUT LOOKS LIKE : BY:ADDRESS-SIG:SIGNATURE-PUB:pubKeyHex ?
+    /**
      * @param {string} script
      * @param {string} address
      * @param {string} signature
      * @param {string} pubKeyHex
      */
-    static executeTransactionInputScripts(script, signature, message, pubKeyHex) {
-        const scriptFunction = TxIO_Builder.getAssociatedScript(script);
+    static executeTransactionInputScripts(script, signature, message, pubKeyHex) { // DEPRECATED
+        const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
+        const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
         if (!scriptFunction) { throw new Error('Invalid script'); }
 
-        const addressOwnedByPubKey = scriptFunction(signature, message, pubKeyHex);
+        const addressOwnedByPubKey = scriptFunction(signature, message, pubKeyHex, scriptParams);
         if (!addressOwnedByPubKey) { throw new Error('Invalid signature<->pubKey correspancy'); }
     }
 
-    /** ==> Fifth validation, high computation cost.
+    /** ==> Sixth validation, high computation cost.
      * 
      * - control the address/pubKey correspondence
      * @param {ReferencedUTXOs[]} referencedUTXOsByBlock

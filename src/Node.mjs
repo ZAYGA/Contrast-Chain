@@ -234,11 +234,14 @@ class MemPool {
     
             // Third validation: medium computation cost.
             await Validation.controlTransactionHash(transaction);
+
+            // Fourth validation: low computation cost.
+            await Validation.controlTransactionOutputsScriptsConditions(transaction);
     
-            // Fourth validation: medium computation cost.
+            // Fifth validation: medium computation cost.
             await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction);
     
-            // Fifth validation: high computation cost.
+            // Sixth validation: high computation cost.
             await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
     
             txInclusionFunction();

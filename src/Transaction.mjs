@@ -40,7 +40,7 @@ export class Transaction_Builder {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
 
-        const coinbaseOutput = TxIO_Builder.newIO('output', amount, 'signature_v1', 1, address);
+        const coinbaseOutput = TxIO_Builder.newIO('output', amount, 'sig_v1', 1, address);
         const inputs = [ nonceHex ];
         const outputs = [ coinbaseOutput ];
 
@@ -50,15 +50,16 @@ export class Transaction_Builder {
      * @param {BlockData} blockCandidate
      * @param {string} address
      */
-    static async createPosRewardTransaction(blockCandidate, address) {
+    static async createPosRewardTransaction(blockCandidate, address, posStakedAddress) {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
 
         const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
         if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
 
-        const posInput = await Block.calculateValidatorHash(blockCandidate);
+        const validatorHash = await Block.calculateValidatorHash(blockCandidate);
+        const posInput = `${posStakedAddress}:${validatorHash}`;
         const inputs = [ posInput ];
-        const posOutput = TxIO_Builder.newIO('output', blockFees, 'signature_v1', 1, address);
+        const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);
         const outputs = [ posOutput ];
 
         return Transaction(inputs, outputs);
@@ -75,7 +76,7 @@ export class Transaction_Builder {
         
         TxIO_Builder.checkMissingTxID(UTXOs);
 
-        const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'signature_v1', 1);
+        const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig_v1', 1);
         const totalInputAmount = UTXOs.reduce((a, b) => a + b.amount, 0);
 
         const remainingAmount = totalInputAmount - totalSpent;
@@ -97,11 +98,11 @@ export class Transaction_Builder {
         if (change <= 0) {
             throw new Error('(change <= 0) not enough funds');
         } else if (change > 0) {
-            const changeOutput = TxIO_Builder.newIO("output", change, 'signature_v1', 1, senderAddress);
+            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
             outputs.push(changeOutput);
         }
 
-        if (TxIO_Scripts.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
+        if (utils.conditionnals.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
         
         return Transaction(UTXOs, outputs);
     }
@@ -115,7 +116,7 @@ export class Transaction_Builder {
     }
     static simulateTransactionToEstimateWeight(UTXOs, outputs) {
         const change = 26_152_659_654_321;
-        const changeOutput = TxIO_Builder.newIO("output", change, 'signature_v1', 1, 'Cv6XXKBTALRPSCzuU6k4');
+        const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, 'Cv6XXKBTALRPSCzuU6k4');
         const outputsClone = TxIO_Builder.cloneTxIO(outputs);
         outputsClone.push(changeOutput);
         
@@ -135,7 +136,7 @@ export class Transaction_Builder {
      * @param {string} script
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], script = 'signature_v1', version = 1) {
+    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], script = 'sig_v1', version = 1) {
         const outputs = [];
         let totalSpent = 0;
 

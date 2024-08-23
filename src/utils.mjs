@@ -169,11 +169,12 @@ const addressUtils = {
         addressBase58Length: 20,
     },
     glossary: {
-        W: { name: 'Weak', description: 'No condition', zeroBits: 0, nbOfSigners: 1 },
-        C: { name: 'Contrast', description: '16 times harder to generate', zeroBits: 4, nbOfSigners: 1 },
-        S: { name: 'Secure', description: '256 times harder to generate', zeroBits: 8, nbOfSigners: 1 },
-        P: { name: 'Powerful', description: '4096 times harder to generate', zeroBits: 12, nbOfSigners: 1 },
-        U: { name: 'Ultimate', description: '65536 times harder to generate', zeroBits: 16, nbOfSigners: 1 },
+        W: { name: 'Weak', description: 'No condition', zeroBits: 0 },
+        C: { name: 'Contrast', description: '16 times harder to generate', zeroBits: 4 },
+        S: { name: 'Secure', description: '256 times harder to generate', zeroBits: 8 },
+        P: { name: 'Powerful', description: '4096 times harder to generate', zeroBits: 12 },
+        U: { name: 'Ultimate', description: '65536 times harder to generate', zeroBits: 16 },
+        M: { name: 'MultiSig', description: 'Multi-signature address', zeroBits: 0 }
     },
 
     /**
@@ -635,6 +636,13 @@ const conditionnals = {
         const intValue = parseInt(string, 2);
         return intValue >= minValue;
     },
+    /**
+     * Check if the array contains duplicates
+     * @param {Array} array
+     */
+    arrayIncludeDuplicates(array) {
+        return (new Set(array)).size !== array.length;
+    }
 };
 
 const compression = {
@@ -761,7 +769,7 @@ const mining = {
         const modulus = blockIndex % blockchainSettings.blocksBeforeAdjustment;
         if (modulus !== 0) { return difficulty; }
 
-        const averageBlockTimeMS = mining.getAverageBlockTime(chain);
+        const averageBlockTimeMS = mining.getAverageBlockTime(blockMiningData);
         const deviation = 1 - (averageBlockTimeMS / blockchainSettings.targetBlockTime);
         const deviationPercentage = deviation * 100; // over zero = too fast / under zero = too slow
 
