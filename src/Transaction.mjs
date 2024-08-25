@@ -1,10 +1,8 @@
 import utils from './utils.mjs';
 import Vss from './vss.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-//import { Account, TransactionIO, TxIO_Builder, Block, TxIO_Scripts } from './index.mjs';
 import { Account } from './account.mjs';
 import { Block } from './block.mjs';
-import { UTXO_Creation_Conditions, TransactionIO, TxIO_Builder, TxIO_Scripts } from './transactionIO - deprecated.mjs';
 import { Validation } from './validation.mjs';
 
 export const uxtoScriptsGlossary = {
@@ -58,10 +56,10 @@ export class TxIO_Builder {
      * @param {number | undefined} vout - input only
      */
     static newIO(type, amount, script, version, address, utxoBlockHeight, utxoTxID, vout) {
-        const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
+        /*const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
         const TxIO_Script = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
         if (!TxIO_Script) { 
-            throw new Error('Invalid script'); }
+            throw new Error('Invalid script'); }*/
 
         const newTxIO = TransactionIO(amount, script, version, address, utxoBlockHeight, utxoTxID, vout);
         Validation.isValidTransactionIO(newTxIO, type);
