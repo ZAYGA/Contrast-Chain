@@ -1,42 +1,41 @@
 import utils from './utils.mjs';
-import Vss from './vss.mjs';
 import { HashFunctions } from './conCrypto.mjs';
 import { Account } from './account.mjs';
 import { Block } from './block.mjs';
 import { Validation } from './validation.mjs';
 
-export const uxtoScriptsGlossary = {
+export const uxtoRulesGlossary = {
     sig: { description: 'Simple signature verification' },
     sigOrSlash: { description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
     lockUntilBlock: { description: 'UTXO locked until block height', lockUntilBlock: 0 },
     multiSigCreate: { description: 'Multi-signature creation' },
-    p2pExchange: { description: 'Peer-to-peer exchange' },
+    p2pExchange: { description: 'Peer-to-peer exchange' }
 }
 
 /**
  * @typedef {Object} TransactionIO
- * @property {number} amount
+ * @property {number} amount - the amount of microConts
  * @property {string | undefined} address - output only || script's condition
- * @property {string} script
- * @property {number} version
+ * @property {string} rule - the unlocking rule
+ * @property {number} version - the transaction version
  * @property {number | undefined} utxoBlockHeight - input only
  * @property {string | undefined} utxoTxID - input only
  * @property {number | undefined} vout - input only
  */
 /** Transaction Input/Output data structure
- * @param {number} amount
+ * @param {number} amount - the amount of microConts
  * @param {string | undefined} address - output only || script's condition
- * @param {string} script
- * @param {number} version  
+ * @param {string} rule - the unlocking rule
+ * @param {number} version - the transaction version
  * @param {number | undefined} utxoBlockHeight - input only
  * @param {string | undefined} utxoTxID - input only
  * @param {number | undefined} vout - input only
  * @returns {TransactionIO}
  **/
-export const TransactionIO = (amount, script, version, address, utxoBlockHeight, utxoTxID, vout) => {
+export const TransactionIO = (amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) => {
     return {
         amount,
-        script,
+        rule,
         version,
         address,
         utxoBlockHeight,
@@ -49,19 +48,17 @@ export class TxIO_Builder {
      * @param {"input" | "output"} type
      * @param {number} amount
      * @param {string | undefined} address - output only
-     * @param {string} script
+     * @param {string} rule
      * @param {number} version
      * @param {number | undefined} utxoBlockHeight - input only
      * @param {string | undefined} utxoTxID - input only
      * @param {number | undefined} vout - input only
      */
-    static newIO(type, amount, script, version, address, utxoBlockHeight, utxoTxID, vout) {
-        /*const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-        const TxIO_Script = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-        if (!TxIO_Script) { 
-            throw new Error('Invalid script'); }*/
+    static newIO(type, amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) {
+        const ruleName = rule.split('_')[0];
+        if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
 
-        const newTxIO = TransactionIO(amount, script, version, address, utxoBlockHeight, utxoTxID, vout);
+        const newTxIO = TransactionIO(amount, rule, version, address, utxoBlockHeight, utxoTxID, vout);
         Validation.isValidTransactionIO(newTxIO, type);
         
         return newTxIO;
@@ -121,7 +118,7 @@ export class Transaction_Builder {
      * @param {string} address 
      * @param {number} amount
      */
-    static createCoinbaseTransaction(nonceHex, address, amount) {
+    static async createCoinbaseTransaction(nonceHex, address, amount) {
         if (typeof nonceHex !== 'string') { throw new Error('Invalid nonceHex'); }
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
@@ -130,7 +127,7 @@ export class Transaction_Builder {
         const inputs = [ nonceHex ];
         const outputs = [ coinbaseOutput ];
 
-        return Transaction(inputs, outputs);
+        return await this.newTransaction(inputs, outputs);
     }
     /**
      * @param {BlockData} blockCandidate
@@ -148,14 +145,14 @@ export class Transaction_Builder {
         const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);
         const outputs = [ posOutput ];
 
-        return Transaction(inputs, outputs);
+        return await this.newTransaction(inputs, outputs);
     }
     /** 
      * @param {Account} senderAccount
      * @param {{recipientAddress: string, amount: number}[]} transfers
      * @param {number} feePerByte // RANDOM IS TEMPORARY
      */
-    static createTransferTransaction(senderAccount, transfers, feePerByte = Math.round(Math.random() * 10) + 1 ) {
+    static async createTransferTransaction(senderAccount, transfers, feePerByte = Math.round(Math.random() * 10) + 1 ) {
         const senderAddress = senderAccount.address;
         const UTXOs = senderAccount.UTXOs;
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
@@ -176,16 +173,15 @@ export class Transaction_Builder {
 
         if (utils.conditionnals.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
         
-        return Transaction(UTXOs, outputs);
+        return await this.newTransaction(UTXOs, outputs);
     }
     /**
      * @param {Account} senderAccount
      * @param {string} stakingAddress
      * @param {number} amount
-     * @param {Vss} vss
      * @param {number} feePerByte // RANDOM IS TEMPORARY
      */
-    static createStakingNewVssTransaction(senderAccount, stakingAddress, amount, vss, feePerByte = Math.round(Math.random() * 10) + 1) {
+    static async createStakingNewVssTransaction(senderAccount, stakingAddress, amount, feePerByte = Math.round(Math.random() * 10) + 1) {
         const senderAddress = senderAccount.address;
         const UTXOs = senderAccount.UTXOs;
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
@@ -206,8 +202,13 @@ export class Transaction_Builder {
         }
 
         if (utils.conditionnals.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
-
-        return Transaction(UTXOs, outputs);
+        
+        return await this.newTransaction(UTXOs, outputs);
+    }
+    static async newTransaction(inputs, outputs) {
+        const transaction = Transaction(inputs, outputs);
+        transaction.id = await Transaction_Builder.hashTxToGetID(transaction);
+        return transaction;
     }
     /** @param {TransactionIO[]} UTXOs */
     static getTotalUTXOsAmount(UTXOs) { // DEPRECATED ??
@@ -235,16 +236,16 @@ export class Transaction_Builder {
     }
     /**
      * @param {{recipientAddress: string, amount: number}[]} transfers
-     * @param {string} script
+     * @param {string} rule
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], script = 'sig_v1', version = 1) {
+    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], rule = 'sig_v1', version = 1) {
         const outputs = [];
         let totalSpent = 0;
 
         for (let i = 0; i < transfers.length; i++) {
             const { recipientAddress, amount} = transfers[i];
-            const output = TxIO_Builder.newIO('output', amount, script, version, recipientAddress);
+            const output = TxIO_Builder.newIO('output', amount, rule, version, recipientAddress);
             outputs.push(output);
             totalSpent += amount;
         }
@@ -336,9 +337,8 @@ export class Transaction_Builder {
     static async createAndSignTransferTransaction(senderAccount, amount, recipientAddress) {
         try {
             const transfer = { recipientAddress, amount };
-            const transaction = Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
+            const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
             const signedTx = await senderAccount.signAndReturnTransaction(transaction);
-            signedTx.id = await Transaction_Builder.hashTxToGetID(signedTx);
     
             return { signedTxJSON: Transaction_Builder.getTransactionJSON(signedTx), error: false };
         } catch (error) {

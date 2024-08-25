@@ -24,7 +24,7 @@ function getUTXOPointedByTxIO(referencedUTXOsByBlock, TxIO) {
 export class Validation {
     /** ==> First validation, low computation cost.
      * 
-     * - control format of : amount, address, script, version, TxID
+     * - control format of : amount, address, rule, version, TxID
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
@@ -56,7 +56,8 @@ export class Validation {
         if (type === 'input' && TxIO.amount === 0) { throw new Error('Invalid amount value: = 0'); }
         if (TxIO.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
-        if (typeof TxIO.script !== 'string') { throw new Error('Invalid script !== string'); }
+        if (typeof TxIO.rule !== 'string') { 
+            throw new Error('Invalid rule !== string'); }
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
@@ -92,7 +93,7 @@ export class Validation {
         return fee;
     }
 
-    /** ==> Third validation, medium computation cost.
+    /** ==> Third validation, low computation cost.
      * 
      * - control the transaction hash (SHA256)
      * @param {Transaction} transaction
@@ -100,20 +101,20 @@ export class Validation {
     static async controlTransactionHash(transaction) {
         const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
         if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
-    }
+    } // WILL BE REDONDANT WITH THE FIFTH VALIDATION
 
     /** ==> Fourth validation, low computation cost.
      * 
-     * - control the right to create outputs using the script
+     * - control the right to create outputs using the rule
      * @param {Transaction} transaction
      */
-    static async controlTransactionOutputsScriptsConditions(transaction) { // NOT SURE IF WE CONSERVE THIS
+    static async controlTransactionOutputsRulesConditions(transaction) { // NOT SURE IF WE CONSERVE THIS
         for (let i = 0; i < transaction.outputs.length; i++) {
-            const inScript = transaction.inputs[i] ? transaction.inputs[i].script : undefined;
+            const inRule = transaction.inputs[i] ? transaction.inputs[i].rule : undefined;
             const inAmount = transaction.inputs[i] ? transaction.inputs[i].amount : undefined;
             const inAddress = transaction.inputs[i] ? transaction.inputs[i].address : undefined;
 
-            const outScript = transaction.outputs[i] ? transaction.outputs[i].script : undefined;
+            const outRule = transaction.outputs[i] ? transaction.outputs[i].rule : undefined;
             const outAmount = transaction.outputs[i] ? transaction.outputs[i].amount : undefined;
             const outAddress = transaction.outputs[i] ? transaction.outputs[i].address : undefined;
         }
@@ -122,18 +123,19 @@ export class Validation {
     /** ==> Fifth validation, medium computation cost.
      * 
      * - control the signature of the inputs
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
      * @param {Transaction} transaction
      */
-    static async controlAllWitnessesSignatures(referencedUTXOsByBlock, transaction) {
+    static async controlAllWitnessesSignatures(transaction) {
         const startTime = Date.now();
 
+        if (!Array.isArray(transaction.witnesses)) { 
+            throw new Error('Invalid witnesses'); }
 
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const witnessParts = transaction.witnesses[0].split(':');
             const signature = witnessParts[0];
             const pubKeyHex = witnessParts[1];
-            const message = Transaction_Builder.getTransactionStringToHash(transaction);
+            const message = await Transaction_Builder.hashTxToGetID(transaction);
 
             // will throw an error if the signature is invalid
             AsymetricFunctions.verifySignature(signature, message, pubKeyHex);
@@ -206,7 +208,8 @@ export class Validation {
 
             const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-            if (witnessesAddresses.includes(referencedUTXO.address) === false) { throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
+            if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
+                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
         }
     }
 }

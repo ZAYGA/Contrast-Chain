@@ -1,5 +1,5 @@
 import storage from './storage.mjs';
-import Vss from './vss.mjs';
+import { Vss } from './vss.mjs';
 import { Validation } from './validation.mjs';
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData, BlockData, Block } from './block.mjs';
@@ -197,7 +197,7 @@ class MemPool {
         try {
             const isCoinBase = false;
     
-            // First control format of : amount, address, script, version, TxID
+            // First control format of : amount, address, rule, version, TxID
             Validation.isConformTransaction(transaction, isCoinBase);
     
             // Second control : input > output
@@ -237,10 +237,10 @@ class MemPool {
             await Validation.controlTransactionHash(transaction);
 
             // Fourth validation: low computation cost.
-            await Validation.controlTransactionOutputsScriptsConditions(transaction);
+            await Validation.controlTransactionOutputsRulesConditions(transaction);
     
             // Fifth validation: medium computation cost.
-            await Validation.controlAllWitnessesSignatures(referencedUTXOsByBlock, transaction);
+            await Validation.controlAllWitnessesSignatures(transaction);
             //await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction); DEPRECATED
     
             // Sixth validation: high computation cost.
@@ -265,7 +265,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.referencedUTXOsByBlock = [];
         /** @type {BlockMiningData[]} */
         this.blockMiningData = [];
-
+        /** @type {Vss} */
         this.vss = new Vss();
 
         /** @type {Object<string, object>} */
@@ -376,6 +376,11 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             this.addressesUTXOs[address].push(TxOutputs[i]);
             this.#setReferencedUTXO(TxOutputs[i]);
             this.#changeBalance(address, amount);
+
+            const rule = TxOutputs[i].rule;
+            if (rule === "sigOrSlash") {
+                this.vss.newStake(TxOutputs[i]); // for now we only create new range
+            }
         }
     }
 
@@ -398,6 +403,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     /** @param {string} address */
     getBalanceAndUTXOs(address) {
         // clone values to avoid modification
+        /** @type {number} */
         const balance = this.addressesBalances[address] ? JSON.parse(JSON.stringify(this.addressesBalances[address])) : 0;
         const UTXOs = [];
         if (this.addressesUTXOs[address]) {
@@ -407,6 +413,19 @@ class HotData { // Used to store, addresses's UTXOs and balance.
                 UTXOs.push(clone);
             }
         }
+        return { balance, UTXOs };
+    }
+    /** @param {string} address */
+    getBalanceSpendableAndUTXOs(address) {
+        const { balance, UTXOs } = this.getBalanceAndUTXOs(address);
+        for (let i = 0; i < UTXOs.length; i++) {
+            const rule =  UTXOs[i].rule;
+            if (rule === "sigOrSlash") {
+                UTXOs.splice(i, 1);
+                i--;
+            }
+        }
+
         return { balance, UTXOs };
     }
     /**
@@ -424,16 +443,16 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         }
     }
     /** @param {BlockData[]} chainPart */
-    digestChainPart(chainPart) {
+    async digestChainPart(chainPart) {
         //const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
         for (let i = 0; i < chainPart.length; i++) {
             const blockData = chainPart[i];
-            this.digestConfirmedBlock(blockData);
+            await this.digestConfirmedBlock(blockData);
             //progressLogger.logProgress(i);
         }
     }
     /** @param {BlockData} blockData */
-    digestConfirmedBlock(blockData) {
+    async digestConfirmedBlock(blockData) {
         const Txs = blockData.Txs;
         this.digestBlockTransactions(blockData.index, Txs);
 
@@ -450,6 +469,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             throw new Error('Invalid total of balances'); 
         }
 
+        await this.vss.calculateRoundLegitimacy(blockData.hash);
         this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
     }
 
@@ -486,7 +506,7 @@ export class FullNode {
             const controlChainPart = storage.loadBlockchainPartLocally(blocksFolder, 'json');
             FullNode.controlChainIntegrity(chainPart, controlChainPart);
 
-            node.hotData.digestChainPart(chainPart);
+            await node.hotData.digestChainPart(chainPart);
             lastBlockData = chainPart[chainPart.length - 1];
 
             blockLoadedCount += chainPart.length;
@@ -540,7 +560,7 @@ export class FullNode {
      * should be used with the callstack
      * @param {BlockData} minerBlockCandidate
      */
-    async #blockProposal(minerBlockCandidate) {
+    async #blockProposal(minerBlockCandidate) { // TODO: WILL NEED TO USE BRANCHES
         if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
         if (minerBlockCandidate.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${minerBlockCandidate.index} - current candidate: ${this.blockCandidate.index}`); }
         
@@ -558,7 +578,7 @@ export class FullNode {
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
-        this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
+        await this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.referencedUTXOsByBlock);
 
@@ -606,7 +626,6 @@ export class FullNode {
         }
 
         const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.validatorAccount.address);
-        posFeeTx.id = await Transaction_Builder.hashTxToGetID(posFeeTx);
         const signedPosFeeTx = await this.validatorAccount.signAndReturnTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
 

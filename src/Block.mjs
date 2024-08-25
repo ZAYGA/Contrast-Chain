@@ -75,9 +75,15 @@ export class Block {
     }
     /** @param {BlockData} blockData */
     static async calculateHash(blockData) {
+        if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
         const blockSignatureHex = Block.getBlockStringToHash(blockData);
-        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, blockSignatureHex, blockData.nonce);
+        const headerNonce = blockData.nonce;
+        const coinbaseNonce = blockData.Txs[0].inputs[0];
+        
+        const nonce = `${headerNonce.Hex}${coinbaseNonce.Hex}`;
+        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, blockSignatureHex, nonce);
         if (!newBlockHash) { throw new Error('Invalid block hash'); }
+
 
         return { hex: newBlockHash.hex, bitsArrayAsString: newBlockHash.bitsArray.join('') };
     }

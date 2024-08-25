@@ -62,13 +62,12 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
     const senderAccount = accounts[senderAccountIndex];
     const transfers = [];
     for (let i = 2; i < accounts.length; i++) {
-        const amount = Math.floor(Math.random() * (1_000_000 - 1000) + 1000);
+        const amount = Math.floor(Math.random() * (1_000_000) + 1_100_000);
         const transfer = { recipientAddress: accounts[i].address, amount };
         transfers.push(transfer);
     }
-    const transaction = Transaction_Builder.createTransferTransaction(senderAccount, transfers);
+    const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, transfers);
     const signedTx = await senderAccount.signAndReturnTransaction(transaction);
-    signedTx.id = await Transaction_Builder.hashTxToGetID(signedTx);
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
@@ -83,16 +82,38 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
         console.log(error);
     }
 }
+/** User stakes in VSS
+ * @param {FullNode} node
+ * @param {Account[]} accounts
+ * @param {number} senderAccountIndex
+ * @param {number} amountToStake
+ */
+async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToStake = 1_000_000) {
+    const senderAccount = accounts[senderAccountIndex];
+    const stakingAddress = accounts[senderAccountIndex].address;
+    
+    const transaction = await Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
+    const signedTx = await senderAccount.signAndReturnTransaction(transaction);
+    const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx);
+    if (signedTxJSON) {
+        console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
+        console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        node.addTransactionJSONToMemPool(signedTxJSON);
+    } else {
+        console.log(error);
+    }
+}
 /**
  * @param {FullNode} node
  * @param {Account[]} accounts
  */
 function refreshAllBalances(node, accounts) {
     for (let i = 0; i < accounts.length; i++) {
-        const { balance, UTXOs } = node.hotData.getBalanceAndUTXOs(accounts[i].address);
+        const { balance, UTXOs } = node.hotData.getBalanceSpendableAndUTXOs(accounts[i].address);
         accounts[i].setBalanceAndUTXOs(balance, UTXOs);
     }
 }
+
 /** @param {Account[]} accounts */
 async function nodeSpecificTest(accounts) {
     if (!contrast.utils.isNode) { return; }
@@ -106,6 +127,15 @@ async function nodeSpecificTest(accounts) {
 
     for (let i = 0; i < 1_000_000; i++) {
         refreshAllBalances(node, accounts);
+
+        // user stakes in VSS
+        if (node.blockCandidate.index > 10 && node.blockCandidate.index < 12) { // < 20
+            try {
+                await userStakeInVSS(node, accounts, node.blockCandidate.index - 10);
+            } catch (error) {
+                console.error(error);
+            }
+        }
 
         // user Send To Next User
         if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 5 === 0) {

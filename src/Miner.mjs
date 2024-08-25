@@ -14,8 +14,8 @@ export class Miner {
         const coinbaseNonce = utils.mining.generateRandomNonce();
         const minerAddress = this.minerAccount.address;
 
-        const coinbaseTx = Transaction_Builder.createCoinbaseTransaction(coinbaseNonce.Hex, minerAddress, blockCandidate.coinBase);
-        coinbaseTx.id = await Transaction_Builder.hashTxToGetID(coinbaseTx);
+        const nonce = `${headerNonce.Hex}${coinbaseNonce.Hex}`;
+        const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(nonce, minerAddress, blockCandidate.coinBase);
 
         blockCandidate.timestamp = Date.now();
         blockCandidate.nonce = headerNonce.Hex;
