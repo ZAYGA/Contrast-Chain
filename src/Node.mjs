@@ -1,7 +1,7 @@
 import storage from './storage.mjs';
 import Vss from './vss.mjs';
 import { Validation } from './validation.mjs';
-import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
+import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData, BlockData, Block } from './block.mjs';
 import utils from './utils.mjs';
 
