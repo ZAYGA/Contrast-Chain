@@ -1,8 +1,8 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
 //import { Transaction_Builder, Validation } from './index.mjs';
-import { Transaction_Builder } from './Transaction.mjs';
-import { Validation } from './Validation.mjs';
+import { Transaction_Builder } from './transaction.mjs';
+import { Validation } from './validation.mjs';
 
 /**
 * @typedef {Object} BlockMiningData

@@ -5,10 +5,10 @@ import Compressor from './externalLibs/gzip.min.js';
 import Decompressor from './externalLibs/gunzip.min.js';
 import msgpack from './externalLibs/msgpack.min.js';
 /**
-* @typedef {import("./Block.mjs").BlockMiningData} BlockMiningData
-* @typedef {import("./Block.mjs").Block} Block
-* @typedef {import("./Block.mjs").BlockData} BlockData
-* @typedef {import("./Transaction.mjs").Transaction} Transaction
+* @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
+* @typedef {import("./block.mjs").Block} Block
+* @typedef {import("./block.mjs").BlockData} BlockData
+* @typedef {import("./transaction.mjs").Transaction} Transaction
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
 */
 
@@ -48,6 +48,7 @@ const blockchainSettings = {
     maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
     minTransactionFeePerByte: 1,
+    newVssSpaceFee: 1_000_000,
     //maxBlockSize: 1_000_000, // 1MB
     maxBlockSize: 200_000, // 200KB
 };
@@ -150,10 +151,10 @@ class ProgressLogger {
         const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
         const currentStep = Math.floor(progress / this.stepSizePercent);
 
-        if (currentStep > this.lastLoggedStep) {
-            this.lastLoggedStep = currentStep;
+        //if (currentStep > this.lastLoggedStep) {
+            //this.lastLoggedStep = currentStep;
             console.log(`[HotData] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
-        }
+        //}
     }
 }
 class AddressTypeInfo {
@@ -606,7 +607,7 @@ const convert = {
             const uint8Array = new TextEncoder().encode(str);
             return convert.uint8Array.toHex(uint8Array);
         },
-    },
+    }
 };
 const conditionnals = {
     /**
@@ -749,7 +750,7 @@ const miningParams = {
     },
     //minNonceHexLength: 8, nonce is now separated between header and coinBase input
     nonceLength: 4,
-}
+};
 const mining = {
     /**
     * @param {BlockMiningData[]} blockMiningData

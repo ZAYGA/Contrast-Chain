@@ -1,9 +1,9 @@
 import storage from './storage.mjs';
 //import { BlockData, Block, Transaction, Transaction_Builder, Validation, TransactionIO, TxIO_Builder } from './index.mjs';
-import { Validation } from './Validation.mjs';
-import { Transaction, Transaction_Builder } from './Transaction.mjs';
-import { BlockMiningData, BlockData, Block } from './Block.mjs';
-import { TransactionIO, TxIO_Builder } from './TxIO.mjs';
+import Vss from './vss.mjs';
+import { Validation } from './validation.mjs';
+import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
+import { BlockMiningData, BlockData, Block } from './block.mjs';
 import utils from './utils.mjs';
 
 const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
@@ -206,9 +206,11 @@ class MemPool {
     
             // Calculate fee per byte
             const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
+            console.log(`[MEMPOOL] weight: ${TxWeight} bytes`);
+
             const feePerByte = fee / TxWeight;
             transaction.byteWeight = TxWeight;
-            transaction.feePerByte = feePerByte;
+            transaction.feePerByte = feePerByte.toFixed(6);
     
             // Manage the mempool inclusion and collision
             let txInclusionFunction = () => {
@@ -239,7 +241,8 @@ class MemPool {
             await Validation.controlTransactionOutputsScriptsConditions(transaction);
     
             // Fifth validation: medium computation cost.
-            await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction);
+            await Validation.controlAllWitnessesSignatures(referencedUTXOsByBlock, transaction);
+            //await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction); DEPRECATED
     
             // Sixth validation: high computation cost.
             await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
@@ -263,6 +266,11 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.referencedUTXOsByBlock = [];
         /** @type {BlockMiningData[]} */
         this.blockMiningData = [];
+
+        this.vss = new Vss();
+
+        /** @type {Object<string, object>} */
+        this.branches = {};
     }
 
     #calculateTotalOfBalances() {
@@ -292,7 +300,8 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         const TxInputs = transaction.inputs;
         for (let i = 0; i < TxInputs.length; i++) {
             
-            TxIO_Builder.checkMissingTxID(TxInputs);
+            TxIO_Builder.checkMalformedUTXOsPointer(TxInputs);
+            TxIO_Builder.checkDuplicateUTXOsPointer(TxInputs);
 
             const { utxoBlockHeight, utxoTxID, vout } = this.getUTXOReferenceIFromReferenced(TxInputs[i]);
             const { address, amount } = this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
@@ -415,17 +424,17 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             this.#digestTransactionOutputs(blockIndex, transaction);
         }
     }
-    /** @param {BlockData[]} chain */
-    digestChain(chain) {
-        const progressLogger = new utils.ProgressLogger(chain.length);
-        for (let i = 0; i < chain.length; i++) {
-            const blockData = chain[i];
-            this.digestBlock(blockData);
-            progressLogger.logProgress(i);
+    /** @param {BlockData[]} chainPart */
+    digestChainPart(chainPart) {
+        //const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
+        for (let i = 0; i < chainPart.length; i++) {
+            const blockData = chainPart[i];
+            this.digestConfirmedBlock(blockData);
+            //progressLogger.logProgress(i);
         }
     }
     /** @param {BlockData} blockData */
-    digestBlock(blockData) {
+    digestConfirmedBlock(blockData) {
         const Txs = blockData.Txs;
         this.digestBlockTransactions(blockData.index, Txs);
 
@@ -444,11 +453,13 @@ class HotData { // Used to store, addresses's UTXOs and balance.
 
         this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
     }
+
+    digestBlockProposal(blockData) {}
 }
 
 export class FullNode {
     /** @param {Account} validatorAccount */
-    constructor(validatorAccount, chain) {
+    constructor(validatorAccount) {
         /** @type {Account} */
         this.validatorAccount = validatorAccount;
         /** @type {BlockData} */
@@ -462,26 +473,36 @@ export class FullNode {
 
     /** @param {Account} validatorAccount */
     static async load(validatorAccount, saveBlocksInfo = false) {
-        const chain = storage.loadBlockchainLocally('bin');
-        const controlChain = storage.loadBlockchainLocally('json');
-        FullNode.controlChainIntegrity(chain, controlChain);
+        const node = new FullNode(validatorAccount);
+        const blocksFolders = storage.getListOfFoldersInBlocksDirectory();
+        const nbOfBlocksInStorage = storage.countFilesInBlocksDirectory(blocksFolders, 'bin');
+        const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
+        
+        /** @type {BlockData} */
+        let lastBlockData = undefined;
+        let blockLoadedCount = 0;
+        for (let i = 0; i < blocksFolders.length; i++) {
+            const blocksFolder = blocksFolders[i];
+            const chainPart = storage.loadBlockchainPartLocally(blocksFolder, 'bin');
+            const controlChainPart = storage.loadBlockchainPartLocally(blocksFolder, 'json');
+            FullNode.controlChainIntegrity(chainPart, controlChainPart);
 
-        const node = new FullNode(validatorAccount, chain);
-        node.hotData.digestChain(chain);
-        // TODO: mempool digest mempool from other validator node
+            node.hotData.digestChainPart(chainPart);
+            lastBlockData = chainPart[chainPart.length - 1];
 
-        if (saveBlocksInfo) { // basic informations .csv
-            const blocksInfo = node.#getBlocksMiningInfo(chain);
-            storage.saveBlockchainInfoLocally(blocksInfo);
+            blockLoadedCount += chainPart.length;
+            progressLogger.logProgress(blockLoadedCount);
+
+            if (saveBlocksInfo) { // basic informations .csv
+                const blocksInfo = node.#getBlocksMiningInfo(chainPart);
+                storage.saveBlockchainInfoLocally(blocksInfo);
+            }
         }
-
+        // TODO: mempool digest mempool from other validator node
         // TODO: Get the Txs from the mempool and add them
         // TODO: Verify the Txs
 
-        const lastBlockData = chain[chain.length - 1] ? chain[chain.length - 1] : undefined;
         node.blockCandidate = await node.#createBlockCandidate(lastBlockData);
-
-        //node.#stackLoop(20);
         return node;
     }
     /**
@@ -538,7 +559,7 @@ export class FullNode {
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
-        this.hotData.digestBlock(blockDataCloneToDigest);
+        this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.referencedUTXOsByBlock);
 
@@ -609,7 +630,4 @@ export class FullNode {
 
         return blocksInfo;
     }
-}
-export class LightNode {
-    
 }

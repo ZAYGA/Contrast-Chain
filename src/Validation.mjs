@@ -1,12 +1,25 @@
-import { HashFunctions } from './conCrypto.mjs';
-import { Transaction, Transaction_Builder } from './Transaction.mjs';
+import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
+import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
-import { UTXO_Creation_Conditions, TxIO_Scripts, TransactionIO } from './TxIO.mjs';
 
 /**
  * An object that associates TxID to arrays of TransactionIO.
  * @typedef {{ [TxID: string]: TransactionIO[] }} ReferencedUTXOs
  */
+
+/**
+ * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+ * @param {TransactionIO} TxIO
+ * @returns {TransactionIO}
+ */
+function getUTXOPointedByTxIO(referencedUTXOsByBlock, TxIO) {
+    const { utxoBlockHeight, utxoTxID, vout } = TxIO;
+    if (!referencedUTXOsByBlock[utxoBlockHeight]) { throw new Error('Invalid utxoBlockHeight'); }
+    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { throw new Error('Invalid utxoTxID'); }
+    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { throw new Error('Invalid vout'); }
+
+    return referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
+}
 
 export class Validation {
     /** ==> First validation, low computation cost.
@@ -94,7 +107,7 @@ export class Validation {
      * - control the right to create outputs using the script
      * @param {Transaction} transaction
      */
-    static async controlTransactionOutputsScriptsConditions(transaction) {
+    static async controlTransactionOutputsScriptsConditions(transaction) { // NOT SURE IF WE CONSERVE THIS
         for (let i = 0; i < transaction.outputs.length; i++) {
             const inScript = transaction.inputs[i] ? transaction.inputs[i].script : undefined;
             const inAmount = transaction.inputs[i] ? transaction.inputs[i].amount : undefined;
@@ -103,35 +116,8 @@ export class Validation {
             const outScript = transaction.outputs[i] ? transaction.outputs[i].script : undefined;
             const outAmount = transaction.outputs[i] ? transaction.outputs[i].amount : undefined;
             const outAddress = transaction.outputs[i] ? transaction.outputs[i].address : undefined;
-
-            const { scriptName, scriptParams } = TxIO_Scripts.decomposeScriptString(outScript);
-            const utxoCreationConditions = UTXO_Creation_Conditions[scriptName];
-            if (!utxoCreationConditions) { throw new Error('Invalid script, cannot find associated conditions'); }
-
-            if (utxoCreationConditions.inputAddressEqualOuputAddress && inAddress !== outAddress) {
-                throw new Error('Invalid script, input address !== output address');
-            }
-
-            if (transaction.inputs.length > utxoCreationConditions.maxTransactionInputs) {
-                throw new Error(`Invalid transaction inputs amount: > ${utxoCreationConditions.maxTransactionInputs}`);
-            }
-
-            if (utxoCreationConditions.allInputsSameAddress) {
-                for (let j = 0; j < transaction.inputs.length; j++) {
-                    if (transaction.inputs[j].address !== inAddress) {
-                        throw new Error('Invalid script, all inputs address !== same');
-                    }
-                }
-            }
-
-            for (let j = 0; j < utxoCreationConditions.requiredParams; j++) {
-                const requiredParam = utxoCreationConditions.requiredParams[j];
-                if (scriptParams.includes(requiredParam) === false) {
-                    throw new Error('Invalid script parameters');
-                }
-            }
         }
-    }
+    } // NOT SURE IF WE CONSERVE THIS
 
     /** ==> Fifth validation, medium computation cost.
      * 
@@ -139,7 +125,23 @@ export class Validation {
      * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
      * @param {Transaction} transaction
      */
-    static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) {
+    static async controlAllWitnessesSignatures(referencedUTXOsByBlock, transaction) {
+        const startTime = Date.now();
+
+
+        for (let i = 0; i < transaction.witnesses.length; i++) {
+            const witnessParts = transaction.witnesses[0].split(':');
+            const signature = witnessParts[0];
+            const pubKeyHex = witnessParts[1];
+            const message = Transaction_Builder.getTransactionStringToHash(transaction);
+
+            // will throw an error if the signature is invalid
+            AsymetricFunctions.verifySignature(signature, message, pubKeyHex);
+        }
+
+        console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
+    }
+    static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) { // DEPRECATED
         // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
         /*const opAlreadyPassed = [];
         const witnessParts = transaction.witnesses[0].split(':');
@@ -162,7 +164,7 @@ export class Validation {
             await utils.addressUtils.securityCheck(address, pubKeyHex);
         }*/
 
-        const startTime = Date.now();
+        /*const startTime = Date.now();
         const scriptMemory = {};
         for (let i = 0; i < transaction.inputs.length; i++) {
             const { script } = transaction.inputs[i];
@@ -173,28 +175,14 @@ export class Validation {
             if (!scriptFunction) { throw new Error('Invalid script'); }
             
             await scriptFunction(scriptMemory, referencedUTXOsByBlock, transaction, i, scriptParams);
-        }
+        }*/
         const endTime = Date.now();
         console.log(`[VALIDATION] .executeTransactionInputsScripts() took ${endTime - startTime} ms`);
-    }
-    /**
-     * @param {string} script
-     * @param {string} address
-     * @param {string} signature
-     * @param {string} pubKeyHex
-     */
-    static executeTransactionInputScripts(script, signature, message, pubKeyHex) { // DEPRECATED
-        const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-        const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-        if (!scriptFunction) { throw new Error('Invalid script'); }
-
-        const addressOwnedByPubKey = scriptFunction(signature, message, pubKeyHex, scriptParams);
-        if (!addressOwnedByPubKey) { throw new Error('Invalid signature<->pubKey correspancy'); }
     }
 
     /** ==> Sixth validation, high computation cost.
      * 
-     * - control the address/pubKey correspondence
+     * - control the inputAddresses/witnessesPubKeys correspondence
      * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
      * @param {Transaction} transaction
      */

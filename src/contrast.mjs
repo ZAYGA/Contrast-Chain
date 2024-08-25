@@ -1,7 +1,7 @@
 'use strict';
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
 //import { BlockData, Block, Transaction_Builder, Wallet, Account, FullNode, LightNode, Miner } from './classes.mjs';
-import { BlockData, Block, Transaction_Builder, Wallet, Account, FullNode, LightNode, Miner } from './index.mjs';
+import { BlockData, Block, Transaction_Builder, Wallet, Account, FullNode, Miner } from './index.mjs';
 
 import utils from './utils.mjs';
 import etc from './etc.mjs';
@@ -16,7 +16,6 @@ const contrast = {
     Wallet,
     Account,
     FullNode,
-    LightNode,
     Miner,
 
     utils,

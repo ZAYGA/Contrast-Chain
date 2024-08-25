@@ -2,8 +2,8 @@
 import { Transaction_Builder } from './src/index.mjs';
 import contrast from './src/contrast.mjs';
 /**
-* @typedef {import("./src/Account.mjs").Account} Account
-* @typedef {import("./src/Node.mjs").FullNode} FullNode
+* @typedef {import("./src/account.mjs").Account} Account
+* @typedef {import("./src/node.mjs").FullNode} FullNode
 */
 
 const testParams = {
@@ -12,7 +12,27 @@ const testParams = {
     testTxEachNbBlock: 10
 }
 
-/**
+/** Simple user to user transaction
+ * @param {FullNode} node
+ * @param {Account[]} accounts
+ * @param {number} senderAccountIndex
+ * @param {number} receiverAccountIndex
+ */
+async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAccountIndex = 2) {
+    const senderAccount = accounts[senderAccountIndex];
+    const receiverAddress = accounts[receiverAccountIndex].address;
+
+    const amountToSend = 1_000_000;
+    const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
+    if (signedTxJSON) {
+        console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress}`);
+        console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        node.addTransactionJSONToMemPool(signedTxJSON);
+    } else {
+        console.log(error);
+    }
+}
+/** All users send to the next user
 * @param {FullNode} node
 * @param {Account[]} accounts
 * @param {number} nbOfUsers
@@ -33,12 +53,13 @@ async function userSendToNextUser(node, accounts) {
         }
     }
 }
-/**
+/** User send to all other accounts
 * @param {FullNode} node
 * @param {Account[]} accounts
+* @param {number} senderAccountIndex
  */
-async function account1SendToAllOthers(node, accounts) {
-    const senderAccount = accounts[1];
+async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
+    const senderAccount = accounts[senderAccountIndex];
     const transfers = [];
     for (let i = 2; i < accounts.length; i++) {
         const amount = Math.floor(Math.random() * (1_000_000 - 1000) + 1000);
@@ -74,35 +95,31 @@ function refreshAllBalances(node, accounts) {
 }
 /** @param {Account[]} accounts */
 async function nodeSpecificTest(accounts) {
-    const validatorAccount = accounts[0];
-    const minerAccount = accounts[1];
-    const receiverAccount = accounts[2];
-
     if (!contrast.utils.isNode) { return; }
 
     /** @type {FullNode} */
-    const node = await contrast.FullNode.load(validatorAccount);
+    const node = await contrast.FullNode.load(accounts[0]);
     if (!node) { console.error('Failed to load FullNode.'); return; }
 
-    const miner = new contrast.Miner(minerAccount);
+    const miner = new contrast.Miner(accounts[1]);
     if (!miner) { console.error('Failed to load Miner.'); return; }
 
     for (let i = 0; i < 1_000_000; i++) {
+        refreshAllBalances(node, accounts);
+
         // user Send To Next User
-        /*if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 5 === 0) {
-            try {
-                refreshAllBalances(node, accounts);
+        if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 5 === 0) {
+            /*try {
                 await userSendToNextUser(node, accounts);
             } catch (error) {
                 console.error(error);
-            }
-        }*/
+            }*/
+        } // Disabled
 
         // user send to multiple users
         if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 7 === 0) {
             try {
-                refreshAllBalances(node, accounts);
-                await account1SendToAllOthers(node, accounts);
+                await userSendToAllOthers(node, accounts);
             } catch (error) {
                 console.error(error);
             }
@@ -110,17 +127,10 @@ async function nodeSpecificTest(accounts) {
 
         // simple user to user transactions
         if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
-            const { balance, UTXOs } = node.hotData.getBalanceAndUTXOs(minerAccount.address); // should be provided by network
-            minerAccount.setBalanceAndUTXOs(balance, UTXOs);
-
-            const amountToSend = 1_000_000;
-            const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(minerAccount, amountToSend, receiverAccount.address);
-            if (signedTxJSON) {
-                console.log(`SEND: ${minerAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
-                console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
-                node.addTransactionJSONToMemPool(signedTxJSON);
-            } else {
-                console.log(error);
+            try {
+                await userSendToUser(node, accounts);
+            } catch (error) {
+                console.error(error);
             }
         }
 
@@ -138,13 +148,7 @@ async function nodeSpecificTest(accounts) {
             if (errorIncludesPOWerror === false && errorSkippingLog.includes(error.message) === false) { console.error(error.stack); }
         }
 
-        //console.log(`await ${node.callStack.stack.length} stack to be empty.`);
         await node.callStack.breathe();
-        /*if (node.callStack.stack.length === 0) { 
-            console.log(`stack is empty.`); 
-        } else {
-            console.log(`stack is not empty. ${node.callStack.stack.length} remaining.`);
-        }*/
     }
 
     console.log('[TEST] Node test completed. - stop mining');

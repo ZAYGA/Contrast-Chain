@@ -22,11 +22,21 @@ function getListOfFoldersInBlocksDirectory() {
         // named as 0-999, 1000-1999, 2000-2999, etc. => sorting by the first number
         const blocksFoldersSorted = blocksFolders.sort((a, b) => parseInt(a.split('-')[0], 10) - parseInt(b.split('-')[0], 10));
         //console.log(blocksFoldersSorted);
+        // count files in each folder
 
         return blocksFoldersSorted;
     }
 }
-function loadBlockchainLocally(extension = 'json') {
+function countFilesInBlocksDirectory(blocksFolders, extension = 'bin') {
+    let totalFiles = 0;
+    blocksFolders.forEach(folder => {
+        const files = etc.fs.readdirSync(etc.path.join(blocksPath, folder)).filter(fileName => fileName.endsWith('.bin'));
+        totalFiles += files.length;
+    });
+
+    return totalFiles;
+}
+function loadBlockchainLocally(extension = 'json') { // DEPRECATED
     const chain = [];
     const blocksFolders = getListOfFoldersInBlocksDirectory();
 
@@ -37,6 +47,10 @@ function loadBlockchainLocally(extension = 'json') {
     }
 
     return chain;
+}
+function loadBlockchainPartLocally(blocksFolder, extension = 'json') { // DEPRECATED
+    const blockFilesSorted = getListOfFilesInBlocksDirectory(blocksFolder, extension);
+    return loadBlocksOfFolderLocally(blockFilesSorted, extension);
 }
 /** @param {number[]} blockFilesSorted */
 function loadBlocksOfFolderLocally(blockFilesSorted, extension = 'json') {
@@ -194,7 +208,9 @@ function loadJSON(fileName) {
 //#endregion -----------------------------
 
 const storage = {
-    loadBlockchainLocally,
+    getListOfFoldersInBlocksDirectory,
+    countFilesInBlocksDirectory,
+    loadBlockchainPartLocally,
     saveBlockDataLocally,
     saveBlockchainInfoLocally,
     saveJSON,
