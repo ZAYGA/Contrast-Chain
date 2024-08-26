@@ -111,25 +111,31 @@ export class Vss {
      * @param {spectrum} spectrum
      * @param {string} blockHash
      */
-    async calculateRoundLegitimacy(blockHash, maxResultingArrayLength = 100) {
+    async calculateRoundLegitimacies(blockHash, maxResultingArrayLength = 100) {
         /** @type {StakeReference[]} */
-        const roundLegitimacy = [];
+        const roundLegitimacies = [];
         const spectrumLength = Object.keys(this.spectrum).length;
 
         for (let i = 0; i < maxResultingArrayLength * 4; i++) {
             const maxRange = spectrumFunctions.getHighestUpperBound(this.spectrum);
-            if (maxRange < 99) { this.legitimacies = roundLegitimacy; return; }
+            // everyone has considered 0 legimacy when not enough stakes
+            if (maxRange < 999_999) { this.legitimacies = roundLegitimacies; return; }
             
             const winningNumber = await spectrumFunctions.hashToIntWithRejection(blockHash, i, maxRange);
             // can't be existing winner
-            if (roundLegitimacy.find(stake => stake.utxoPointer === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPointer)) { continue; }
+            if (roundLegitimacies.find(stake => stake.utxoPointer === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPointer)) { continue; }
+
+            roundLegitimacies.push(spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber));
             
-            roundLegitimacy.push(spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber));
-            
-            if (roundLegitimacy.length >= spectrumLength) { break; } // If all stakes have been selected
-            if (roundLegitimacy.length >= maxResultingArrayLength) { break; } // If the array is full
+            if (roundLegitimacies.length >= spectrumLength) { break; } // If all stakes have been selected
+            if (roundLegitimacies.length >= maxResultingArrayLength) { break; } // If the array is full
         }
 
-        this.legitimacies = roundLegitimacy;
+        this.legitimacies = roundLegitimacies;
+    }
+    /** @param {string} address */
+    getAddressLegitimacy(address) {
+        const legitimacy = this.legitimacies.findIndex(stakeReference => stakeReference.address === address);
+        return legitimacy !== -1 ? legitimacy : this.legitimacies.length; // if not found, return last index + 1
     }
 }

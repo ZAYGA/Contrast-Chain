@@ -441,11 +441,9 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     }
     /** @param {BlockData[]} chainPart */
     async digestChainPart(chainPart) {
-        //const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
         for (let i = 0; i < chainPart.length; i++) {
             const blockData = chainPart[i];
             await this.digestConfirmedBlock(blockData);
-            //progressLogger.logProgress(i);
         }
     }
     /** @param {BlockData} blockData */
@@ -466,7 +464,6 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             throw new Error('Invalid total of balances'); 
         }
 
-        await this.vss.calculateRoundLegitimacy(blockData.hash);
         this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
     }
 
@@ -518,7 +515,10 @@ export class FullNode {
         // TODO: Get the Txs from the mempool and add them
         // TODO: Verify the Txs
 
-        node.blockCandidate = await node.#createBlockCandidate(lastBlockData);
+        if (lastBlockData) { await node.hotData.vss.calculateRoundLegitimacies(lastBlockData.hash); }
+        const myLegitimacy = node.hotData.vss.getAddressLegitimacy(node.validatorAccount.address);
+        node.blockCandidate = await node.#createBlockCandidate(lastBlockData, myLegitimacy);
+
         return node;
     }
     /**
@@ -587,7 +587,11 @@ export class FullNode {
         // -------------------------------------------
 
         callStack.push(async () => {
-            const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate);
+            await this.hotData.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
+            const myLegitimacy = this.hotData.vss.getAddressLegitimacy(this.validatorAccount.address);
+            if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.validatorAccount.address}, can't create a candidate`); }
+
+            const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate, myLegitimacy);
             this.blockCandidate = newBlockCandidate; // Can be sent to the network
         }, true);
 
@@ -606,21 +610,24 @@ export class FullNode {
 
     // TODO: Fork management
     // Private methods
-    /** @param {BlockData | undefined} lastBlockData */
-    async #createBlockCandidate(lastBlockData) {
+    /**
+     * @param {BlockData | undefined} lastBlockData
+     * @param {number} myLegitimacy
+     */
+    async #createBlockCandidate(lastBlockData, myLegitimacy) {
         //console.log(`[FullNode] Creating block candidate from lastHeight: ${lastBlockData.index}`);
         const Txs = this.memPool.getMostLucrativeTransactionsBatch(1000);
         if (Txs.length > 1) {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
         }
 
-        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 'ContrastGenesisBlock', Txs);
+        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs);
         if (lastBlockData) {
             const newDifficulty = utils.mining.difficultyAdjustment(this.hotData.blockMiningData);
             const clone = Block.cloneBlockData(lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, clone.hash, Txs);
+            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs);
         }
 
         // Add the PoS reward transaction

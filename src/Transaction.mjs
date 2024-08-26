@@ -199,13 +199,9 @@ export class Transaction_Builder {
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom([{recipientAddress: stakingAddress, amount}], 'sigOrSlash', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
 
-        if (senderAddress === 'W5X3kF5yLqVPJ8ZsKUEL') {
-            console.log('senderAddress:', senderAddress);
-        }
         const feeSupplement = utils.blockchainSettings.newVssSpaceFee;
         const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement);
-        console.log(`[TRANSACTION] fee: ${fee} microCont`);
-
+        //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
             const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);

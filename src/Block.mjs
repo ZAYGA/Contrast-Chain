@@ -30,6 +30,7 @@ export const BlockMiningData = (index, difficulty, timestamp) => {
 * @property {number} supply - The total supply before the coinbase reward
 * @property {number} coinBase - The coinbase reward
 * @property {number} difficulty - The difficulty of the block
+* @property {number} legitimacy - The legitimacy of the validator who created the block candidate
 * @property {string} prevHash - The hash of the previous block
 * @property {Transaction[]} Txs - The transactions in the block
 * @property {number | undefined} timestamp - The timestamp of the block
@@ -48,12 +49,13 @@ export const BlockMiningData = (index, difficulty, timestamp) => {
  * @param {number | undefined} nonce - The nonce of the block
  * @returns {BlockData}
  */
-export const BlockData = (index, supply, coinBase, difficulty, prevHash, Txs, timestamp, hash, nonce) => {
+export const BlockData = (index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, timestamp, hash, nonce) => {
     return {
         index,
         supply,
         coinBase,
         difficulty,
+        legitimacy,
         prevHash,
         
         // Proof of work dependent
@@ -70,7 +72,8 @@ export class Block {
         const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
         const txsIDStr = txsIDStrArray.join('');
 
-        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
+        const { prevHash, index, supply, difficulty, legitimacy, coinBase } = blockData;
+        const signatureStr = `${prevHash}${index}${supply}${difficulty}${legitimacy}${txsIDStr}${coinBase}`;
         return utils.convert.string.toHex(signatureStr);
     }
     /** @param {BlockData} blockData */
@@ -89,11 +92,7 @@ export class Block {
     }
     /** @param {BlockData} blockData */
     static async calculateValidatorHash(blockData) {
-        const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
-        const txsIDStr = txsIDStrArray.join('');
-
-        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
-        const signatureHex = utils.convert.string.toHex(signatureStr);
+        const signatureHex = Block.getBlockStringToHash(blockData);
 
         const validatorHash = await HashFunctions.SHA256(signatureHex);
         return validatorHash;
@@ -150,8 +149,11 @@ export class Block {
     static blockDataFromJSON(blockDataJSON) {
         const parsed = JSON.parse(blockDataJSON);
         //const Txs = Block.TransactionsFromJSON(parsed.Txs);
+        const { index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, timestamp, hash, nonce } = parsed;
         /** @type {BlockData} */
-        return BlockData(parsed.index, parsed.supply, parsed.coinBase, parsed.difficulty, parsed.prevHash, parsed.Txs, parsed.timestamp, parsed.hash, parsed.nonce);
+        const blockData = BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, timestamp, hash, nonce);
+        
+        return blockData;
     }
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {

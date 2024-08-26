@@ -60,7 +60,8 @@ async function userSendToNextUser(node, accounts) {
 async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
     const senderAccount = accounts[senderAccountIndex];
     const transfers = [];
-    for (let i = 2; i < accounts.length; i++) {
+    for (let i = 0; i < accounts.length; i++) {
+        if (i === senderAccountIndex) { continue; }
         const amount = Math.floor(Math.random() * (1_000_000) + 1_100_000);
         const transfer = { recipientAddress: accounts[i].address, amount };
         transfers.push(transfer);
@@ -137,26 +138,8 @@ async function nodeSpecificTest(accounts, wss) {
             }
         });
 
-        // user stakes in VSS
-        if (node.blockCandidate.index > 10 && node.blockCandidate.index < 20) { // < 20
-            try {
-                await userStakeInVSS(node, accounts, node.blockCandidate.index - 10);
-            } catch (error) {
-                console.error(error);
-            }
-        }
-
-        // user Send To Next User
-        if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 5 === 0) {
-            /*try {
-                await userSendToNextUser(node, accounts);
-            } catch (error) {
-                console.error(error);
-            }*/
-        } // Disabled
-
         // user send to multiple users
-        if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % 7 === 0) {
+        if (node.blockCandidate.index > 0 && (node.blockCandidate.index - 1) % 7 === 0) {
             try {
                 await userSendToAllOthers(node, accounts);
             } catch (error) {
@@ -164,14 +147,33 @@ async function nodeSpecificTest(accounts, wss) {
             }
         }
 
+        // user stakes in VSS
+        if (node.blockCandidate.index > 9 && node.blockCandidate.index < 20) { // < 20
+            try {
+                const senderAccountIndex = node.blockCandidate.index - 10;
+                await userStakeInVSS(node, accounts, senderAccountIndex);
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
         // simple user to user transactions
-        if (node.blockCandidate.index > 2 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
+        if (node.blockCandidate.index > 25 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
             try {
                 await userSendToUser(node, accounts);
             } catch (error) {
                 console.error(error);
             }
         }
+
+        // users Send To Next Users
+        if (node.blockCandidate.index > 100 && (node.blockCandidate.index - 1) % 5 === 0) {
+            /*try {
+                await userSendToNextUser(node, accounts);
+            } catch (error) {
+                console.error(error);
+            }*/
+        } // Disabled
 
         // wss broadcast - mempool
         wss.clients.forEach(function each(client) {
