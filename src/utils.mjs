@@ -9,6 +9,7 @@ import msgpack from './externalLibs/msgpack.min.js';
 * @typedef {import("./block.mjs").Block} Block
 * @typedef {import("./block.mjs").BlockData} BlockData
 * @typedef {import("./transaction.mjs").Transaction} Transaction
+* @typedef {import("./transaction.mjs").TransactionIO} TransactionIO
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
 */
 
@@ -664,7 +665,6 @@ const compression = {
                 }
 
                 for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
-                tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
             };
             for (let j = 0; j < tx.outputs.length; j++) {
                 const output = tx.outputs[j];
@@ -690,7 +690,6 @@ const compression = {
                     tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                     continue;
                 }
-                tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
             };
 
             return tx;
@@ -851,6 +850,51 @@ const mining = {
         if (!condition2) { throw new Error(`unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}`); }
     }
 };
+const pointer = {
+    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    isValidPointer(pointer) {
+        if (typeof pointer !== 'string') { return false; }
+
+        const splitted = pointer.split(':');
+        if (splitted.length !== 3) { return false; }
+
+        // height
+        if (isNaN(parseInt(splitted[0], 10))) { return false; }
+        if (parseInt(splitted[0], 10) < 0) { return false; }
+        if (parseInt(splitted[0], 10) % 1 !== 0) { return false; }
+
+        // TxID
+        if (typeof splitted[1] !== 'string') { return false; } 
+        if (typeValidation.hex(splitted[1]) === false) { return false; }
+        if (splitted[1].length !== 8) { return false; }
+
+        // vout
+        if (isNaN(parseInt(splitted[2], 10))) { return false; }
+        if (parseInt(splitted[2], 10) < 0) { return false; }
+        if (parseInt(splitted[2], 10) % 1 !== 0) { return false; }
+
+        return true;
+    },
+    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    to_height_utxoTxID_vout(pointer) { // should be in utils (LOL !)
+        const splitted = pointer.split(':');
+
+        const utxoBlockHeight = splitted[0];
+        const utxoTxID = splitted[1];
+        const vout = splitted[2];
+
+        return { utxoBlockHeight, utxoTxID, vout };
+    },
+    /**
+     * @param {number} utxoBlockHeight
+     * @param {string} utxoTxID
+     * @param {number} vout
+     */
+    from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout) {
+        if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { return undefined; }
+        return `${utxoBlockHeight}:${utxoTxID}:${vout}`;
+    }
+}
 
 const utils = {
     ed25519,
@@ -867,6 +911,7 @@ const utils = {
     compression,
     conditionnals,
     mining,
+    pointer
 };
 
 export default utils;

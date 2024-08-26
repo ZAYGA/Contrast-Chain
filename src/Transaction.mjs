@@ -18,29 +18,23 @@ export const uxtoRulesGlossary = {
  * @property {string | undefined} address - output only || script's condition
  * @property {string} rule - the unlocking rule
  * @property {number} version - the transaction version
- * @property {number | undefined} utxoBlockHeight - input only
- * @property {string | undefined} utxoTxID - input only
- * @property {number | undefined} vout - input only
+ * @property {string | undefined} pointer - input only
  */
 /** Transaction Input/Output data structure
  * @param {number} amount - the amount of microConts
  * @param {string | undefined} address - output only || script's condition
  * @param {string} rule - the unlocking rule
  * @param {number} version - the transaction version
- * @param {number | undefined} utxoBlockHeight - input only
- * @param {string | undefined} utxoTxID - input only
- * @param {number | undefined} vout - input only
+ * @param {string | undefined} pointer - input only
  * @returns {TransactionIO}
  **/
-export const TransactionIO = (amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) => {
+export const TransactionIO = (amount, rule, version, address, pointer) => {
     return {
         amount,
         rule,
         version,
         address,
-        utxoBlockHeight,
-        utxoTxID,
-        vout
+        pointer
     };
 }
 export class TxIO_Builder {
@@ -58,7 +52,8 @@ export class TxIO_Builder {
         const ruleName = rule.split('_')[0];
         if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
 
-        const newTxIO = TransactionIO(amount, rule, version, address, utxoBlockHeight, utxoTxID, vout);
+        const pointer = utils.pointer.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
+        const newTxIO = TransactionIO(amount, rule, version, address, pointer);
         Validation.isValidTransactionIO(newTxIO, type);
 
         // delte all undefined properties
@@ -73,8 +68,8 @@ export class TxIO_Builder {
     /** @param {TransactionIO[]} TxIOs */
     static checkMalformedUTXOsPointer(TxIOs) {
         for (let i = 0; i < TxIOs.length; i++) {
-            if (TxIOs[i].utxoBlockHeight === undefined || TxIOs[i].utxoTxID === undefined || TxIOs[i].vout === undefined) {
-                throw new Error(`UTXO pointer malformed in UTXO ${i}: ${TxIOs[i].utxoBlockHeight}:${TxIOs[i].utxoTxID}:${TxIOs[i].vout}`);
+            if (!utils.pointer.isValidPointer(TxIOs[i].pointer)) {
+                throw new Error(`UTXO pointer malformed in UTXO ${i}: ${TxIOs[i].pointer}`);
             }
         }
     }
@@ -82,7 +77,7 @@ export class TxIO_Builder {
     static checkDuplicateUTXOsPointer(TxIOs) {
         if (TxIOs.length === 0) { throw new Error('No UTXO to check'); }
 
-        const utxosPointers = TxIOs.map(TxIO => `${TxIO.utxoBlockHeight}:${TxIO.utxoTxID}:${TxIO.vout}`);
+        const utxosPointers = TxIOs.map(TxIO => TxIO.pointer);
         if (utils.conditionnals.arrayIncludeDuplicates(utxosPointers)) { throw new Error('Duplicate UTXO pointers in UTXOs'); }
     }
     /**

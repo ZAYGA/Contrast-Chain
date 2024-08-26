@@ -7,20 +7,6 @@ import utils from './utils.mjs';
  * @typedef {{ [TxID: string]: TransactionIO[] }} ReferencedUTXOs
  */
 
-/**
- * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
- * @param {TransactionIO} TxIO
- * @returns {TransactionIO}
- */
-function getUTXOPointedByTxIO(referencedUTXOsByBlock, TxIO) {
-    const { utxoBlockHeight, utxoTxID, vout } = TxIO;
-    if (!referencedUTXOsByBlock[utxoBlockHeight]) { throw new Error('Invalid utxoBlockHeight'); }
-    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { throw new Error('Invalid utxoTxID'); }
-    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { throw new Error('Invalid vout'); }
-
-    return referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-}
-
 export class Validation {
     /** ==> First validation, low computation cost.
      * 
@@ -61,11 +47,7 @@ export class Validation {
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
-        if (type === 'input' && typeof TxIO.utxoBlockHeight !== 'number') { throw new Error('Invalid utxoBlockHeight !== number'); }
-        if (type === 'input' && TxIO.utxoBlockHeight < 0) { throw new Error('Invalid utxoBlockHeight value: < 0'); }
-        if (type === 'input' && TxIO.utxoBlockHeight % 1 !== 0) { throw new Error('Invalid utxoBlockHeight value: not integer'); }
-        if (type === 'input' && typeof TxIO.utxoTxID !== 'string') { throw new Error('Invalid utxoTxID !== string'); }
-        if (type === 'input' && TxIO.utxoTxID.length !== 8) { throw new Error('Invalid utxoTxID length !== 8'); }
+        if (type === 'input' && !utils.pointer.isValidPointer(TxIO.pointer)) { throw new Error('Invalid pointer'); }
 
         if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
         if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
@@ -143,44 +125,6 @@ export class Validation {
 
         //console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
     }
-    static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) { // DEPRECATED
-        // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
-        /*const opAlreadyPassed = [];
-        const witnessParts = transaction.witnesses[0].split(':');
-        const signature = witnessParts[0];
-        const pubKeyHex = witnessParts[1];
-
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout, script } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined || script === undefined) { throw new Error('Invalid input'); }
-
-            const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-            if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-
-            const address = referencedUTXO.address;
-            const operation = `${address}${script}`;
-            if (opAlreadyPassed.includes(operation)) {
-                continue; }
-
-            utils.addressUtils.conformityCheck(address);
-            await utils.addressUtils.securityCheck(address, pubKeyHex);
-        }*/
-
-        /*const startTime = Date.now();
-        const scriptMemory = {};
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            const { script } = transaction.inputs[i];
-            if (script === undefined) { throw new Error('Invalid input'); }
-
-            const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-            const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-            if (!scriptFunction) { throw new Error('Invalid script'); }
-            
-            await scriptFunction(scriptMemory, referencedUTXOsByBlock, transaction, i, scriptParams);
-        }*/
-        const endTime = Date.now();
-        console.log(`[VALIDATION] .executeTransactionInputsScripts() took ${endTime - startTime} ms`);
-    }
 
     /** ==> Sixth validation, high computation cost.
      * 
@@ -203,8 +147,9 @@ export class Validation {
 
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { throw new Error('Invalid input'); }
+            const pointer = transaction.inputs[i].pointer;
+            if (!utils.pointer.isValidPointer(pointer)) { throw new Error('Invalid pointer'); }
+            const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(pointer);
 
             const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
