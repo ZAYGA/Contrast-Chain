@@ -25,8 +25,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
     const amountToSend = 1_000_000;
     const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
     if (signedTxJSON) {
-        console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress}`);
-        console.log(`Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${JSON.parse(signedTxJSON).id}`);
         node.addTransactionJSONToMemPool(signedTxJSON);
     } else {
         console.log(error);
@@ -71,8 +70,8 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
-        console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
-        console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
+        //console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
         const fee = JSON.parse(signedTxJSON)
         if (fee <= 0) {
             console.log('[TEST] Transaction fee is invalid.');};
@@ -96,8 +95,8 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
     const signedTx = await senderAccount.signAndReturnTransaction(transaction);
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx);
     if (signedTxJSON) {
-        console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
-        console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+        //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
+        //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
         node.addTransactionJSONToMemPool(signedTxJSON);
     } else {
         console.log(error);
@@ -114,8 +113,11 @@ function refreshAllBalances(node, accounts) {
     }
 }
 
-/** @param {Account[]} accounts */
-async function nodeSpecificTest(accounts) {
+/** 
+ * @param {Account[]} accounts
+ * @param {WebSocketServer} wss
+ */
+async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
     /** @type {FullNode} */
@@ -127,9 +129,16 @@ async function nodeSpecificTest(accounts) {
 
     for (let i = 0; i < 1_000_000; i++) {
         refreshAllBalances(node, accounts);
+        
+        // wss broadcast - hotData
+        wss.clients.forEach(function each(client) {
+            if (client.readyState === 1) {
+                client.send( JSON.stringify({ hotData: node.hotData }) );
+            }
+        });
 
         // user stakes in VSS
-        if (node.blockCandidate.index > 10 && node.blockCandidate.index < 12) { // < 20
+        if (node.blockCandidate.index > 10 && node.blockCandidate.index < 20) { // < 20
             try {
                 await userStakeInVSS(node, accounts, node.blockCandidate.index - 10);
             } catch (error) {
@@ -164,6 +173,13 @@ async function nodeSpecificTest(accounts) {
             }
         }
 
+        // wss broadcast - mempool
+        wss.clients.forEach(function each(client) {
+            if (client.readyState === 1) {
+                client.send( JSON.stringify({ memPool: node.memPool }) );
+            }
+        });
+
         try { // JUST MINING
             // like we receive a block from network
             const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
@@ -183,7 +199,8 @@ async function nodeSpecificTest(accounts) {
 
     console.log('[TEST] Node test completed. - stop mining');
 }
-async function test() {
+/** @param {WebSocketServer} wss */
+export async function test(wss) {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
     const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00");
@@ -210,5 +227,5 @@ async function test() {
 ---------------------------------`
     );
 
-    nodeSpecificTest(derivedAccounts);
-}; test();
+    nodeSpecificTest(derivedAccounts, wss);
+};

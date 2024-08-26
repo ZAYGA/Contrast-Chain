@@ -114,13 +114,20 @@ export class Vss {
     async calculateRoundLegitimacy(blockHash, maxResultingArrayLength = 100) {
         /** @type {StakeReference[]} */
         const roundLegitimacy = [];
+        const spectrumLength = Object.keys(this.spectrum).length;
 
-        for (let i = 0; i < maxResultingArrayLength; i++) {
+        for (let i = 0; i < maxResultingArrayLength * 4; i++) {
             const maxRange = spectrumFunctions.getHighestUpperBound(this.spectrum);
             if (maxRange < 99) { this.legitimacies = roundLegitimacy; return; }
             
             const winningNumber = await spectrumFunctions.hashToIntWithRejection(blockHash, i, maxRange);
+            // can't be existing winner
+            if (roundLegitimacy.find(stake => stake.utxoPointer === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPointer)) { continue; }
+            
             roundLegitimacy.push(spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber));
+            
+            if (roundLegitimacy.length >= spectrumLength) { break; } // If all stakes have been selected
+            if (roundLegitimacy.length >= maxResultingArrayLength) { break; } // If the array is full
         }
 
         this.legitimacies = roundLegitimacy;

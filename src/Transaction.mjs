@@ -60,6 +60,13 @@ export class TxIO_Builder {
 
         const newTxIO = TransactionIO(amount, rule, version, address, utxoBlockHeight, utxoTxID, vout);
         Validation.isValidTransactionIO(newTxIO, type);
+
+        // delte all undefined properties
+        for (const key in newTxIO) {
+            if (newTxIO[key] === undefined) {
+                delete newTxIO[key];
+            }
+        }
         
         return newTxIO;
     }
@@ -164,7 +171,7 @@ export class Transaction_Builder {
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig_v1', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
         const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte);
-        console.log(`[TRANSACTION] fee: ${fee} microCont`);
+        //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
             const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
@@ -192,9 +199,13 @@ export class Transaction_Builder {
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom([{recipientAddress: stakingAddress, amount}], 'sigOrSlash', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
 
+        if (senderAddress === 'W5X3kF5yLqVPJ8ZsKUEL') {
+            console.log('senderAddress:', senderAddress);
+        }
         const feeSupplement = utils.blockchainSettings.newVssSpaceFee;
         const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement);
         console.log(`[TRANSACTION] fee: ${fee} microCont`);
+
 
         if (change !== 0) {
             const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
@@ -272,11 +283,11 @@ export class Transaction_Builder {
         if (fee <= 0) {
             throw new Error(`Invalid fee: ${fee} <= 0`); }
 
-        // Tx will consume all funds, then fee is the remaining amount, and change is 0
-        if (remainingAmount - fee <= 0) { return { fee: remainingAmount, change: 0 }; }
-
         const change = remainingAmount - fee;
-        if (change <= 0) { throw new Error('(change <= 0) not enough funds'); }
+        
+        // Tx will consume all funds, then fee is the remaining amount, and change is 0
+        if (change <= 0) { return { fee: remainingAmount, change: 0 }; }
+        //if (change <= 0) { throw new Error('(change <= 0) not enough funds'); }
 
         return { fee, change };
     }

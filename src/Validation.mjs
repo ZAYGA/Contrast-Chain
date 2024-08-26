@@ -141,7 +141,7 @@ export class Validation {
             AsymetricFunctions.verifySignature(signature, message, pubKeyHex);
         }
 
-        console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
+        //console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
     }
     static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) { // DEPRECATED
         // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
