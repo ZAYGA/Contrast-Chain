@@ -7,7 +7,7 @@ import contrast from './src/contrast.mjs';
 */
 
 const testParams = {
-    nbOfAccounts: 10,
+    nbOfAccounts: 100,
     addressType: 'W',
     testTxEachNbBlock: 10
 }
@@ -44,8 +44,8 @@ async function userSendToNextUser(node, accounts) {
         const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
         const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
         if (signedTxJSON) {
-            console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
-            console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+            //console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
+            //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
             node.addTransactionJSONToMemPool(signedTxJSON);
         } else {
             console.log(error);
@@ -109,7 +109,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
  */
 function refreshAllBalances(node, accounts) {
     for (let i = 0; i < accounts.length; i++) {
-        const { balance, UTXOs } = node.hotData.getBalanceSpendableAndUTXOs(accounts[i].address);
+        const { spendableBalance, balance, UTXOs } = node.hotData.getBalanceSpendableAndUTXOs(accounts[i].address);
         accounts[i].setBalanceAndUTXOs(balance, UTXOs);
     }
 }
@@ -168,11 +168,11 @@ async function nodeSpecificTest(accounts, wss) {
 
         // users Send To Next Users
         if (node.blockCandidate.index > 100 && (node.blockCandidate.index - 1) % 5 === 0) {
-            /*try {
+            try {
                 await userSendToNextUser(node, accounts);
             } catch (error) {
                 console.error(error);
-            }*/
+            }
         } // Disabled
 
         // wss broadcast - mempool
@@ -185,7 +185,6 @@ async function nodeSpecificTest(accounts, wss) {
         try { // JUST MINING
             // like we receive a block from network
             const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
-
             const { validBlockCandidate } = await miner.minePow(blockCandidateClone);
             if (!validBlockCandidate) { throw new Error('Not valid nonce.'); }
 

@@ -38,10 +38,10 @@ async function getArgon2Lib() {
 const argon2Lib = await getArgon2Lib();
 
 const blockchainSettings = {
-    targetBlockTime: 2_000, // 2 sec ||| // 120000, // 2 min
+    targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
     thresholdPerDiffIncrement: 10, // meaning 10% threshold for 1 diff point
     maxDiffIncrementPerAdjustment: 8, // 8 diff points = 50% of diff
-    blocksBeforeAdjustment: 144, // ~5h
+    blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
 
     blockReward: 256_000_000,
     minBlockReward: 1_000_000,
@@ -309,6 +309,13 @@ const typeValidation = {
         }
 
         return uint8Array;
+    },
+    /** @param {number} number - Number to validate */
+    numberIsPositiveInteger(number) {
+        if (typeof number !== 'number') { return false; }
+        if (number < 0) { return false; }
+        if (number % 1 !== 0) { return false; }
+        return true;
     }
 };
 const convert = {
@@ -740,6 +747,8 @@ const compression = {
 };
 
 const miningParams = {
+    // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
+    // an increment of 1 means 3.125% more difficult to find a valid hash
     argon2: {
         time: 1,
         mem: 2**18,
@@ -747,8 +756,8 @@ const miningParams = {
         type: 2,
         hashLen: 32,
     },
-    //minNonceHexLength: 8, nonce is now separated between header and coinBase input
     nonceLength: 4,
+    maxTimeDifferenceAdjustment: 16, // in difficutly points
 };
 const mining = {
     /**
@@ -790,7 +799,6 @@ const mining = {
 
         return newDifficulty;
     },
-
     /** @param {BlockMiningData[]} blockMiningData */
     getAverageBlockTime: (blockMiningData) => {
         const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
@@ -800,7 +808,6 @@ const mining = {
 
         return sum / (NbBlocks - 1);
     },
-
     generateRandomNonce: (length = miningParams.nonceLength) => {
         const Uint8 = new Uint8Array(length);
         crypto.getRandomValues(Uint8);
@@ -809,7 +816,6 @@ const mining = {
     
         return { Uint8, Hex };
     },
-
     /**
      * This function uses an Argon2 hash function to perform a hashing operation.
      * The Argon2 hash function must follow the following signature:
@@ -826,21 +832,38 @@ const mining = {
         
         return newBlockHash;
     },
+    /**
+     * @param {number} powTimestamp
+     * @param {number} posTimestamp
+     */
+    calculateTimeDifferenceAdjustment: (powTimestamp, posTimestamp) => {
+        const difference = powTimestamp - posTimestamp;
+        const differenceRatio = difference / blockchainSettings.targetBlockTime;
 
+        const mTDA = miningParams.maxTimeDifferenceAdjustment;
+        const adjustment = mTDA - Math.round(differenceRatio * mTDA);
+        return adjustment;
+    },
     getDiffAndAdjust: (difficulty = 1) => {
         const zeros = Math.floor(difficulty / 16);
         const adjust = difficulty % 16;
         return { zeros, adjust };
     },
-
-    verifyBlockHashConformToDifficulty: (HashBitsAsString = '', difficulty = 1) => {
+    /**
+     * @param {string} HashBitsAsString
+     * @param {BlockData} blockData
+     */
+    verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
         if (typeof HashBitsAsString !== 'string') { throw new Error('Invalid HashBitsAsString'); }
-        if (typeof difficulty !== 'number') { throw new Error('Invalid difficulty type'); }
+        const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
+        if (!typeValidation.numberIsPositiveInteger(difficulty)) { throw new Error('Invalid difficulty'); }
+        if (!typeValidation.numberIsPositiveInteger(legitimacy)) { throw new Error('Invalid legitimacy'); }
+        if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
+        if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
 
-        if (difficulty < 1) { throw new Error('Invalid difficulty < 1'); }
-        if (difficulty > HashBitsAsString.length) { throw new Error('Invalid difficulty > HashBitsAsString.length'); }
-
-        const { zeros, adjust } = mining.getDiffAndAdjust(difficulty);
+        const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
+        const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+        const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
     
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
         if (!condition1) { throw new Error(`unlucky--(condition 1)=> hash does not start with ${zeros} zeros`); }
@@ -848,6 +871,8 @@ const mining = {
         const next5Bits = HashBitsAsString.substring(zeros, zeros + 5);
         const condition2 = conditionnals.binaryStringSupOrEqual(next5Bits, adjust);
         if (!condition2) { throw new Error(`unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}`); }
+
+        return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
     }
 };
 const pointer = {

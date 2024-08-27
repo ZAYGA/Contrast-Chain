@@ -129,10 +129,10 @@ export class Validation {
     /** ==> Sixth validation, high computation cost.
      * 
      * - control the inputAddresses/witnessesPubKeys correspondence
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(referencedUTXOsByBlock, transaction) {
+    static async addressOwnershipConfirmation(UTXOsByPointer, transaction) {
         const witnessesAddresses = [];
 
         // derive witnesses addresses
@@ -149,9 +149,8 @@ export class Validation {
         for (let i = 0; i < transaction.inputs.length; i++) {
             const pointer = transaction.inputs[i].pointer;
             if (!utils.pointer.isValidPointer(pointer)) { throw new Error('Invalid pointer'); }
-            const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(pointer);
 
-            const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
+            const referencedUTXO = UTXOsByPointer[pointer];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
             if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
                 throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }

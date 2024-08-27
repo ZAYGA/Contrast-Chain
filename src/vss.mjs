@@ -94,7 +94,7 @@ export class Vss {
      */
     newStake(UTXO, upperBound) {
         const address = UTXO.address;
-        const utxoPointer = `${UTXO.utxoBlockHeight}:${UTXO.utxoTxID}:${UTXO.vout}`;
+        const utxoPointer = UTXO.pointer;
         const amount = UTXO.amount;
         
         if (upperBound) {

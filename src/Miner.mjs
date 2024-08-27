@@ -21,8 +21,8 @@ export class Miner {
         blockCandidate.nonce = headerNonce.Hex;
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
-        const { hex, bitsArrayAsString } = await Block.calculateHash(blockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate.difficulty);
+        const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate);
+        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate);
 
         blockCandidate.hash = hex;
         //console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);

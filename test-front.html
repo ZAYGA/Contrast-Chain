@@ -59,7 +59,7 @@
         };
 
 
-        function createAddressesUTXOLine(address, amount, rule, utxoBlockHeight, utxoTxID, version, vout) {
+        function createAddressesUTXOLine(address, amount, pointer, rule, version) {
             const line = document.createElement('li');
             line.classList.add('utxoLine');
             // add div for each element
@@ -69,28 +69,23 @@
             line.appendChild(addressDiv);
 
             const amountDiv = document.createElement('div');
+            amountDiv.style.width = '140px';
             amountDiv.textContent = amount;
             line.appendChild(amountDiv);
+
+            const utxoPointerDiv = document.createElement('div');
+            utxoPointerDiv.style.width = '160px';
+            utxoPointerDiv.textContent = pointer;
+            line.appendChild(utxoPointerDiv);
 
             const ruleDiv = document.createElement('div');
             ruleDiv.textContent = rule;
             line.appendChild(ruleDiv);
 
-            const utxoBlockHeightDiv = document.createElement('div');
-            utxoBlockHeightDiv.textContent = utxoBlockHeight;
-            line.appendChild(utxoBlockHeightDiv);
-
-            const utxoTxIDDiv = document.createElement('div');
-            utxoTxIDDiv.textContent = utxoTxID;
-            line.appendChild(utxoTxIDDiv);
-
             const versionDiv = document.createElement('div');
+            versionDiv.style.width = '60px';
             versionDiv.textContent = version;
             line.appendChild(versionDiv);
-
-            const voutDiv = document.createElement('div');
-            voutDiv.textContent = vout;
-            line.appendChild(voutDiv);
 
             return line;
         }
@@ -108,17 +103,16 @@
             wrap.appendChild(title);
 
             Object.keys(utxos).forEach(address => {
-                // Créer un élément pour l'adresse
                 const addressElement = document.createElement('div');
-                addressElement.textContent = `Adresse: ${address}`;
+                addressElement.textContent = `Address: ${address}`;
                 wrap.appendChild(addressElement);
 
                 const listElement = document.createElement('ul');
                 listElement.classList.add('utxoList');
-                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'Rule', 'Height', 'UTXO TxID', 'Version', 'Vout'));
+                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'Pointer', 'Rule', 'Version'));
 
                 utxos[address].forEach(utxo => {
-                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.rule, utxo.utxoBlockHeight, utxo.utxoTxID, utxo.version, utxo.vout));
+                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.pointer, utxo.rule, utxo.version));
                 });
 
                 wrap.appendChild(listElement);

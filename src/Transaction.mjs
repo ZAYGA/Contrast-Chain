@@ -141,7 +141,7 @@ export class Transaction_Builder {
         const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
         if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
 
-        const validatorHash = await Block.calculateValidatorHash(blockCandidate);
+        const validatorHash = await Block.getValidatorHash(blockCandidate);
         const posInput = `${posStakedAddress}:${validatorHash}`;
         const inputs = [ posInput ];
         const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);

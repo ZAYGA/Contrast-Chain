@@ -6,10 +6,6 @@ import { BlockMiningData, BlockData, Block } from './block.mjs';
 import utils from './utils.mjs';
 
 const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
-/** Used by HotData
- * An object that associates utxoTxID to arrays of TransactionIO.
- * @typedef {{ [utxoTxID: string]: { [vout: string]: TransactionIO} }} ReferencedUTXOs
- */
 
 /** Used by MemPool
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
@@ -69,14 +65,15 @@ class MemPool {
     }
     /** 
      * - Remove transactions that are using UTXOs that are already spent
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      */
-    clearTransactionsWhoUTXOsAreSpent(referencedUTXOsByBlock) {
+    clearTransactionsWhoUTXOsAreSpent(UTXOsByPointer) {
         const knownPointers = Object.keys(this.transactionByPointer);
+        
         for (let i = 0; i < knownPointers.length; i++) {
             const pointer = knownPointers[i];
             if (!this.transactionByPointer[pointer]) { continue; } // already removed
-            if (!this.#isUtxoSpent(referencedUTXOsByBlock, pointer)) { continue; }
+            if (UTXOsByPointer[pointer]) { continue; } // not spent
 
             const transaction = this.transactionByPointer[pointer];
             this.#removeMempoolTransaction(transaction);
@@ -144,49 +141,33 @@ class MemPool {
 
         return false;
     }
-    /** Search if the UTXO is spent in the referencedUTXOsByBlock (hotData)
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock - from hotData
-     * @param {string} pointer
-     */
-    #isUtxoSpent(referencedUTXOsByBlock, pointer) {
-        const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(pointer);
-        if (!referencedUTXOsByBlock[utxoBlockHeight]) { return true; }
-        if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { return true; }
-        if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { return true; }
-
-        return false;
-    }
     /** 
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      */
-    #transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction) {
+    #transactionUTXOsAreNotSpent(UTXOsByPointer, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
             if (!utils.pointer.isValidPointer(transaction.inputs[i].pointer)) { throw new Error('Invalid UTXO'); }
-            const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(transaction.inputs[i].pointer);
-
-            if (!referencedUTXOsByBlock[utxoBlockHeight]) { return false; }
-            if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { return false; }
-            if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { return false; }
+            if (!UTXOsByPointer[transaction.inputs[i].pointer]) { return false; }
         }
 
         return true;
     }
     /**
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    submitTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
-        callStack.push(() => this.#pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID));
+    submitTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
+        callStack.push(() => this.#pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID));
     }
     /**
      * should be used with the callstack
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    async #pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
+    async #pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
         const startTime = Date.now();
         try {
             const isCoinBase = false;
@@ -224,7 +205,7 @@ class MemPool {
                 };
             }
     
-            if (!this.#transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction)) {
+            if (!this.#transactionUTXOsAreNotSpent(UTXOsByPointer, transaction)) {
                 throw new Error('UTXOs(one at least) are spent'); }
     
             // Third validation: medium computation cost.
@@ -235,13 +216,12 @@ class MemPool {
     
             // Fifth validation: medium computation cost.
             await Validation.controlAllWitnessesSignatures(transaction);
-            //await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction); DEPRECATED
     
             // Sixth validation: high computation cost.
-            await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
+            await Validation.addressOwnershipConfirmation(UTXOsByPointer, transaction);
     
             txInclusionFunction();
-            console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
+            //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
         } catch (error) {
             //console.log(`[MEMPOOL] transaction: ${transaction.id} rejected in ${Date.now() - startTime}ms =reason> ${error.message}`);
             throw error;
@@ -255,8 +235,9 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.addressesUTXOs = {};
         /** @type {Object<string, number>} */
         this.addressesBalances = {};
-        /** @type {ReferencedUTXOs[]} */
-        this.referencedUTXOsByBlock = [];
+        /** @type {Object<string, TransactionIO>} */
+        this.UTXOsByPointer = {};
+
         /** @type {BlockMiningData[]} */
         this.blockMiningData = [];
         /** @type {Vss} */
@@ -291,50 +272,24 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         if ( Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
+        TxIO_Builder.checkMalformedUTXOsPointer(TxInputs);
+        TxIO_Builder.checkDuplicateUTXOsPointer(TxInputs);
+
         for (let i = 0; i < TxInputs.length; i++) {
-            
-            TxIO_Builder.checkMalformedUTXOsPointer(TxInputs);
-            TxIO_Builder.checkDuplicateUTXOsPointer(TxInputs);
+            const pointer = TxInputs[i].pointer;
+            const { address, amount } = this.UTXOsByPointer[pointer];
 
-            const { utxoBlockHeight, utxoTxID, vout } = this.#getUTXOReferenceIFromReferenced(TxInputs[i]);
-            const { address, amount } = this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-
-            this.#removeUTXO(address, utxoBlockHeight, utxoTxID, vout);
+            this.#removeUTXO(address, pointer);
             this.#changeBalance(address, -amount);
         }
 
         return true;
     }
-    /** @param {TransactionIO} input */
-    #getUTXOReferenceIFromReferenced(input) {
-        if (!utils.pointer.isValidPointer(input.pointer)) { throw new Error('Invalid UTXO pointer'); }
-        const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(input.pointer);
-
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight]) { throw new Error(`referencedUTXOsByBlock doesn't have block: ${utxoBlockHeight}`); }
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { throw new Error(`referencedUTXOsByBlock block: ${utxoBlockHeight} doesn't have tx: ${utxoTxID}`); }
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { 
-            throw new Error(`referencedUTXOsByBlock block: ${utxoBlockHeight} tx: ${utxoTxID} doesn't have vout ${vout}`); }
-
-        return { utxoBlockHeight, utxoTxID, vout };
-    }
-    /** @param {TransactionIO} utxo */
-    #setReferencedUTXO(utxo) {
-        if (!utils.pointer.isValidPointer(utxo.pointer)) { throw new Error('Invalid UTXO pointer'); }
-        const { utxoBlockHeight, utxoTxID, vout } = utils.pointer.to_height_utxoTxID_vout(utxo.pointer);
-
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight]) { this.referencedUTXOsByBlock[utxoBlockHeight] = {}; }
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID] = {}; }
-        this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout] = utxo;
-    }
     /**
      * @param {string} address
-     * @param {number} utxoBlockHeight
-     * @param {string} utxoTxID
-     * @param {number} vout
+     * @param {pointer} pointer
      */
-    #removeUTXO(address, utxoBlockHeight, utxoTxID, vout) {
-        const pointer = utils.pointer.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
-
+    #removeUTXO(address, pointer) {
         // remove from addressesUTXOs
         if (this.addressesUTXOs[address] === undefined) { throw new Error(`${address} has no UTXOs`); }
 
@@ -344,9 +299,8 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.addressesUTXOs[address].splice(addressUtxoIndex, 1);
         if (this.addressesUTXOs[address].length === 0) { delete this.addressesUTXOs[address]; }
 
-        // remove from referencedUTXOsByBlock
-        delete this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-        if (Object.keys(this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]).length === 0) { delete this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]; }
+        // remove from UTXOsByPointer
+        delete this.UTXOsByPointer[pointer];
         // console.log(`[HotData]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
     }
     /**
@@ -357,16 +311,19 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         const TxID = transaction.id;
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
-            // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
-            const pointer = utils.pointer.from_TransactionInputReferences(blockIndex, TxID, i);
-            TxOutputs[i].pointer = pointer;
-            
             const { address, amount } = TxOutputs[i];
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
+            // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
+            const pointer = utils.pointer.from_TransactionInputReferences(blockIndex, TxID, i);
+            if (!utils.pointer.isValidPointer(pointer)) { throw new Error(`Invalid UTXO pointer: ${pointer}`); }
+            
+            // output become ouput -> set UTXO's pointer
+            TxOutputs[i].pointer = pointer;
+
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
             this.addressesUTXOs[address].push(TxOutputs[i]);
-            this.#setReferencedUTXO(TxOutputs[i]);
+            this.UTXOsByPointer[pointer] = TxOutputs[i];
             this.#changeBalance(address, amount);
 
             const rule = TxOutputs[i].rule;
@@ -396,15 +353,18 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     getBalanceSpendableAndUTXOs(address) {
         // clone values to avoid modification
         const { balance, UTXOs } = this.getBalanceAndUTXOs(address);
+        let spendableBalance = balance;
+
         for (let i = 0; i < UTXOs.length; i++) {
             const rule =  UTXOs[i].rule;
             if (rule === "sigOrSlash") {
+                spendableBalance -= UTXOs[i].amount;
                 UTXOs.splice(i, 1);
                 i--;
             }
         }
 
-        return { balance, UTXOs };
+        return { spendableBalance, balance, UTXOs };
     }
     /**
     * @param {number} blockIndex
@@ -544,8 +504,8 @@ export class FullNode {
         
         //TODO : VALIDATE THE BLOCK
         // TODO verify if coinBase Tx release the correct amount of coins
-        const { hex, bitsArrayAsString } = await Block.calculateHash(minerBlockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate.difficulty);
+        const { hex, bitsArrayAsString } = await Block.getMinerHash(minerBlockCandidate);
+        const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate);
 
         if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
         
@@ -557,14 +517,15 @@ export class FullNode {
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
         await this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
-        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.referencedUTXOsByBlock);
+        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.UTXOsByPointer);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
 
         // simple log for debug ----------------------
         const powMinerTx = minerBlockCandidate.Txs[0];
         const address = powMinerTx.outputs[0].address;
         const { balance, UTXOs } = this.hotData.getBalanceAndUTXOs(address);
-        console.log(`[FullNode] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        //console.log(`[FullNode] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        console.log(`[FullNode] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
         // -------------------------------------------
 
         callStack.push(async () => {
@@ -586,7 +547,7 @@ export class FullNode {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.hotData.referencedUTXOsByBlock, signedTansaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.hotData.UTXOsByPointer, signedTansaction, replaceExistingTxID);
     }
 
     // TODO: Fork management
@@ -602,13 +563,13 @@ export class FullNode {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
         }
 
-        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs);
+        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
         if (lastBlockData) {
             const newDifficulty = utils.mining.difficultyAdjustment(this.hotData.blockMiningData);
             const clone = Block.cloneBlockData(lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs);
+            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
         }
 
         // Add the PoS reward transaction
