@@ -850,7 +850,9 @@ const mining = {
         if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
 
         const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
-        return Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+        const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+
+        return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty };
     },
     getDiffAndAdjust: (difficulty = 1) => {
         const zeros = Math.floor(difficulty / 16);
@@ -864,7 +866,7 @@ const mining = {
     verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
         if (typeof HashBitsAsString !== 'string') { throw new Error('Invalid HashBitsAsString'); }
 
-        const finalDifficulty = mining.getBlockFinalDifficulty(blockData);
+        const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = mining.getBlockFinalDifficulty(blockData);
         const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
     
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
