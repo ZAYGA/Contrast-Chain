@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package contrast;
+
+message Block {
+  int32 index = 1;
+  string previousHash = 2;
+  int64 timestamp = 3;
+  string data = 4;
+  string hash = 5;
+  int64 nonce = 6;
+  int32 score = 7;
+}
+
+message Transaction {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  int64 amount = 4;
+  int64 timestamp = 5;
+  string signature = 6;
+}
+
+message BlockAnnouncement {
+  bytes bloom_filter = 1;
+}
+
+message VSSShare {
+  uint32 round = 1;
+  uint32 fromIndex = 2;
+  uint32 toIndex = 3;
+  string share = 4;
+  repeated string commitments = 5;
+}
+
+message AccountState {
+  string address = 1;
+  int64 balance = 2;
+  int64 nonce = 3;
+}
+
+message Announcement {
+  string peerId = 1;
+  string publicKey = 2;
+  int64 timestamp = 3;
+  string type = 4;
+  bytes data = 5;
+}
+
+message VRFProof {
+  string peerId = 1;
+  string publicKey = 2;
+  uint64 epoch = 3;
+  uint64 round = 4;
+  bytes proof = 5;
+}
