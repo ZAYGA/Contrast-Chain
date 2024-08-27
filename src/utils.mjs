@@ -844,6 +844,14 @@ const mining = {
         const adjustment = mTDA - Math.round(differenceRatio * mTDA);
         return adjustment;
     },
+    getBlockFinalDifficulty: (blockData) => {
+        const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
+        if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
+        if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
+
+        const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
+        return Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+    },
     getDiffAndAdjust: (difficulty = 1) => {
         const zeros = Math.floor(difficulty / 16);
         const adjust = difficulty % 16;
@@ -855,14 +863,8 @@ const mining = {
      */
     verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
         if (typeof HashBitsAsString !== 'string') { throw new Error('Invalid HashBitsAsString'); }
-        const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
-        if (!typeValidation.numberIsPositiveInteger(difficulty)) { throw new Error('Invalid difficulty'); }
-        if (!typeValidation.numberIsPositiveInteger(legitimacy)) { throw new Error('Invalid legitimacy'); }
-        if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
-        if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
 
-        const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
-        const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+        const finalDifficulty = mining.getBlockFinalDifficulty(blockData);
         const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
     
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
