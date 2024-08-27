@@ -1,8 +1,8 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
 //import { Transaction_Builder, Validation } from './index.mjs';
-import { Transaction_Builder } from './Transaction.mjs';
-import { Validation } from './Validation.mjs';
+import { Transaction_Builder } from './transaction.mjs';
+import { Validation } from './validation.mjs';
 
 /**
 * @typedef {Object} BlockMiningData
@@ -30,8 +30,10 @@ export const BlockMiningData = (index, difficulty, timestamp) => {
 * @property {number} supply - The total supply before the coinbase reward
 * @property {number} coinBase - The coinbase reward
 * @property {number} difficulty - The difficulty of the block
+* @property {number} legitimacy - The legitimacy of the validator who created the block candidate
 * @property {string} prevHash - The hash of the previous block
 * @property {Transaction[]} Txs - The transactions in the block
+* @property {number} posTimestamp - The timestamp of the block creation
 * @property {number | undefined} timestamp - The timestamp of the block
 * @property {string | undefined} hash - The hash of the block
 * @property {number | undefined} nonce - The nonce of the block
@@ -48,66 +50,67 @@ export const BlockMiningData = (index, difficulty, timestamp) => {
  * @param {number | undefined} nonce - The nonce of the block
  * @returns {BlockData}
  */
-export const BlockData = (index, supply, coinBase, difficulty, prevHash, Txs, timestamp, hash, nonce) => {
+export const BlockData = (index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce) => {
     return {
         index,
         supply,
         coinBase,
         difficulty,
+        legitimacy,
         prevHash,
+        Txs,
+
+        // Proof of stake dependent
+        posTimestamp, // timestamp of the block's creation
         
         // Proof of work dependent
-        timestamp,
+        timestamp, // timestamp of the block's confirmation
         hash,
-        nonce,
-
-        Txs
+        nonce
     };
 }
-
-BlockData.fromJSON = function(json) {
-    const data = typeof json === 'string' ? JSON.parse(json) : json;
-    return BlockData(
-        data.index,
-        data.supply,
-        data.coinBase,
-        data.difficulty,
-        data.prevHash,
-        data.Txs, // Note: You might need to parse transactions individually if they're not already in the correct format
-        data.timestamp,
-        data.hash,
-        data.nonce
-    );
-};
 export class Block {
-    /** @param {BlockData} blockData */
-    static getBlockStringToHash(blockData) {
+    /** 
+     * @param {BlockData} blockData
+     * @param {boolean} excludeCoinbaseAndPos
+     */
+    static async getBlockTxsHash(blockData, excludeCoinbaseAndPos = false) {
         const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
-        const txsIDStr = txsIDStrArray.join('');
 
-        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
-        return utils.convert.string.toHex(signatureStr);
-    }
+        let firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isCoinBaseOrFeeTransaction(blockData.Txs[0], 0) : false;
+        if (excludeCoinbaseAndPos && firstTxIsCoinbase) { txsIDStrArray.shift(); }
+        firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isCoinBaseOrFeeTransaction(blockData.Txs[0], 0) : false;
+        if (excludeCoinbaseAndPos && firstTxIsCoinbase) { txsIDStrArray.shift(); }
+
+        const txsIDStr = txsIDStrArray.join('');
+        return await HashFunctions.SHA256(txsIDStr);
+    };
     /** @param {BlockData} blockData */
-    static async calculateHash(blockData) {
-        const blockSignatureHex = Block.getBlockStringToHash(blockData);
-        const salt = blockData.nonce || crypto.randomBytes(16).toString('hex'); // Ensure salt is at least 16 bytes
-    
-        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, blockSignatureHex, salt);
+    static async getMinerHash(blockData) {
+        if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
+        const txsHash = await Block.getBlockTxsHash(blockData);
+        const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp } = blockData;
+        const signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
+        const signatureHex = await HashFunctions.SHA256(signatureStr);
+
+        const headerNonce = blockData.nonce;
+        const coinbaseNonce = blockData.Txs[0].inputs[0];
+        const nonce = `${headerNonce.Hex}${coinbaseNonce.Hex}`;
+
+        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, signatureHex, nonce);
         if (!newBlockHash) { throw new Error('Invalid block hash'); }
-        console.log(`Block hash: ${newBlockHash.hex}`);
+
         return { hex: newBlockHash.hex, bitsArrayAsString: newBlockHash.bitsArray.join('') };
     }
     /** @param {BlockData} blockData */
-    static async calculateValidatorHash(blockData) {
-        const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
-        const txsIDStr = txsIDStrArray.join('');
+    static async getValidatorHash(blockData) {
+        // posTx and coinbaseTx doesn't exist at this point, then we ensure that they are not included in the hash
+        const txsHash = await Block.getBlockTxsHash(blockData, true);
 
-        const signatureStr = `${blockData.prevHash}${blockData.index}${blockData.supply}${blockData.difficulty}${txsIDStr}${blockData.coinBase}`;
-        const signatureHex = utils.convert.string.toHex(signatureStr);
+        const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp } = blockData;
+        const signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
 
-        const validatorHash = await HashFunctions.SHA256(signatureHex);
-        return validatorHash;
+        return await HashFunctions.SHA256(signatureStr);
     }
     /**
      * @param {BlockData} blockData
@@ -159,9 +162,14 @@ export class Block {
     }
     /** @param {string} blockDataJSON */
     static blockDataFromJSON(blockDataJSON) {
-        return BlockData.fromJSON(blockDataJSON);
+        const parsed = JSON.parse(blockDataJSON);
+        //const Txs = Block.TransactionsFromJSON(parsed.Txs);
+        const { index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce } = parsed;
+        /** @type {BlockData} */
+        const blockData = BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce);
+        
+        return blockData;
     }
-
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {
         const JSON = Block.dataAsJSON(blockData);

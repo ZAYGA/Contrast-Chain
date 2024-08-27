@@ -1,9 +1,94 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-//import { Account, TransactionIO, TxIO_Builder, Block, TxIO_Scripts } from './index.mjs';
-import { Account } from './Account.mjs';
-import { Block } from './Block.mjs';
-import { TransactionIO, TxIO_Builder, TxIO_Scripts } from './TxIO.mjs';
+import { Account } from './account.mjs';
+import { Block } from './block.mjs';
+import { Validation } from './validation.mjs';
+
+export const uxtoRulesGlossary = {
+    sig: { description: 'Simple signature verification' },
+    sigOrSlash: { description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
+    lockUntilBlock: { description: 'UTXO locked until block height', lockUntilBlock: 0 },
+    multiSigCreate: { description: 'Multi-signature creation' },
+    p2pExchange: { description: 'Peer-to-peer exchange' }
+}
+
+/**
+ * @typedef {Object} TransactionIO
+ * @property {number} amount - the amount of microConts
+ * @property {string | undefined} address - output only || script's condition
+ * @property {string} rule - the unlocking rule
+ * @property {number} version - the transaction version
+ * @property {string | undefined} pointer - input only
+ */
+/** Transaction Input/Output data structure
+ * @param {number} amount - the amount of microConts
+ * @param {string | undefined} address - output only || script's condition
+ * @param {string} rule - the unlocking rule
+ * @param {number} version - the transaction version
+ * @param {string | undefined} pointer - input only
+ * @returns {TransactionIO}
+ **/
+export const TransactionIO = (amount, rule, version, address, pointer) => {
+    return {
+        amount,
+        rule,
+        version,
+        address,
+        pointer
+    };
+}
+export class TxIO_Builder {
+    /**
+     * @param {"input" | "output"} type
+     * @param {number} amount
+     * @param {string | undefined} address - output only
+     * @param {string} rule
+     * @param {number} version
+     * @param {number | undefined} utxoBlockHeight - input only
+     * @param {string | undefined} utxoTxID - input only
+     * @param {number | undefined} vout - input only
+     */
+    static newIO(type, amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) {
+        const ruleName = rule.split('_')[0];
+        if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
+
+        const pointer = utils.pointer.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
+        const newTxIO = TransactionIO(amount, rule, version, address, pointer);
+        Validation.isValidTransactionIO(newTxIO, type);
+
+        // delte all undefined properties
+        for (const key in newTxIO) {
+            if (newTxIO[key] === undefined) {
+                delete newTxIO[key];
+            }
+        }
+        
+        return newTxIO;
+    }
+    /** @param {TransactionIO[]} TxIOs */
+    static checkMalformedUTXOsPointer(TxIOs) {
+        for (let i = 0; i < TxIOs.length; i++) {
+            if (!utils.pointer.isValidPointer(TxIOs[i].pointer)) {
+                throw new Error(`UTXO pointer malformed in UTXO ${i}: ${TxIOs[i].pointer}`);
+            }
+        }
+    }
+    /** @param {TransactionIO[]} TxIOs */
+    static checkDuplicateUTXOsPointer(TxIOs) {
+        if (TxIOs.length === 0) { throw new Error('No UTXO to check'); }
+
+        const utxosPointers = TxIOs.map(TxIO => TxIO.pointer);
+        if (utils.conditionnals.arrayIncludeDuplicates(utxosPointers)) { throw new Error('Duplicate UTXO pointers in UTXOs'); }
+    }
+    /**
+     * @param {TransactionIO[]} TxIOs
+     * @returns {TransactionIO[]}
+     */
+    static cloneTxIO(TxIO) {
+        const TxIOJSON = JSON.stringify(TxIO);
+        return JSON.parse(TxIOJSON);
+    }
+}
 
 /**
  * @typedef {Object} Transaction
@@ -35,7 +120,7 @@ export class Transaction_Builder {
      * @param {string} address 
      * @param {number} amount
      */
-    static createCoinbaseTransaction(nonceHex, address, amount) {
+    static async createCoinbaseTransaction(nonceHex, address, amount) {
         if (typeof nonceHex !== 'string') { throw new Error('Invalid nonceHex'); }
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
@@ -44,7 +129,7 @@ export class Transaction_Builder {
         const inputs = [ nonceHex ];
         const outputs = [ coinbaseOutput ];
 
-        return Transaction(inputs, outputs);
+        return await this.newTransaction(inputs, outputs);
     }
     /**
      * @param {BlockData} blockCandidate
@@ -56,55 +141,76 @@ export class Transaction_Builder {
         const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
         if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
 
-        const validatorHash = await Block.calculateValidatorHash(blockCandidate);
+        const validatorHash = await Block.getValidatorHash(blockCandidate);
         const posInput = `${posStakedAddress}:${validatorHash}`;
         const inputs = [ posInput ];
         const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);
         const outputs = [ posOutput ];
 
-        return Transaction(inputs, outputs);
+        return await this.newTransaction(inputs, outputs);
     }
-    /** @param {Account} senderAccount */
-    static createTransferTransaction(
-        senderAccount,
-        transfers = [ { recipientAddress: 'recipientAddress', amount: 1 } ]
-    ) {
+    /** 
+     * @param {Account} senderAccount
+     * @param {{recipientAddress: string, amount: number}[]} transfers
+     * @param {number} feePerByte // RANDOM IS TEMPORARY
+     */
+    static async createTransferTransaction(senderAccount, transfers, feePerByte = Math.round(Math.random() * 10) + 1 ) {
         const senderAddress = senderAccount.address;
         const UTXOs = senderAccount.UTXOs;
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
         if (transfers.length === 0) { throw new Error('No transfer to make'); }
         
-        TxIO_Builder.checkMissingTxID(UTXOs);
+        TxIO_Builder.checkMalformedUTXOsPointer(UTXOs);
+        TxIO_Builder.checkDuplicateUTXOsPointer(UTXOs);
 
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig_v1', 1);
-        const totalInputAmount = UTXOs.reduce((a, b) => a + b.amount, 0);
-
-        const remainingAmount = totalInputAmount - totalSpent;
-        if (remainingAmount <= 0) { 
-            throw new Error(`Not enough funds: ${totalInputAmount} - ${totalSpent} = ${remainingAmount}`); }
-
-        // logic of fee estimation will be removed in the future
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
-        const feePerByte = Math.round(Math.random() * 10) + 1; // temporary
-        const fee = feePerByte * estimatedWeight;
-        if (fee % 1 !== 0) {
-            throw new Error('Invalid fee: not integer'); }
-        if (fee <= 0) {
-            throw new Error(`Invalid fee: ${fee} <= 0`); }
-        
-        console.log(`[TRANSACTION] fee: ${fee} microCont`);
+        const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte);
+        //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
-        const change = remainingAmount - fee;
-        if (change <= 0) {
-            throw new Error('(change <= 0) not enough funds');
-        } else if (change > 0) {
+        if (change !== 0) {
             const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
             outputs.push(changeOutput);
         }
 
         if (utils.conditionnals.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
         
-        return Transaction(UTXOs, outputs);
+        return await this.newTransaction(UTXOs, outputs);
+    }
+    /**
+     * @param {Account} senderAccount
+     * @param {string} stakingAddress
+     * @param {number} amount
+     * @param {number} feePerByte // RANDOM IS TEMPORARY
+     */
+    static async createStakingNewVssTransaction(senderAccount, stakingAddress, amount, feePerByte = Math.round(Math.random() * 10) + 1) {
+        const senderAddress = senderAccount.address;
+        const UTXOs = senderAccount.UTXOs;
+        if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
+
+        TxIO_Builder.checkMalformedUTXOsPointer(UTXOs);
+        TxIO_Builder.checkDuplicateUTXOsPointer(UTXOs);
+
+        const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom([{recipientAddress: stakingAddress, amount}], 'sigOrSlash', 1);
+        const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
+
+        const feeSupplement = utils.blockchainSettings.newVssSpaceFee;
+        const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement);
+        //console.log(`[TRANSACTION] fee: ${fee} microCont`);
+
+        if (change !== 0) {
+            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
+            outputs.push(changeOutput);
+        }
+
+        if (utils.conditionnals.arrayIncludeDuplicates(outputs)) { throw new Error('Duplicate outputs'); }
+        
+        return await this.newTransaction(UTXOs, outputs);
+    }
+    static async newTransaction(inputs, outputs) {
+        const transaction = Transaction(inputs, outputs);
+        transaction.id = await Transaction_Builder.hashTxToGetID(transaction);
+        return transaction;
     }
     /** @param {TransactionIO[]} UTXOs */
     static getTotalUTXOsAmount(UTXOs) { // DEPRECATED ??
@@ -128,26 +234,53 @@ export class Transaction_Builder {
         const clone = Transaction_Builder.cloneTransaction(transaction);
         const compressedTx = utils.compression.transaction.toBinary_v1(clone);
         const transactionWeight = compressedTx.byteLength;
-        console.log(`[TRANSACTION] weight: ${transactionWeight} bytes`);
         return transactionWeight;
     }
     /**
      * @param {{recipientAddress: string, amount: number}[]} transfers
-     * @param {string} script
+     * @param {string} rule
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], script = 'sig_v1', version = 1) {
+    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], rule = 'sig_v1', version = 1) {
         const outputs = [];
         let totalSpent = 0;
 
         for (let i = 0; i < transfers.length; i++) {
             const { recipientAddress, amount} = transfers[i];
-            const output = TxIO_Builder.newIO('output', amount, script, version, recipientAddress);
+            const output = TxIO_Builder.newIO('output', amount, rule, version, recipientAddress);
             outputs.push(output);
             totalSpent += amount;
         }
 
         return { outputs, totalSpent };
+    }
+    /**
+     * @param {TransactionIO[]} UTXOs
+     * @param {number} totalSpent
+     * @param {number} estimatedWeight
+     * @param {number} feePerByte
+     * @param {number} feeSupplement
+     */
+    static calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement = 0) {
+        if (feePerByte < utils.blockchainSettings.minTransactionFeePerByte) { throw new Error(`Invalid feePerByte: ${feePerByte}`); }
+        const totalInputAmount = UTXOs.reduce((a, b) => a + b.amount, 0);
+
+        const remainingAmount = totalInputAmount - totalSpent;
+        if (remainingAmount <= 0) { throw new Error(`Not enough funds: ${totalInputAmount} - ${totalSpent} = ${remainingAmount}`); }
+
+        const fee = (feePerByte * estimatedWeight) + feeSupplement;
+        if (fee % 1 !== 0) {
+            throw new Error('Invalid fee: not integer'); }
+        if (fee <= 0) {
+            throw new Error(`Invalid fee: ${fee} <= 0`); }
+
+        const change = remainingAmount - fee;
+        
+        // Tx will consume all funds, then fee is the remaining amount, and change is 0
+        if (change <= 0) { return { fee: remainingAmount, change: 0 }; }
+        //if (change <= 0) { throw new Error('(change <= 0) not enough funds'); }
+
+        return { fee, change };
     }
     /** @param {Transaction} transaction */
     static async hashTxToGetID(transaction, hashHexLength = 8) {
@@ -206,9 +339,8 @@ export class Transaction_Builder {
     static async createAndSignTransferTransaction(senderAccount, amount, recipientAddress) {
         try {
             const transfer = { recipientAddress, amount };
-            const transaction = Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
+            const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
             const signedTx = await senderAccount.signAndReturnTransaction(transaction);
-            signedTx.id = await Transaction_Builder.hashTxToGetID(signedTx);
     
             return { signedTxJSON: Transaction_Builder.getTransactionJSON(signedTx), error: false };
         } catch (error) {

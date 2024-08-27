@@ -1,7 +1,6 @@
-import { HashFunctions } from './conCrypto.mjs';
-import { Transaction, Transaction_Builder } from './Transaction.mjs';
+import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
+import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
-import { UTXO_Creation_Conditions, TxIO_Scripts, TransactionIO } from './TxIO.mjs';
 
 /**
  * An object that associates TxID to arrays of TransactionIO.
@@ -11,7 +10,7 @@ import { UTXO_Creation_Conditions, TxIO_Scripts, TransactionIO } from './TxIO.mj
 export class Validation {
     /** ==> First validation, low computation cost.
      * 
-     * - control format of : amount, address, script, version, TxID
+     * - control format of : amount, address, rule, version, TxID
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
@@ -43,15 +42,12 @@ export class Validation {
         if (type === 'input' && TxIO.amount === 0) { throw new Error('Invalid amount value: = 0'); }
         if (TxIO.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
-        if (typeof TxIO.script !== 'string') { throw new Error('Invalid script !== string'); }
+        if (typeof TxIO.rule !== 'string') { 
+            throw new Error('Invalid rule !== string'); }
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
-        if (type === 'input' && typeof TxIO.utxoBlockHeight !== 'number') { throw new Error('Invalid utxoBlockHeight !== number'); }
-        if (type === 'input' && TxIO.utxoBlockHeight < 0) { throw new Error('Invalid utxoBlockHeight value: < 0'); }
-        if (type === 'input' && TxIO.utxoBlockHeight % 1 !== 0) { throw new Error('Invalid utxoBlockHeight value: not integer'); }
-        if (type === 'input' && typeof TxIO.utxoTxID !== 'string') { throw new Error('Invalid utxoTxID !== string'); }
-        if (type === 'input' && TxIO.utxoTxID.length !== 8) { throw new Error('Invalid utxoTxID length !== 8'); }
+        if (type === 'input' && !utils.pointer.isValidPointer(TxIO.pointer)) { throw new Error('Invalid pointer'); }
 
         if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
         if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
@@ -79,7 +75,7 @@ export class Validation {
         return fee;
     }
 
-    /** ==> Third validation, medium computation cost.
+    /** ==> Third validation, low computation cost.
      * 
      * - control the transaction hash (SHA256)
      * @param {Transaction} transaction
@@ -87,118 +83,56 @@ export class Validation {
     static async controlTransactionHash(transaction) {
         const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
         if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
-    }
+    } // WILL BE REDONDANT WITH THE FIFTH VALIDATION
 
     /** ==> Fourth validation, low computation cost.
      * 
-     * - control the right to create outputs using the script
+     * - control the right to create outputs using the rule
      * @param {Transaction} transaction
      */
-    static async controlTransactionOutputsScriptsConditions(transaction) {
+    static async controlTransactionOutputsRulesConditions(transaction) { // NOT SURE IF WE CONSERVE THIS
         for (let i = 0; i < transaction.outputs.length; i++) {
-            const inScript = transaction.inputs[i] ? transaction.inputs[i].script : undefined;
+            const inRule = transaction.inputs[i] ? transaction.inputs[i].rule : undefined;
             const inAmount = transaction.inputs[i] ? transaction.inputs[i].amount : undefined;
             const inAddress = transaction.inputs[i] ? transaction.inputs[i].address : undefined;
 
-            const outScript = transaction.outputs[i] ? transaction.outputs[i].script : undefined;
+            const outRule = transaction.outputs[i] ? transaction.outputs[i].rule : undefined;
             const outAmount = transaction.outputs[i] ? transaction.outputs[i].amount : undefined;
             const outAddress = transaction.outputs[i] ? transaction.outputs[i].address : undefined;
-
-            const { scriptName, scriptParams } = TxIO_Scripts.decomposeScriptString(outScript);
-            const utxoCreationConditions = UTXO_Creation_Conditions[scriptName];
-            if (!utxoCreationConditions) { throw new Error('Invalid script, cannot find associated conditions'); }
-
-            if (utxoCreationConditions.inputAddressEqualOuputAddress && inAddress !== outAddress) {
-                throw new Error('Invalid script, input address !== output address');
-            }
-
-            if (transaction.inputs.length > utxoCreationConditions.maxTransactionInputs) {
-                throw new Error(`Invalid transaction inputs amount: > ${utxoCreationConditions.maxTransactionInputs}`);
-            }
-
-            if (utxoCreationConditions.allInputsSameAddress) {
-                for (let j = 0; j < transaction.inputs.length; j++) {
-                    if (transaction.inputs[j].address !== inAddress) {
-                        throw new Error('Invalid script, all inputs address !== same');
-                    }
-                }
-            }
-
-            for (let j = 0; j < utxoCreationConditions.requiredParams; j++) {
-                const requiredParam = utxoCreationConditions.requiredParams[j];
-                if (scriptParams.includes(requiredParam) === false) {
-                    throw new Error('Invalid script parameters');
-                }
-            }
         }
-    }
+    } // NOT SURE IF WE CONSERVE THIS
 
     /** ==> Fifth validation, medium computation cost.
      * 
      * - control the signature of the inputs
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
      * @param {Transaction} transaction
      */
-    static async executeTransactionInputsScripts(referencedUTXOsByBlock, transaction) {
-        // TODO: ADAPT THE LOGIC FOR MULTI WITNESS
-        /*const opAlreadyPassed = [];
-        const witnessParts = transaction.witnesses[0].split(':');
-        const signature = witnessParts[0];
-        const pubKeyHex = witnessParts[1];
-
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout, script } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined || script === undefined) { throw new Error('Invalid input'); }
-
-            const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-            if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-
-            const address = referencedUTXO.address;
-            const operation = `${address}${script}`;
-            if (opAlreadyPassed.includes(operation)) {
-                continue; }
-
-            utils.addressUtils.conformityCheck(address);
-            await utils.addressUtils.securityCheck(address, pubKeyHex);
-        }*/
-
+    static async controlAllWitnessesSignatures(transaction) {
         const startTime = Date.now();
-        const scriptMemory = {};
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            const { script } = transaction.inputs[i];
-            if (script === undefined) { throw new Error('Invalid input'); }
 
-            const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-            const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-            if (!scriptFunction) { throw new Error('Invalid script'); }
-            
-            await scriptFunction(scriptMemory, referencedUTXOsByBlock, transaction, i, scriptParams);
+        if (!Array.isArray(transaction.witnesses)) { 
+            throw new Error('Invalid witnesses'); }
+
+        for (let i = 0; i < transaction.witnesses.length; i++) {
+            const witnessParts = transaction.witnesses[0].split(':');
+            const signature = witnessParts[0];
+            const pubKeyHex = witnessParts[1];
+            const message = await Transaction_Builder.hashTxToGetID(transaction);
+
+            // will throw an error if the signature is invalid
+            AsymetricFunctions.verifySignature(signature, message, pubKeyHex);
         }
-        const endTime = Date.now();
-        console.log(`[VALIDATION] .executeTransactionInputsScripts() took ${endTime - startTime} ms`);
-    }
-    /**
-     * @param {string} script
-     * @param {string} address
-     * @param {string} signature
-     * @param {string} pubKeyHex
-     */
-    static executeTransactionInputScripts(script, signature, message, pubKeyHex) { // DEPRECATED
-        const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-        const scriptFunction = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-        if (!scriptFunction) { throw new Error('Invalid script'); }
 
-        const addressOwnedByPubKey = scriptFunction(signature, message, pubKeyHex, scriptParams);
-        if (!addressOwnedByPubKey) { throw new Error('Invalid signature<->pubKey correspancy'); }
+        //console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
     }
 
     /** ==> Sixth validation, high computation cost.
      * 
-     * - control the address/pubKey correspondence
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+     * - control the inputAddresses/witnessesPubKeys correspondence
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(referencedUTXOsByBlock, transaction) {
+    static async addressOwnershipConfirmation(UTXOsByPointer, transaction) {
         const witnessesAddresses = [];
 
         // derive witnesses addresses
@@ -213,12 +147,13 @@ export class Validation {
 
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { throw new Error('Invalid input'); }
+            const pointer = transaction.inputs[i].pointer;
+            if (!utils.pointer.isValidPointer(pointer)) { throw new Error('Invalid pointer'); }
 
-            const referencedUTXO = referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
+            const referencedUTXO = UTXOsByPointer[pointer];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-            if (witnessesAddresses.includes(referencedUTXO.address) === false) { throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
+            if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
+                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
         }
     }
 }

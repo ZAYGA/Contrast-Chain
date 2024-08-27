@@ -1,20 +1,14 @@
 import storage from './storage.mjs';
-//import { BlockData, Block, Transaction, Transaction_Builder, Validation, TransactionIO, TxIO_Builder } from './index.mjs';
-import { Validation } from './Validation.mjs';
-import { Transaction, Transaction_Builder } from './Transaction.mjs';
-import { BlockMiningData, BlockData, Block } from './Block.mjs';
-import { TransactionIO, TxIO_Builder } from './TxIO.mjs';
+import { Vss } from './vss.mjs';
+import { Validation } from './validation.mjs';
+import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
+import { BlockMiningData, BlockData, Block } from './block.mjs';
 import utils from './utils.mjs';
 
 const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
-/**
- * An object that associates utxoTxID to arrays of TransactionIO.
- * @typedef {{ [utxoTxID: string]: TransactionIO[] }} ReferencedUTXOs
- */
 
-/**
+/** Used by MemPool
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
- * @typedef {{ [utxoTxID: string]: Transaction }} ReferencedTransactions
  */
 class MemPool {
     constructor() {
@@ -22,54 +16,71 @@ class MemPool {
         this.transactionsByID = {};
         /** @type {TransactionsByFeePerByte} */
         this.transactionsByFeePerByte = {};
-        /** @type {ReferencedTransactions[]} */
-        this.referencedTransactionsByBlock = [];
+        /** @type {Object<string, Transaction>} */
+        this.transactionByPointer = {};
     }
 
     /** @param {Transaction} transaction */
-    #addTransactionToTransactionsByFeePerByte(transaction) {
+    #addMempoolTransaction(transaction) {
+        // sorted by feePerByte
         const feePerByte = transaction.feePerByte;
         this.transactionsByFeePerByte[feePerByte] = this.transactionsByFeePerByte[feePerByte] || [];
         this.transactionsByFeePerByte[feePerByte].push(transaction);
-    }
-    /** @param {Transaction} collidingTx */
-    #removeTxFromTransactionsByFeePerByte(collidingTx) {
-        const feePerByte = collidingTx.feePerByte;
-        if (!this.transactionsByFeePerByte[collidingTx.feePerByte]) { throw new Error('Transaction not found in mempool'); }
 
-        const txIndex = this.transactionsByFeePerByte[feePerByte].findIndex(tx => tx.id === collidingTx.id);
-        if (txIndex === -1) { throw new Error('Transaction not found in mempool'); }
+        // sorted by pointer
+        for (let i = 0; i < transaction.inputs.length; i++) {
+            const pointer = transaction.inputs[i].pointer;
+            this.transactionByPointer[pointer] = transaction;
+        }
 
-        this.transactionsByFeePerByte[feePerByte].splice(txIndex, 1);
-        if (this.transactionsByFeePerByte[feePerByte].length === 0) { delete this.transactionsByFeePerByte[feePerByte]; }
+        // sorted by transaction ID
+        this.transactionsByID[transaction.id] = transaction;
+
+        //console.log(`[MEMPOOL] transaction: ${transaction.id} added`);
     }
     /** @param {Transaction} transaction */
-    #addTransactionToReferencedTransactions(transaction) {
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID } = transaction.inputs[i];
-            if (!this.referencedTransactionsByBlock[utxoBlockHeight]) { this.referencedTransactionsByBlock[utxoBlockHeight] = {}; }
-            this.referencedTransactionsByBlock[utxoBlockHeight][utxoTxID] = transaction;
-        }
-    }
-    /** @param {Transaction} collidingTx */
-    #removeTxFromReferencedTransactions(collidingTx) {
-        // remove all references to the colliding transaction
+    #removeMempoolTransaction(transaction) {
+        // remove from: sorted by feePerByte
+        const txFeePerByte = transaction.feePerByte;
+        if (!this.transactionsByFeePerByte[txFeePerByte]) { throw new Error('Transaction not found in mempool'); }
+
+        const txIndex = this.transactionsByFeePerByte[txFeePerByte].findIndex(tx => tx.id === transaction.id);
+        if (txIndex === -1) { throw new Error('Transaction not found in mempool'); }
+
+        this.transactionsByFeePerByte[txFeePerByte].splice(txIndex, 1);
+        if (this.transactionsByFeePerByte[txFeePerByte].length === 0) { delete this.transactionsByFeePerByte[txFeePerByte]; }
+
+        // remove from: sorted by pointer
+        const collidingTx = this.#caughtTransactionsUTXOCollision(transaction);
         for (let i = 0; i < collidingTx.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID } = collidingTx.inputs[i];
-            if (!this.referencedTransactionsByBlock[utxoBlockHeight]) { continue; }
-            delete this.referencedTransactionsByBlock[utxoBlockHeight][utxoTxID];
+            const pointer = collidingTx.inputs[i].pointer;
+            if (!this.transactionByPointer[pointer]) { throw new Error(`Transaction not found in mempool: ${pointer}`); }
+            delete this.transactionByPointer[pointer];
+        }
+
+        // remove from: sorted by transaction ID
+        delete this.transactionsByID[transaction.id];
+
+        //console.log(`[MEMPOOL] transaction: ${transaction.id} removed`);
+    }
+    /** 
+     * - Remove transactions that are using UTXOs that are already spent
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     */
+    clearTransactionsWhoUTXOsAreSpent(UTXOsByPointer) {
+        const knownPointers = Object.keys(this.transactionByPointer);
+        
+        for (let i = 0; i < knownPointers.length; i++) {
+            const pointer = knownPointers[i];
+            if (!this.transactionByPointer[pointer]) { continue; } // already removed
+            if (UTXOsByPointer[pointer]) { continue; } // not spent
+
+            const transaction = this.transactionByPointer[pointer];
+            this.#removeMempoolTransaction(transaction);
         }
     }
-    #fullyAddTransactionToMempool(transaction) {
-        this.#addTransactionToTransactionsByFeePerByte(transaction);
-        this.#addTransactionToReferencedTransactions(transaction);
-        this.transactionsByID[transaction.id] = transaction;
-    }
-    #fullyRemoveTransactionFromMempool(transaction) {
-        this.#removeTxFromTransactionsByFeePerByte(transaction);
-        this.#removeTxFromReferencedTransactions(transaction);
-        delete this.transactionsByID[transaction.id];
-    }
+    // -------------------------------------
+
     getMostLucrativeTransactionsBatch() {
         const maxTotalBytes = utils.blockchainSettings.maxBlockSize;
         const totalBytesTrigger = maxTotalBytes * 0.98;
@@ -109,96 +120,59 @@ class MemPool {
         for (let i = 0; i < Txs.length; i++) {
             if (Transaction_Builder.isCoinBaseOrFeeTransaction(Txs[i], i)) { continue; }
 
-            const tx = Txs[i];
-            const collidingTx = this.#caughtTransactionsUTXOCollision(tx);
+            const confirmedTx = Txs[i];
+            const collidingTx = this.#caughtTransactionsUTXOCollision(confirmedTx);
             if (!collidingTx) { continue; }
             
-            if (tx.id === collidingTx.id) { 
-                console.log(`[MEMPOOL] transaction: ${tx.id} confirmed!`); }
-            this.#fullyRemoveTransactionFromMempool(collidingTx);
+            if (confirmedTx.id === collidingTx.id) {
+                console.log(`[MEMPOOL] transaction: ${confirmedTx.id} confirmed!`); }
+            this.#removeMempoolTransaction(collidingTx);
         }
     }
-    /** 
-     * - Remove transactions that are using UTXOs that are already spent
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
-     */
-    clearTransactionsWhoUTXOsAreSpent(referencedUTXOsByBlock) {
-        for (let i = 0; i < this.referencedTransactionsByBlock.length; i++) {
-            const referencedTransactions = this.referencedTransactionsByBlock[i];
-            if (!referencedTransactions) { continue; }
-
-            for (let j = 0; j < referencedTransactions.length; j++) {
-                const transaction = referencedTransactions[j];
-
-                for (let k = 0; k < transaction.inputs.length; k++) {
-                    const { utxoBlockHeight, utxoTxID, vout } = transaction.inputs[k];
-                    if (utxoBlockHeight === undefined || !utxoTxID || vout === undefined) { throw new Error('Invalid UTXO'); }
-
-                    if (!referencedUTXOsByBlock[utxoBlockHeight]) { this.#fullyRemoveTransactionFromMempool(transaction); continue; }
-                    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { this.#fullyRemoveTransactionFromMempool(transaction); continue; }
-                    if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { this.#fullyRemoveTransactionFromMempool(transaction); continue; }
-                }
-            }
-        }
-    }
-    /**
-     * @param {Transaction} transaction
-     */
+    /** @param {Transaction} transaction */
     #caughtTransactionsUTXOCollision(transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || !utxoTxID || vout === undefined) { throw new Error('Invalid UTXO'); }
-            if (!this.referencedTransactionsByBlock[utxoBlockHeight]) { continue; }
-            if (!this.referencedTransactionsByBlock[utxoBlockHeight][utxoTxID]) { continue; }
+            const pointer = transaction.inputs[i].pointer;
+            if (pointer === undefined) { throw new Error('Invalid UTXO'); }
+            if (!this.transactionByPointer[pointer]) { continue; }
 
-            const existingTx = this.referencedTransactionsByBlock[utxoBlockHeight][utxoTxID];
-            for (let i = 0; i < existingTx.inputs.length; i++) {
-                const existingTxInputs = existingTx.inputs[i];
-                if (existingTxInputs.vout !== vout) { continue; }
-                if (existingTxInputs.utxoTxID !== utxoTxID) { continue; } // not necessary but better
-                if (existingTxInputs.utxoBlockHeight !== utxoBlockHeight) { continue; } // not necessary but better
-                return existingTx;
-            }
+            return this.transactionByPointer[pointer];
         }
 
         return false;
     }
     /** 
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      */
-    #transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction) {
+    #transactionUTXOsAreNotSpent(UTXOsByPointer, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const { utxoBlockHeight, utxoTxID, vout } = transaction.inputs[i];
-            if (utxoBlockHeight === undefined || !utxoTxID || vout === undefined) { throw new Error('Invalid UTXO'); }
-
-            if (!referencedUTXOsByBlock[utxoBlockHeight]) { return false; }
-            if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { return false; }
-            if (!referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout]) { return false; }
+            if (!utils.pointer.isValidPointer(transaction.inputs[i].pointer)) { throw new Error('Invalid UTXO'); }
+            if (!UTXOsByPointer[transaction.inputs[i].pointer]) { return false; }
         }
 
         return true;
     }
     /**
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    submitTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
-        callStack.push(() => this.#pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID));
+    submitTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
+        callStack.push(() => this.#pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID));
     }
     /**
      * should be used with the callstack
-     * @param {ReferencedUTXOs[]} referencedUTXOsByBlock - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    async #pushTransaction(referencedUTXOsByBlock, transaction, replaceExistingTxID) {
+    async #pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
         const startTime = Date.now();
         try {
             const isCoinBase = false;
     
-            // First control format of : amount, address, script, version, TxID
+            // First control format of : amount, address, rule, version, TxID
             Validation.isConformTransaction(transaction, isCoinBase);
     
             // Second control : input > output
@@ -206,13 +180,15 @@ class MemPool {
     
             // Calculate fee per byte
             const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
+            //console.log(`[MEMPOOL] weight: ${TxWeight} bytes`);
+
             const feePerByte = fee / TxWeight;
             transaction.byteWeight = TxWeight;
-            transaction.feePerByte = feePerByte;
+            transaction.feePerByte = feePerByte.toFixed(6);
     
             // Manage the mempool inclusion and collision
             let txInclusionFunction = () => {
-                this.#fullyAddTransactionToMempool(transaction);
+                this.#addMempoolTransaction(transaction);
             };
     
             const identicalIDTransaction = this.transactionsByID[transaction.id];
@@ -224,30 +200,30 @@ class MemPool {
                 if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
     
                 txInclusionFunction = () => {
-                    this.#fullyRemoveTransactionFromMempool(collidingTx);
-                    this.#fullyAddTransactionToMempool(transaction);
+                    this.#removeMempoolTransaction(collidingTx);
+                    this.#addMempoolTransaction(transaction);
                 };
             }
     
-            if (!this.#transactionUTXOsAreNotSpent(referencedUTXOsByBlock, transaction)) {
+            if (!this.#transactionUTXOsAreNotSpent(UTXOsByPointer, transaction)) {
                 throw new Error('UTXOs(one at least) are spent'); }
     
             // Third validation: medium computation cost.
             await Validation.controlTransactionHash(transaction);
 
             // Fourth validation: low computation cost.
-            await Validation.controlTransactionOutputsScriptsConditions(transaction);
+            await Validation.controlTransactionOutputsRulesConditions(transaction);
     
             // Fifth validation: medium computation cost.
-            await Validation.executeTransactionInputsScripts(referencedUTXOsByBlock, transaction);
+            await Validation.controlAllWitnessesSignatures(transaction);
     
             // Sixth validation: high computation cost.
-            await Validation.addressOwnershipConfirmation(referencedUTXOsByBlock, transaction);
+            await Validation.addressOwnershipConfirmation(UTXOsByPointer, transaction);
     
             txInclusionFunction();
-            console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
+            //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
         } catch (error) {
-            console.log(`[MEMPOOL] transaction: ${transaction.id} rejected in ${Date.now() - startTime}ms =reason> ${error.message}`);
+            //console.log(`[MEMPOOL] transaction: ${transaction.id} rejected in ${Date.now() - startTime}ms =reason> ${error.message}`);
             throw error;
         }
     }
@@ -259,10 +235,16 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         this.addressesUTXOs = {};
         /** @type {Object<string, number>} */
         this.addressesBalances = {};
-        /** @type {ReferencedUTXOs[]} */
-        this.referencedUTXOsByBlock = [];
+        /** @type {Object<string, TransactionIO>} */
+        this.UTXOsByPointer = {};
+
         /** @type {BlockMiningData[]} */
         this.blockMiningData = [];
+        /** @type {Vss} */
+        this.vss = new Vss();
+
+        /** @type {Object<string, object>} */
+        this.branches = {};
     }
 
     #calculateTotalOfBalances() {
@@ -290,62 +272,35 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         if ( Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
+        TxIO_Builder.checkMalformedUTXOsPointer(TxInputs);
+        TxIO_Builder.checkDuplicateUTXOsPointer(TxInputs);
+
         for (let i = 0; i < TxInputs.length; i++) {
-            
-            TxIO_Builder.checkMissingTxID(TxInputs);
+            const pointer = TxInputs[i].pointer;
+            const { address, amount } = this.UTXOsByPointer[pointer];
 
-            const { utxoBlockHeight, utxoTxID, vout } = this.getUTXOReferenceIFromReferenced(TxInputs[i]);
-            const { address, amount } = this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID][vout];
-
-            this.#removeUTXO(address, utxoBlockHeight, utxoTxID, vout);
+            this.#removeUTXO(address, pointer);
             this.#changeBalance(address, -amount);
         }
 
         return true;
     }
-    /** @param {TransactionIO} utxo */
-    #setReferencedUTXO(utxo) {
-        const { utxoBlockHeight, utxoTxID, vout } = utxo;
-        if (utxoBlockHeight === undefined || !utxoTxID || vout === undefined) { throw new Error('Invalid UTXO'); }
-
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight]) { this.referencedUTXOsByBlock[utxoBlockHeight] = {}; }
-        if (!this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]) { this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID] = []; }
-        this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID].push(utxo);
-    }
-    /**
-     * @param {number} utxoBlockHeight
-     * @param {string} utxoTxID
-     * @param {number} vout
-     */
-    #deleteCorrespondingUTXOFromReferenced(utxoBlockHeight, utxoTxID, vout) {
-        this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID].splice(vout, 1);
-        if (this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID].length === 0) { delete this.referencedUTXOsByBlock[utxoBlockHeight][utxoTxID]; }
-    }
     /**
      * @param {string} address
-     * @param {number} utxoBlockHeight
-     * @param {string} utxoTxID
-     * @param {number} vout
+     * @param {pointer} pointer
      */
-    #deleteUTXOFromaddressUTXOs(address, utxoBlockHeight, utxoTxID, vout) {
+    #removeUTXO(address, pointer) {
+        // remove from addressesUTXOs
         if (this.addressesUTXOs[address] === undefined) { throw new Error(`${address} has no UTXOs`); }
 
-        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray =>
-            utxoInArray.utxoTxID === utxoTxID && utxoInArray.utxoBlockHeight === utxoBlockHeight && utxoInArray.vout === vout);
-        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${utxoTxID}`); }
+        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray => utxoInArray.pointer === pointer);
+        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${pointer}`); }
 
         this.addressesUTXOs[address].splice(addressUtxoIndex, 1);
         if (this.addressesUTXOs[address].length === 0) { delete this.addressesUTXOs[address]; }
-    }
-    /**
-     * @param {string} address
-     * @param {number} utxoBlockHeight
-     * @param {string} utxoTxID
-     * @param {number} vout
-     */
-    #removeUTXO(address, utxoBlockHeight, utxoTxID, vout) {
-        this.#deleteUTXOFromaddressUTXOs(address, utxoBlockHeight, utxoTxID, vout);
-        this.#deleteCorrespondingUTXOFromReferenced(utxoBlockHeight, utxoTxID, vout);
+
+        // remove from UTXOsByPointer
+        delete this.UTXOsByPointer[pointer];
         // console.log(`[HotData]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
     }
     /**
@@ -356,40 +311,33 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         const TxID = transaction.id;
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
-            // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
-            TxOutputs[i].utxoBlockHeight = blockIndex;
-            TxOutputs[i].utxoTxID = TxID;
-            TxOutputs[i].vout = i;
-            
             const { address, amount } = TxOutputs[i];
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
+            // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
+            const pointer = utils.pointer.from_TransactionInputReferences(blockIndex, TxID, i);
+            if (!utils.pointer.isValidPointer(pointer)) { throw new Error(`Invalid UTXO pointer: ${pointer}`); }
+            
+            // output become ouput -> set UTXO's pointer
+            TxOutputs[i].pointer = pointer;
+
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
             this.addressesUTXOs[address].push(TxOutputs[i]);
-            this.#setReferencedUTXO(TxOutputs[i]);
+            this.UTXOsByPointer[pointer] = TxOutputs[i];
             this.#changeBalance(address, amount);
+
+            const rule = TxOutputs[i].rule;
+            if (rule === "sigOrSlash") {
+                this.vss.newStake(TxOutputs[i]); // for now we only create new range
+            }
         }
     }
 
     // Public methods
-    /** @param {TransactionIO} input */
-    getUTXOReferenceIFromReferenced(input) {
-        const { utxoBlockHeight, utxoTxID, vout } = input;
-        if (utxoBlockHeight === undefined || !utxoTxID || vout === undefined) { throw new Error('Invalid UTXO'); }
-
-        const referencedUTXOs = this.referencedUTXOsByBlock[utxoBlockHeight];
-        if (!referencedUTXOs) { throw new Error('UTXO not found in referencedUTXOsByBlock'); }
-
-        const utxos = referencedUTXOs[utxoTxID];
-        if (!utxos) { 
-            throw new Error('UTXO not found in referencedUTXOsByBlock'); }
-        if (!utxos[vout]) { throw new Error('UTXO not found in referencedUTXOsByBlock'); }
-
-        return { utxoBlockHeight, utxoTxID, vout };
-    }
     /** @param {string} address */
     getBalanceAndUTXOs(address) {
         // clone values to avoid modification
+        /** @type {number} */
         const balance = this.addressesBalances[address] ? JSON.parse(JSON.stringify(this.addressesBalances[address])) : 0;
         const UTXOs = [];
         if (this.addressesUTXOs[address]) {
@@ -400,6 +348,23 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             }
         }
         return { balance, UTXOs };
+    }
+    /** @param {string} address */
+    getBalanceSpendableAndUTXOs(address) {
+        // clone values to avoid modification
+        const { balance, UTXOs } = this.getBalanceAndUTXOs(address);
+        let spendableBalance = balance;
+
+        for (let i = 0; i < UTXOs.length; i++) {
+            const rule =  UTXOs[i].rule;
+            if (rule === "sigOrSlash") {
+                spendableBalance -= UTXOs[i].amount;
+                UTXOs.splice(i, 1);
+                i--;
+            }
+        }
+
+        return { spendableBalance, balance, UTXOs };
     }
     /**
     * @param {number} blockIndex
@@ -415,17 +380,15 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             this.#digestTransactionOutputs(blockIndex, transaction);
         }
     }
-    /** @param {BlockData[]} chain */
-    digestChain(chain) {
-        const progressLogger = new utils.ProgressLogger(chain.length);
-        for (let i = 0; i < chain.length; i++) {
-            const blockData = chain[i];
-            this.digestBlock(blockData);
-            progressLogger.logProgress(i);
+    /** @param {BlockData[]} chainPart */
+    async digestChainPart(chainPart) {
+        for (let i = 0; i < chainPart.length; i++) {
+            const blockData = chainPart[i];
+            await this.digestConfirmedBlock(blockData);
         }
     }
     /** @param {BlockData} blockData */
-    digestBlock(blockData) {
+    async digestConfirmedBlock(blockData) {
         const Txs = blockData.Txs;
         this.digestBlockTransactions(blockData.index, Txs);
 
@@ -444,11 +407,13 @@ class HotData { // Used to store, addresses's UTXOs and balance.
 
         this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
     }
+
+    digestBlockProposal(blockData) {}
 }
 
 export class FullNode {
     /** @param {Account} validatorAccount */
-    constructor(validatorAccount, chain) {
+    constructor(validatorAccount) {
         /** @type {Account} */
         this.validatorAccount = validatorAccount;
         /** @type {BlockData} */
@@ -462,26 +427,39 @@ export class FullNode {
 
     /** @param {Account} validatorAccount */
     static async load(validatorAccount, saveBlocksInfo = false) {
-        const chain = storage.loadBlockchainLocally('bin');
-        const controlChain = storage.loadBlockchainLocally('json');
-        FullNode.controlChainIntegrity(chain, controlChain);
+        const node = new FullNode(validatorAccount);
+        const blocksFolders = storage.getListOfFoldersInBlocksDirectory();
+        const nbOfBlocksInStorage = storage.countFilesInBlocksDirectory(blocksFolders, 'bin');
+        const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
+        
+        /** @type {BlockData} */
+        let lastBlockData = undefined;
+        let blockLoadedCount = 0;
+        for (let i = 0; i < blocksFolders.length; i++) {
+            const blocksFolder = blocksFolders[i];
+            const chainPart = storage.loadBlockchainPartLocally(blocksFolder, 'bin');
+            const controlChainPart = storage.loadBlockchainPartLocally(blocksFolder, 'json');
+            FullNode.controlChainIntegrity(chainPart, controlChainPart);
 
-        const node = new FullNode(validatorAccount, chain);
-        node.hotData.digestChain(chain);
-        // TODO: mempool digest mempool from other validator node
+            await node.hotData.digestChainPart(chainPart);
+            lastBlockData = chainPart[chainPart.length - 1];
 
-        if (saveBlocksInfo) { // basic informations .csv
-            const blocksInfo = node.#getBlocksMiningInfo(chain);
-            storage.saveBlockchainInfoLocally(blocksInfo);
+            blockLoadedCount += chainPart.length;
+            progressLogger.logProgress(blockLoadedCount);
+
+            if (saveBlocksInfo) { // basic informations .csv
+                const blocksInfo = node.#getBlocksMiningInfo(chainPart);
+                storage.saveBlockchainInfoLocally(blocksInfo);
+            }
         }
-
+        // TODO: mempool digest mempool from other validator node
         // TODO: Get the Txs from the mempool and add them
         // TODO: Verify the Txs
 
-        const lastBlockData = chain[chain.length - 1] ? chain[chain.length - 1] : undefined;
-        node.blockCandidate = await node.#createBlockCandidate(lastBlockData);
+        if (lastBlockData) { await node.hotData.vss.calculateRoundLegitimacies(lastBlockData.hash); }
+        const myLegitimacy = node.hotData.vss.getAddressLegitimacy(node.validatorAccount.address);
+        node.blockCandidate = await node.#createBlockCandidate(lastBlockData, myLegitimacy);
 
-        //node.#stackLoop(20);
         return node;
     }
     /**
@@ -520,14 +498,14 @@ export class FullNode {
      * should be used with the callstack
      * @param {BlockData} minerBlockCandidate
      */
-    async #blockProposal(minerBlockCandidate) {
+    async #blockProposal(minerBlockCandidate) { // TODO: WILL NEED TO USE BRANCHES
         if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
         if (minerBlockCandidate.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${minerBlockCandidate.index} - current candidate: ${this.blockCandidate.index}`); }
         
         //TODO : VALIDATE THE BLOCK
         // TODO verify if coinBase Tx release the correct amount of coins
-        const { hex, bitsArrayAsString } = await Block.calculateHash(minerBlockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate.difficulty);
+        const { hex, bitsArrayAsString } = await Block.getMinerHash(minerBlockCandidate);
+        const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate);
 
         if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
         
@@ -538,19 +516,24 @@ export class FullNode {
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
-        this.hotData.digestBlock(blockDataCloneToDigest);
+        await this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
+        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.UTXOsByPointer);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
-        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.referencedUTXOsByBlock);
 
         // simple log for debug ----------------------
         const powMinerTx = minerBlockCandidate.Txs[0];
         const address = powMinerTx.outputs[0].address;
         const { balance, UTXOs } = this.hotData.getBalanceAndUTXOs(address);
-        console.log(`[FullNode] Height:${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        //console.log(`[FullNode] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        console.log(`[FullNode] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
         // -------------------------------------------
 
         callStack.push(async () => {
-            const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate);
+            await this.hotData.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
+            const myLegitimacy = this.hotData.vss.getAddressLegitimacy(this.validatorAccount.address);
+            if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.validatorAccount.address}, can't create a candidate`); }
+
+            const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate, myLegitimacy);
             this.blockCandidate = newBlockCandidate; // Can be sent to the network
         }, true);
 
@@ -564,29 +547,35 @@ export class FullNode {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.hotData.referencedUTXOsByBlock, signedTansaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.hotData.UTXOsByPointer, signedTansaction, replaceExistingTxID);
     }
 
     // TODO: Fork management
     // Private methods
-    /** @param {BlockData | undefined} lastBlockData */
-    async #createBlockCandidate(lastBlockData) {
+    /**
+     * @param {BlockData | undefined} lastBlockData
+     * @param {number} myLegitimacy
+     */
+    async #createBlockCandidate(lastBlockData, myLegitimacy) {
+        //console.log(`[FullNode] Creating block candidate from lastHeight: ${lastBlockData.index}`);
         const Txs = this.memPool.getMostLucrativeTransactionsBatch(1000);
         if (Txs.length > 1) {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
         }
 
-        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 'ContrastGenesisBlock', Txs);
+        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
         if (lastBlockData) {
             const newDifficulty = utils.mining.difficultyAdjustment(this.hotData.blockMiningData);
             const clone = Block.cloneBlockData(lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, clone.hash, Txs);
+            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
         }
 
-        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.validatorAccount.address);
-        posFeeTx.id = await Transaction_Builder.hashTxToGetID(posFeeTx);
+        // Add the PoS reward transaction
+        const posRewardAddress = this.validatorAccount.address;
+        const posStakedAddress = this.validatorAccount.address;
+        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, posRewardAddress, posStakedAddress);
         const signedPosFeeTx = await this.validatorAccount.signAndReturnTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
 
@@ -609,7 +598,4 @@ export class FullNode {
 
         return blocksInfo;
     }
-}
-export class LightNode {
-    
 }

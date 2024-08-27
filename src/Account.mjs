@@ -1,4 +1,4 @@
-import { Transaction_Builder } from './index.mjs';
+import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
 import { AsymetricFunctions } from './conCrypto.mjs';
 
 export class Account {
@@ -23,8 +23,10 @@ export class Account {
    async signAndReturnTransaction(transaction) {
        if (typeof this.#privKey !== 'string') { throw new Error('Invalid private key'); }
 
-       const message = Transaction_Builder.getTransactionStringToHash(transaction);
+       const message = transaction.id
        const { signatureHex } = await AsymetricFunctions.signMessage(message, this.#privKey, this.#pubKey);
+       if (!Array.isArray(transaction.witnesses)) { 
+        throw new Error('Invalid witnesses'); }
        if (transaction.witnesses.includes(signatureHex)) { throw new Error('Signature already included'); }
 
        transaction.witnesses.push(`${signatureHex}:${this.#pubKey}`);

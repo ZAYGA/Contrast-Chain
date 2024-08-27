@@ -1,6 +1,6 @@
 import { AsymetricFunctions } from './conCrypto.mjs';
 import { Validation } from './index.mjs';
-import { Transaction, Transaction_Builder } from './Transaction.mjs';
+import { Transaction, Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
 
 /**
@@ -8,20 +8,26 @@ import utils from './utils.mjs';
  * @typedef {{ [TxID: string]: TransactionIO[] }} ReferencedUTXOs
  */
 
-/** The conditions of a script usage when creating a UTXO
+/** The conditions of a script usage when creating a UTXO - DEPRECATED
  * @typedef {Object} scriptConditions
  * @property {boolean} inputAddressEqualOuputAddress
  * @property {number} maxTransactionInputs
  * @property {boolean} allInputsSameAddress
  * @property {string[]} requiredParams
 */
+export const scriptConditions = { // DEPRECATED
+    inputAddressEqualOuputAddress: false,
+    maxTransactionInputs: 1000,
+    allInputsSameAddress: true,
+    requiredParams: [],
+}
 
 /** @type {Object<string, scriptConditions>} */
-export const UTXO_Creation_Conditions = {
+export const UTXO_Creation_Conditions = { // useless to ;) DEPRECATED
     sig: {
-        inputAddressEqualOuputAddress: false,
-        maxTransactionInputs: 100,
-        allInputsSameAddress: true,
+        inputAddressEqualOuputAddress: false, // useless !
+        maxTransactionInputs: 1000, // useless !
+        allInputsSameAddress: true, // useless !
         requiredParams: [],
     },
 
@@ -39,7 +45,7 @@ export const UTXO_Creation_Conditions = {
         requiredParams: ['nbOfSigners'],
     }
 }
-export class TxIO_Scripts {
+export class TxIO_Scripts { // DEPRECATED
     static lock = {
         sig: {
             /** Simple signature verification
@@ -116,77 +122,5 @@ export class TxIO_Scripts {
         if (TxIO_Scripts.lock[scriptName][scriptVersion] === undefined) { throw new Error('Invalid script version'); }
 
         return TxIO_Scripts.lock[scriptName][scriptVersion];
-    }
-}
-
-/**
- * @typedef {Object} TransactionIO
- * @property {number} amount
- * @property {string | undefined} address - output only || script's condition
- * @property {string} script
- * @property {number} version
- * @property {number | undefined} utxoBlockHeight - input only
- * @property {string | undefined} utxoTxID - input only
- * @property {number | undefined} vout - input only
- */
-/** Transaction Input/Output data structure
- * @param {number} amount
- * @param {string | undefined} address - output only || script's condition
- * @param {string} script
- * @param {number} version  
- * @param {number | undefined} utxoBlockHeight - input only
- * @param {string | undefined} utxoTxID - input only
- * @param {number | undefined} vout - input only
- * @returns {TransactionIO}
- **/
-export const TransactionIO = (amount, script, version, address, utxoBlockHeight, utxoTxID, vout) => {
-    return {
-        amount,
-        script,
-        version,
-        address,
-        utxoBlockHeight,
-        utxoTxID,
-        vout
-    };
-}
-
-export class TxIO_Builder {
-    /**
-     * @param {"input" | "output"} type
-     * @param {number} amount
-     * @param {string} address - output only
-     * @param {string} script
-     * @param {number} version
-     * @param {number | undefined} utxoBlockHeight - input only
-     * @param {string | undefined} utxoTxID - input only
-     * @param {number | undefined} vout - input only
-     */
-    static newIO(type, amount, script, version, address, utxoBlockHeight, utxoTxID, vout) {
-        const { scriptName, scriptVersion, scriptParams } = TxIO_Scripts.decomposeScriptString(script);
-        const TxIO_Script = TxIO_Scripts.getAssociatedScript(scriptName, scriptVersion);
-        if (!TxIO_Script) { 
-            throw new Error('Invalid script'); }
-
-        const newTxIO = TransactionIO(amount, script, version, address, utxoBlockHeight, utxoTxID, vout);
-        Validation.isValidTransactionIO(newTxIO, type);
-        
-        return newTxIO;
-    }
-    /** @param {TransactionIO[]} TxIOs */
-    static checkMissingTxID(TxIOs) {
-        if (TxIOs.length === 0) { throw new Error('No UTXO to check'); }
-
-        const txIDs = TxIOs.map(TxIO => TxIO.utxoTxID);
-        if (txIDs.includes(undefined)) { throw new Error('One UTXO has no utxoTxID'); }
-        if (utils.conditionnals.arrayIncludeDuplicates(txIDs)) { throw new Error('Duplicate utxoTxID in UTXOs'); }
-    }
-    /**
-     * @param {TransactionIO[]} TxIOs
-     * @returns {TransactionIO[]}
-     */
-    static cloneTxIO(TxIO) {
-        const TxIOJSON = JSON.stringify(TxIO);
-        return JSON.parse(TxIOJSON);
     }
 }

@@ -21,22 +21,22 @@ function getListOfFoldersInBlocksDirectory() {
         
         // named as 0-999, 1000-1999, 2000-2999, etc. => sorting by the first number
         const blocksFoldersSorted = blocksFolders.sort((a, b) => parseInt(a.split('-')[0], 10) - parseInt(b.split('-')[0], 10));
-        //console.log(blocksFoldersSorted);
 
         return blocksFoldersSorted;
     }
 }
-function loadBlockchainLocally(extension = 'json') {
-    const chain = [];
-    const blocksFolders = getListOfFoldersInBlocksDirectory();
+function countFilesInBlocksDirectory(blocksFolders, extension = 'bin') {
+    let totalFiles = 0;
+    blocksFolders.forEach(folder => {
+        const files = etc.fs.readdirSync(etc.path.join(blocksPath, folder)).filter(fileName => fileName.endsWith('.bin'));
+        totalFiles += files.length;
+    });
 
-    for (let i = 0; i < blocksFolders.length; i++) {
-        const blockFilesSorted = getListOfFilesInBlocksDirectory(blocksFolders[i], extension);
-        const chainPart = loadBlocksOfFolderLocally(blockFilesSorted, extension);
-        chain.push(...chainPart);
-    }
-
-    return chain;
+    return totalFiles;
+}
+function loadBlockchainPartLocally(blocksFolder, extension = 'json') { // DEPRECATED
+    const blockFilesSorted = getListOfFilesInBlocksDirectory(blocksFolder, extension);
+    return loadBlocksOfFolderLocally(blockFilesSorted, extension);
 }
 /** @param {number[]} blockFilesSorted */
 function loadBlocksOfFolderLocally(blockFilesSorted, extension = 'json') {
@@ -79,7 +79,6 @@ function loadBlockLocally(blockIndex, extension = 'json') {
     if (extension === 'json') {
         return loadBlockDataJSON(blockIndexStr, blocksFolderPath);
     } else if (extension === 'bin') {
-        //return loadBlockDataBinary(blockIndexStr, blocksFolderPath);
         return loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath);
     }
 }
@@ -87,13 +86,16 @@ function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
     const blockFileName = `${blockIndexStr}.json`;
     const filePath = etc.path.join(blocksFolderPath, blockFileName);
     const blockContent = etc.fs.readFileSync(filePath, 'utf8');
-    return Block.blockDataFromJSON(blockContent);
+    const blockData = Block.blockDataFromJSON(blockContent);
+    
+    return blockData;
 }
 function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
     const blockDataPath = etc.path.join(blocksFolderPath, `${blockIndexStr}.bin`);
     const compressed = etc.fs.readFileSync(blockDataPath);
+    const decompressed = utils.compression.blockData.fromBinary_v1(compressed);
     
-    return utils.compression.blockData.fromBinary_v1(compressed);
+    return decompressed;
 }
 //#endregion -----------------------------
 
@@ -113,7 +115,6 @@ function saveBlockDataLocally(blockData, extension = 'json') {
         if (extension === 'json') {
             saveBlockDataJSON(blockData, blocksFolderPath);
         } else if (extension === 'bin') {
-            //saveBlockDataBinary(blockData, blocksFolderPath);
             saveBlockDataBinary_v1(blockData, blocksFolderPath);
         }
     } catch (error) {
@@ -157,11 +158,6 @@ function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
     const blockDataPath = etc.path.join(blocksFolderPath, `${blockData.index}.bin`);
     etc.fs.writeFileSync(blockDataPath, compressed);
 }
-/*function saveBlockDataBinaryOptimized(blockData, blocksFolderPath) {
-    const miniBlockHeader = utils.compression.blockDataToMiniBlockHeader(blockData);
-    const uint8Header = utils.compression.Uint8FromMiniBlockHeader(miniBlockHeader);
-    // TODO
-}*/
 //#endregion -----------------------------
 
 //#region --- BASIC SAVING/LOADING ---
@@ -194,7 +190,9 @@ function loadJSON(fileName) {
 //#endregion -----------------------------
 
 const storage = {
-    loadBlockchainLocally,
+    getListOfFoldersInBlocksDirectory,
+    countFilesInBlocksDirectory,
+    loadBlockchainPartLocally,
     saveBlockDataLocally,
     saveBlockchainInfoLocally,
     saveJSON,

@@ -5,10 +5,11 @@ import Compressor from './externalLibs/gzip.min.js';
 import Decompressor from './externalLibs/gunzip.min.js';
 import msgpack from './externalLibs/msgpack.min.js';
 /**
-* @typedef {import("./Block.mjs").BlockMiningData} BlockMiningData
-* @typedef {import("./Block.mjs").Block} Block
-* @typedef {import("./Block.mjs").BlockData} BlockData
-* @typedef {import("./Transaction.mjs").Transaction} Transaction
+* @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
+* @typedef {import("./block.mjs").Block} Block
+* @typedef {import("./block.mjs").BlockData} BlockData
+* @typedef {import("./transaction.mjs").Transaction} Transaction
+* @typedef {import("./transaction.mjs").TransactionIO} TransactionIO
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
 */
 
@@ -37,10 +38,10 @@ async function getArgon2Lib() {
 const argon2Lib = await getArgon2Lib();
 
 const blockchainSettings = {
-    targetBlockTime: 2_000, // 2 sec ||| // 120000, // 2 min
+    targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
     thresholdPerDiffIncrement: 10, // meaning 10% threshold for 1 diff point
     maxDiffIncrementPerAdjustment: 8, // 8 diff points = 50% of diff
-    blocksBeforeAdjustment: 144, // ~5h
+    blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
 
     blockReward: 256_000_000,
     minBlockReward: 1_000_000,
@@ -48,6 +49,7 @@ const blockchainSettings = {
     maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
     minTransactionFeePerByte: 1,
+    newVssSpaceFee: 1_000_000,
     //maxBlockSize: 1_000_000, // 1MB
     maxBlockSize: 200_000, // 200KB
 };
@@ -150,10 +152,10 @@ class ProgressLogger {
         const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
         const currentStep = Math.floor(progress / this.stepSizePercent);
 
-        if (currentStep > this.lastLoggedStep) {
-            this.lastLoggedStep = currentStep;
+        //if (currentStep > this.lastLoggedStep) {
+            //this.lastLoggedStep = currentStep;
             console.log(`[HotData] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
-        }
+        //}
     }
 }
 class AddressTypeInfo {
@@ -307,6 +309,13 @@ const typeValidation = {
         }
 
         return uint8Array;
+    },
+    /** @param {number} number - Number to validate */
+    numberIsPositiveInteger(number) {
+        if (typeof number !== 'number') { return false; }
+        if (number < 0) { return false; }
+        if (number % 1 !== 0) { return false; }
+        return true;
     }
 };
 const convert = {
@@ -606,7 +615,7 @@ const convert = {
             const uint8Array = new TextEncoder().encode(str);
             return convert.uint8Array.toHex(uint8Array);
         },
-    },
+    }
 };
 const conditionnals = {
     /**
@@ -663,7 +672,6 @@ const compression = {
                 }
 
                 for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
-                tx.inputs[j].utxoTxID = utils.convert.hex.toUint8Array(input.utxoTxID); // safe type: hex
             };
             for (let j = 0; j < tx.outputs.length; j++) {
                 const output = tx.outputs[j];
@@ -689,7 +697,6 @@ const compression = {
                     tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                     continue;
                 }
-                tx.inputs[j].utxoTxID = utils.convert.uint8Array.toHex(input.utxoTxID); // safe type: uint8 -> hex
             };
 
             return tx;
@@ -740,6 +747,8 @@ const compression = {
 };
 
 const miningParams = {
+    // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
+    // an increment of 1 means 3.125% more difficult to find a valid hash
     argon2: {
         time: 1,
         mem: 2**18,
@@ -747,9 +756,9 @@ const miningParams = {
         type: 2,
         hashLen: 32,
     },
-    //minNonceHexLength: 8, nonce is now separated between header and coinBase input
     nonceLength: 4,
-}
+    maxTimeDifferenceAdjustment: 16, // in difficutly points
+};
 const mining = {
     /**
     * @param {BlockMiningData[]} blockMiningData
@@ -790,7 +799,6 @@ const mining = {
 
         return newDifficulty;
     },
-
     /** @param {BlockMiningData[]} blockMiningData */
     getAverageBlockTime: (blockMiningData) => {
         const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
@@ -800,7 +808,6 @@ const mining = {
 
         return sum / (NbBlocks - 1);
     },
-
     generateRandomNonce: (length = miningParams.nonceLength) => {
         const Uint8 = new Uint8Array(length);
         crypto.getRandomValues(Uint8);
@@ -809,7 +816,6 @@ const mining = {
     
         return { Uint8, Hex };
     },
-
     /**
      * This function uses an Argon2 hash function to perform a hashing operation.
      * The Argon2 hash function must follow the following signature:
@@ -826,21 +832,42 @@ const mining = {
         
         return newBlockHash;
     },
+    /**
+     * @param {number} powTimestamp
+     * @param {number} posTimestamp
+     */
+    calculateTimeDifferenceAdjustment: (powTimestamp, posTimestamp) => {
+        const difference = powTimestamp - posTimestamp;
+        const differenceRatio = difference / blockchainSettings.targetBlockTime;
 
+        const mTDA = miningParams.maxTimeDifferenceAdjustment;
+        const adjustment = mTDA - Math.round(differenceRatio * mTDA);
+        return adjustment;
+    },
+    getBlockFinalDifficulty: (blockData) => {
+        const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
+        if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
+        if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
+
+        const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
+        const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
+
+        return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty };
+    },
     getDiffAndAdjust: (difficulty = 1) => {
         const zeros = Math.floor(difficulty / 16);
         const adjust = difficulty % 16;
         return { zeros, adjust };
     },
-
-    verifyBlockHashConformToDifficulty: (HashBitsAsString = '', difficulty = 1) => {
+    /**
+     * @param {string} HashBitsAsString
+     * @param {BlockData} blockData
+     */
+    verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
         if (typeof HashBitsAsString !== 'string') { throw new Error('Invalid HashBitsAsString'); }
-        if (typeof difficulty !== 'number') { throw new Error('Invalid difficulty type'); }
 
-        if (difficulty < 1) { throw new Error('Invalid difficulty < 1'); }
-        if (difficulty > HashBitsAsString.length) { throw new Error('Invalid difficulty > HashBitsAsString.length'); }
-
-        const { zeros, adjust } = mining.getDiffAndAdjust(difficulty);
+        const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = mining.getBlockFinalDifficulty(blockData);
+        const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
     
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
         if (!condition1) { throw new Error(`unlucky--(condition 1)=> hash does not start with ${zeros} zeros`); }
@@ -848,8 +875,55 @@ const mining = {
         const next5Bits = HashBitsAsString.substring(zeros, zeros + 5);
         const condition2 = conditionnals.binaryStringSupOrEqual(next5Bits, adjust);
         if (!condition2) { throw new Error(`unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}`); }
+
+        return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
     }
 };
+const pointer = {
+    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    isValidPointer(pointer) {
+        if (typeof pointer !== 'string') { return false; }
+
+        const splitted = pointer.split(':');
+        if (splitted.length !== 3) { return false; }
+
+        // height
+        if (isNaN(parseInt(splitted[0], 10))) { return false; }
+        if (parseInt(splitted[0], 10) < 0) { return false; }
+        if (parseInt(splitted[0], 10) % 1 !== 0) { return false; }
+
+        // TxID
+        if (typeof splitted[1] !== 'string') { return false; } 
+        if (typeValidation.hex(splitted[1]) === false) { return false; }
+        if (splitted[1].length !== 8) { return false; }
+
+        // vout
+        if (isNaN(parseInt(splitted[2], 10))) { return false; }
+        if (parseInt(splitted[2], 10) < 0) { return false; }
+        if (parseInt(splitted[2], 10) % 1 !== 0) { return false; }
+
+        return true;
+    },
+    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    to_height_utxoTxID_vout(pointer) { // should be in utils (LOL !)
+        const splitted = pointer.split(':');
+
+        const utxoBlockHeight = splitted[0];
+        const utxoTxID = splitted[1];
+        const vout = splitted[2];
+
+        return { utxoBlockHeight, utxoTxID, vout };
+    },
+    /**
+     * @param {number} utxoBlockHeight
+     * @param {string} utxoTxID
+     * @param {number} vout
+     */
+    from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout) {
+        if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { return undefined; }
+        return `${utxoBlockHeight}:${utxoTxID}:${vout}`;
+    }
+}
 
 const utils = {
     ed25519,
@@ -866,6 +940,7 @@ const utils = {
     compression,
     conditionnals,
     mining,
+    pointer
 };
 
 export default utils;

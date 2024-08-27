@@ -14,18 +14,18 @@ export class Miner {
         const coinbaseNonce = utils.mining.generateRandomNonce();
         const minerAddress = this.minerAccount.address;
 
-        const coinbaseTx = Transaction_Builder.createCoinbaseTransaction(coinbaseNonce.Hex, minerAddress, blockCandidate.coinBase);
-        coinbaseTx.id = await Transaction_Builder.hashTxToGetID(coinbaseTx);
+        const nonce = `${headerNonce.Hex}${coinbaseNonce.Hex}`;
+        const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(nonce, minerAddress, blockCandidate.coinBase);
 
         blockCandidate.timestamp = Date.now();
         blockCandidate.nonce = headerNonce.Hex;
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
-        const { hex, bitsArrayAsString } = await Block.calculateHash(blockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate.difficulty);
+        const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate);
+        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate);
 
         blockCandidate.hash = hex;
-        console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
+        //console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
 
         return { validBlockCandidate: blockCandidate};
     }
