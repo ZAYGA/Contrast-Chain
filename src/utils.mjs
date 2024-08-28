@@ -39,8 +39,8 @@ const argon2Lib = await getArgon2Lib();
 
 const blockchainSettings = {
     targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
-    thresholdPerDiffIncrement: 10, // meaning 10% threshold for 1 diff point
-    maxDiffIncrementPerAdjustment: 8, // 8 diff points = 50% of diff
+    thresholdPerDiffIncrement: 5, // meaning 5% threshold for 1 diff point
+    maxDiffIncrementPerAdjustment: 16, // 16 diff points = 50% of diff
     blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
 
     blockReward: 256_000_000,
@@ -893,7 +893,7 @@ const pointer = {
         if (parseInt(splitted[0], 10) % 1 !== 0) { return false; }
 
         // TxID
-        if (typeof splitted[1] !== 'string') { return false; } 
+        if (typeof splitted[1] !== 'string') { return false; }
         if (typeValidation.hex(splitted[1]) === false) { return false; }
         if (splitted[1].length !== 8) { return false; }
 
