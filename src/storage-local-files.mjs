@@ -1,25 +1,31 @@
 'use strict';
 
-import { BlockData, Block } from "./index.mjs";
-import etc from './etc.mjs';
+import { BlockData, Block } from "./block.mjs";
 import utils from './utils.mjs';
 
-const savedDataPath = etc.path ? etc.path.join(etc.__dirname, 'savedData') : null;
-const powDataPath = etc.path ? etc.path.join(etc.__dirname, 'powData') : null;
-const blocksPath = etc.path ? etc.path.join(powDataPath, 'blocks') : null;
-if (etc.path && !etc.fs.existsSync(savedDataPath)) { etc.fs.mkdirSync(savedDataPath); }
-if (etc.path && !etc.fs.existsSync(powDataPath)) { etc.fs.mkdirSync(powDataPath); }
-if (etc.path && !etc.fs.existsSync(blocksPath)) { etc.fs.mkdirSync(blocksPath); }
+const fs = await import('fs');
+const path = await import('path');
+const url = await import('url');
+const __filename = url.fileURLToPath(import.meta.url);
+const parentFolder = path.dirname(__filename);
+const __dirname = path.dirname(parentFolder);
+
+const savedDataPath = path.join(__dirname, 'savedData');
+const powDataPath = path.join(__dirname, 'powData');
+const blocksPath = path.join(powDataPath, 'blocks');
+if (path && !fs.existsSync(savedDataPath)) { fs.mkdirSync(savedDataPath); }
+if (path && !fs.existsSync(powDataPath)) { fs.mkdirSync(powDataPath); }
+if (path && !fs.existsSync(blocksPath)) { fs.mkdirSync(blocksPath); }
 const numberOfBlockFilesInFolder = 1000;
 
 // we are now splitting blocks files into subFolder to avoid performance issues
 
 //#region --- LOADING BLOCKCHAIN/BLOCKS ---
 function getListOfFoldersInBlocksDirectory() {
-    if (etc.path) { 
-        const blocksFolders = etc.fs.readdirSync(blocksPath).filter(fileName => etc.fs.lstatSync(etc.path.join(blocksPath, fileName)).isDirectory());
+    if (path) { 
+        const blocksFolders = fs.readdirSync(blocksPath).filter(fileName => fs.lstatSync(path.join(blocksPath, fileName)).isDirectory());
         
-        // named as 0-999, 1000-1999, 2000-2999, etc. => sorting by the first number
+        // named as 0-999, 1000-1999, 2000-2999, etc... => sorting by the first number
         const blocksFoldersSorted = blocksFolders.sort((a, b) => parseInt(a.split('-')[0], 10) - parseInt(b.split('-')[0], 10));
 
         return blocksFoldersSorted;
@@ -28,7 +34,7 @@ function getListOfFoldersInBlocksDirectory() {
 function countFilesInBlocksDirectory(blocksFolders, extension = 'bin') {
     let totalFiles = 0;
     blocksFolders.forEach(folder => {
-        const files = etc.fs.readdirSync(etc.path.join(blocksPath, folder)).filter(fileName => fileName.endsWith('.bin'));
+        const files = fs.readdirSync(path.join(blocksPath, folder)).filter(fileName => fileName.endsWith('.bin'));
         totalFiles += files.length;
     });
 
@@ -58,9 +64,9 @@ function loadBlocksOfFolderLocally(blockFilesSorted, extension = 'json') {
     return chainPart;
 }
 function getListOfFilesInBlocksDirectory(subFolder = '', extension = 'json') {
-    if (etc.path) {
-        const subFolderPath = etc.path.join(blocksPath, subFolder);
-        return etc.fs.readdirSync(subFolderPath).filter(fileName => fileName.endsWith('.' + extension))
+    if (path) {
+        const subFolderPath = path.join(blocksPath, subFolder);
+        return fs.readdirSync(subFolderPath).filter(fileName => fileName.endsWith('.' + extension))
         .map(fileName => (
           parseInt(fileName.split('.')[0], 10)
         ))
@@ -72,7 +78,7 @@ function getListOfFilesInBlocksDirectory(subFolder = '', extension = 'json') {
 /** @param {number} blockIndex */
 function loadBlockLocally(blockIndex, extension = 'json') {
     const blocksFolderName = `${Math.floor(blockIndex / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockIndex / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
-    const blocksFolderPath = etc.path.join(blocksPath, blocksFolderName);
+    const blocksFolderPath = path.join(blocksPath, blocksFolderName);
     
     const blockIndexStr = blockIndex.toString();
 
@@ -84,16 +90,16 @@ function loadBlockLocally(blockIndex, extension = 'json') {
 }
 function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
     const blockFileName = `${blockIndexStr}.json`;
-    const filePath = etc.path.join(blocksFolderPath, blockFileName);
-    const blockContent = etc.fs.readFileSync(filePath, 'utf8');
+    const filePath = path.join(blocksFolderPath, blockFileName);
+    const blockContent = fs.readFileSync(filePath, 'utf8');
     const blockData = Block.blockDataFromJSON(blockContent);
     
     return blockData;
 }
 function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
-    const blockDataPath = etc.path.join(blocksFolderPath, `${blockIndexStr}.bin`);
-    const compressed = etc.fs.readFileSync(blockDataPath);
-    const decompressed = utils.compression.blockData.fromBinary_v1(compressed);
+    const blockDataPath = path.join(blocksFolderPath, `${blockIndexStr}.bin`);
+    const compressed = fs.readFileSync(blockDataPath);
+    const decompressed = utils.compression.msgpack_Zlib.blockData.fromBinary_v1(compressed);
     
     return decompressed;
 }
@@ -109,8 +115,8 @@ function saveBlockDataLocally(blockData, extension = 'json') {
     
     try {
         const blocksFolderName = `${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
-        const blocksFolderPath = etc.path.join(blocksPath, blocksFolderName);
-        if (!etc.fs.existsSync(blocksFolderPath)) { etc.fs.mkdirSync(blocksFolderPath); }
+        const blocksFolderPath = path.join(blocksPath, blocksFolderName);
+        if (!fs.existsSync(blocksFolderPath)) { fs.mkdirSync(blocksFolderPath); }
 
         if (extension === 'json') {
             saveBlockDataJSON(blockData, blocksFolderPath);
@@ -127,21 +133,21 @@ function saveBlockDataLocally(blockData, extension = 'json') {
 }
 /** @param {BlockData[]} blocksInfo */
 function saveBlockchainInfoLocally(blocksInfo) {
-    const blockchainInfoPath = etc.path.join(powDataPath, 'blockchainInfo.csv');
+    const blockchainInfoPath = path.join(powDataPath, 'blockchainInfo.csv');
     const blockchainInfoHeader = 'blockIndex,coinbaseReward,timestamp,difficulty,timeBetweenBlocks\n';
     const blocksDataLines = blocksInfo.map(data => {
         return `${data.blockIndex},${data.coinbaseReward},${data.timestamp},${data.difficulty},${data.timeBetweenBlocks}`;
     }).join('\n');
     const blocksDataContent = blockchainInfoHeader + blocksDataLines;
 
-    etc.fs.writeFileSync(blockchainInfoPath, blocksDataContent, 'utf8');
+    fs.writeFileSync(blockchainInfoPath, blocksDataContent, 'utf8');
    
     return { success: true, message: "Blockchain's Info saved" };
 }
 
 function saveBlockDataJSON(blockData, blocksFolderPath) {
-    const blockFilePath = etc.path.join(blocksFolderPath, `${blockData.index}.json`);
-    etc.fs.writeFileSync(blockFilePath, JSON.stringify(blockData, (key, value) => {
+    const blockFilePath = path.join(blocksFolderPath, `${blockData.index}.json`);
+    fs.writeFileSync(blockFilePath, JSON.stringify(blockData, (key, value) => {
         if (value === undefined) {
           return undefined; // Exclude from the result
         }
@@ -153,10 +159,10 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
  * @param {string} blocksFolderPath
  */
 function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
-    const compressed = utils.compression.blockData.toBinary_v1(blockData, blocksFolderPath);
+    const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockData, blocksFolderPath);
 
-    const blockDataPath = etc.path.join(blocksFolderPath, `${blockData.index}.bin`);
-    etc.fs.writeFileSync(blockDataPath, compressed);
+    const blockDataPath = path.join(blocksFolderPath, `${blockData.index}.bin`);
+    fs.writeFileSync(blockDataPath, compressed);
 }
 //#endregion -----------------------------
 
@@ -168,8 +174,8 @@ function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
  */
 function saveJSON(fileName, data) {
     try {
-        const filePath = etc.path.join(savedDataPath, `${fileName}.json`);
-        etc.fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        const filePath = path.join(savedDataPath, `${fileName}.json`);
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     } catch (error) {
         return false;
     }
@@ -181,8 +187,8 @@ function saveJSON(fileName, data) {
  */
 function loadJSON(fileName) {
     try {
-        const filePath = etc.path.join(savedDataPath, `${fileName}.json`);
-        return JSON.parse(etc.fs.readFileSync(filePath, 'utf8'));
+        const filePath = path.join(savedDataPath, `${fileName}.json`);
+        return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (error) {
         return false;
     }

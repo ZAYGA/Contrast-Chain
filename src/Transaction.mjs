@@ -15,17 +15,17 @@ export const uxtoRulesGlossary = {
 /**
  * @typedef {Object} TransactionIO
  * @property {number} amount - the amount of microConts
- * @property {string | undefined} address - output only || script's condition
+ * @property {string | undefined} address - output only
  * @property {string} rule - the unlocking rule
  * @property {number} version - the transaction version
- * @property {string | undefined} utxoPath - input only
+ * @property {string | undefined} utxoPath - input only - the path to the UTXO blockHeight:txID:vout
  */
 /** Transaction Input/Output data structure
  * @param {number} amount - the amount of microConts
- * @param {string | undefined} address - output only || script's condition
+ * @param {string | undefined} address - output only
  * @param {string} rule - the unlocking rule
  * @param {number} version - the transaction version
- * @param {string | undefined} utxoPath - input only
+ * @param {string | undefined} utxoPath - input only - the path to the UTXO blockHeight:txID:vout
  * @returns {TransactionIO}
  **/
 export const TransactionIO = (amount, rule, version, address, utxoPath) => {
@@ -207,19 +207,19 @@ export class Transaction_Builder {
         
         return await this.newTransaction(UTXOs, outputs);
     }
+    /**
+     * @param {TransactionIO[]} inputs
+     * @param {TransactionIO[]} outputs
+     */
     static async newTransaction(inputs, outputs) {
         const transaction = Transaction(inputs, outputs);
         transaction.id = await Transaction_Builder.hashTxToGetID(transaction);
         return transaction;
     }
-    /** @param {TransactionIO[]} UTXOs */
-    static getTotalUTXOsAmount(UTXOs) { // DEPRECATED ??
-        let totalAmount = 0;
-        for (let i = 0; i < UTXOs.length; i++) {
-            totalAmount += UTXOs[i].amount;
-        }
-        return totalAmount;
-    }
+    /**
+     * @param {TransactionIO[]} UTXOs
+     * @param {TransactionIO[]} outputs
+     */
     static simulateTransactionToEstimateWeight(UTXOs, outputs) {
         const change = 26_152_659_654_321;
         const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, 'Cv6XXKBTALRPSCzuU6k4');
@@ -230,9 +230,10 @@ export class Transaction_Builder {
         
         return Transaction_Builder.getWeightOfTransaction(transaction);
     }
+    /** @param {Transaction} transaction */
     static getWeightOfTransaction(transaction) {
         const clone = Transaction_Builder.cloneTransaction(transaction);
-        const compressedTx = utils.compression.transaction.toBinary_v1(clone);
+        const compressedTx = utils.compression.msgpack_Zlib.transaction.toBinary_v1(clone);
         const transactionWeight = compressedTx.byteLength;
         return transactionWeight;
     }

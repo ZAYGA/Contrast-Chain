@@ -1,9 +1,10 @@
 'use strict';
-import { Transaction_Builder } from './src/index.mjs';
-import contrast from './src/contrast.mjs';
+import { Transaction_Builder } from '../src/transaction.mjs';
+import contrast from '../src/contrast.mjs';
+
 /**
-* @typedef {import("./src/account.mjs").Account} Account
-* @typedef {import("./src/node.mjs").FullNode} FullNode
+* @typedef {import("../src/account.mjs").Account} Account
+* @typedef {import("../src/node.mjs").FullNode} FullNode
 */
 
 const testParams = {

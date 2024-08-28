@@ -1,9 +1,14 @@
 'use strict';
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
-import { BlockData, Block, Transaction_Builder, Wallet, Account, FullNode, Miner } from './index.mjs';
+import { BlockData, Block } from './block.mjs';
+import { Transaction_Builder } from './transaction.mjs';
+import { Account } from './account.mjs';
+import { Wallet } from './wallet.mjs';
+import { FullNode } from './node.mjs';
+import { Miner } from './miner.mjs';
+//import { BlockchainNode } from './blockchain-node.mjs';
 
 import utils from './utils.mjs';
-import etc from './etc.mjs';
 
 const contrast = {
     HashFunctions,
@@ -17,8 +22,7 @@ const contrast = {
     FullNode,
     Miner,
 
-    utils,
-    etc
+    utils
 };
 
 export default contrast;

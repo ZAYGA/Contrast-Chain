@@ -1,7 +1,7 @@
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
+import { Account } from './account.mjs';
 import utils from './utils.mjs';
-import { Account} from './index.mjs';
-import storage from "./storage.mjs";
+import storage from "./storage-local-files.mjs";
 
 export class AddressTypeInfo {
     name = '';

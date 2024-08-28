@@ -1,5 +1,9 @@
 import utils from './utils.mjs';
-import { BlockData, Block, Account, Transaction_Builder } from './index.mjs';
+import { BlockData, Block } from './block.mjs';
+import { Transaction_Builder } from './transaction.mjs';
+/**
+ * @typedef {import("./account.mjs").Account} Account
+ */
 
 export class Miner {
     /** @param {Account} minerAccount */
@@ -22,7 +26,7 @@ export class Miner {
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
         const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate);
+        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate); // trhow error if not conform
 
         blockCandidate.hash = hex;
         //console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);

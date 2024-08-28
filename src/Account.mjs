@@ -1,4 +1,4 @@
-import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
+import { Transaction, TransactionIO } from './transaction.mjs';
 import { AsymetricFunctions } from './conCrypto.mjs';
 
 export class Account {

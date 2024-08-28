@@ -1,4 +1,4 @@
-import storage from './storage.mjs';
+import storage from './storage-local-files.mjs';
 import { Vss } from './vss.mjs';
 import { Validation } from './validation.mjs';
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
@@ -10,7 +10,7 @@ const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid b
 /** Used by MemPool
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
  */
-class MemPool {
+class MemPool { // Store transactions that are not yet included in a block
     constructor() {
         /** @type {Object<string, Transaction>} */
         this.transactionsByID = {};

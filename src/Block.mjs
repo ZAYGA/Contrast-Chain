@@ -1,6 +1,5 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-//import { Transaction_Builder, Validation } from './index.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { Validation } from './validation.mjs';
 
@@ -58,7 +57,6 @@ export const BlockData = (index, supply, coinBase, difficulty, legitimacy, prevH
         difficulty,
         legitimacy,
         prevHash,
-        Txs,
 
         // Proof of stake dependent
         posTimestamp, // timestamp of the block's creation
@@ -66,7 +64,9 @@ export const BlockData = (index, supply, coinBase, difficulty, legitimacy, prevH
         // Proof of work dependent
         timestamp, // timestamp of the block's confirmation
         hash,
-        nonce
+        nonce,
+        
+        Txs
     };
 }
 export class Block {

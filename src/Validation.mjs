@@ -2,11 +2,6 @@ import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
 import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
 
-/**
- * An object that associates TxID to arrays of TransactionIO.
- * @typedef {{ [TxID: string]: TransactionIO[] }} ReferencedUTXOs
- */
-
 export class Validation {
     /** ==> First validation, low computation cost.
      * 
