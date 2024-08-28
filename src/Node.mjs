@@ -17,7 +17,7 @@ class MemPool {
         /** @type {TransactionsByFeePerByte} */
         this.transactionsByFeePerByte = {};
         /** @type {Object<string, Transaction>} */
-        this.transactionByPointer = {};
+        this.transactionByPath = {};
     }
 
     /** @param {Transaction} transaction */
@@ -27,10 +27,10 @@ class MemPool {
         this.transactionsByFeePerByte[feePerByte] = this.transactionsByFeePerByte[feePerByte] || [];
         this.transactionsByFeePerByte[feePerByte].push(transaction);
 
-        // sorted by pointer
+        // sorted by utxoPath
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const pointer = transaction.inputs[i].pointer;
-            this.transactionByPointer[pointer] = transaction;
+            const utxoPath = transaction.inputs[i].utxoPath;
+            this.transactionByPath[utxoPath] = transaction;
         }
 
         // sorted by transaction ID
@@ -50,12 +50,12 @@ class MemPool {
         this.transactionsByFeePerByte[txFeePerByte].splice(txIndex, 1);
         if (this.transactionsByFeePerByte[txFeePerByte].length === 0) { delete this.transactionsByFeePerByte[txFeePerByte]; }
 
-        // remove from: sorted by pointer
+        // remove from: sorted by utxoPath
         const collidingTx = this.#caughtTransactionsUTXOCollision(transaction);
         for (let i = 0; i < collidingTx.inputs.length; i++) {
-            const pointer = collidingTx.inputs[i].pointer;
-            if (!this.transactionByPointer[pointer]) { throw new Error(`Transaction not found in mempool: ${pointer}`); }
-            delete this.transactionByPointer[pointer];
+            const utxoPath = collidingTx.inputs[i].utxoPath;
+            if (!this.transactionByPath[utxoPath]) { throw new Error(`Transaction not found in mempool: ${utxoPath}`); }
+            delete this.transactionByPath[utxoPath];
         }
 
         // remove from: sorted by transaction ID
@@ -65,17 +65,17 @@ class MemPool {
     }
     /** 
      * - Remove transactions that are using UTXOs that are already spent
-     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      */
-    clearTransactionsWhoUTXOsAreSpent(UTXOsByPointer) {
-        const knownPointers = Object.keys(this.transactionByPointer);
+    clearTransactionsWhoUTXOsAreSpent(UTXOsByPath) {
+        const knownUtxoPaths = Object.keys(this.transactionByPath);
         
-        for (let i = 0; i < knownPointers.length; i++) {
-            const pointer = knownPointers[i];
-            if (!this.transactionByPointer[pointer]) { continue; } // already removed
-            if (UTXOsByPointer[pointer]) { continue; } // not spent
+        for (let i = 0; i < knownUtxoPaths.length; i++) {
+            const utxoPath = knownUtxoPaths[i];
+            if (!this.transactionByPath[utxoPath]) { continue; } // already removed
+            if (UTXOsByPath[utxoPath]) { continue; } // not spent
 
-            const transaction = this.transactionByPointer[pointer];
+            const transaction = this.transactionByPath[utxoPath];
             this.#removeMempoolTransaction(transaction);
         }
     }
@@ -132,42 +132,42 @@ class MemPool {
     /** @param {Transaction} transaction */
     #caughtTransactionsUTXOCollision(transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const pointer = transaction.inputs[i].pointer;
-            if (pointer === undefined) { throw new Error('Invalid UTXO'); }
-            if (!this.transactionByPointer[pointer]) { continue; }
+            const utxoPath = transaction.inputs[i].utxoPath;
+            if (utxoPath === undefined) { throw new Error('Invalid UTXO'); }
+            if (!this.transactionByPath[utxoPath]) { continue; }
 
-            return this.transactionByPointer[pointer];
+            return this.transactionByPath[utxoPath];
         }
 
         return false;
     }
     /** 
-     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      * @param {Transaction} transaction
      */
-    #transactionUTXOsAreNotSpent(UTXOsByPointer, transaction) {
+    #transactionUTXOsAreNotSpent(UTXOsByPath, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            if (!utils.pointer.isValidPointer(transaction.inputs[i].pointer)) { throw new Error('Invalid UTXO'); }
-            if (!UTXOsByPointer[transaction.inputs[i].pointer]) { return false; }
+            if (!utils.utxoPath.isValidUtxoPath(transaction.inputs[i].utxoPath)) { throw new Error('Invalid UTXO'); }
+            if (!UTXOsByPath[transaction.inputs[i].utxoPath]) { return false; }
         }
 
         return true;
     }
     /**
-     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    submitTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
-        callStack.push(() => this.#pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID));
+    submitTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
+        callStack.push(() => this.#pushTransaction(UTXOsByPath, transaction, replaceExistingTxID));
     }
     /**
      * should be used with the callstack
-     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    async #pushTransaction(UTXOsByPointer, transaction, replaceExistingTxID) {
+    async #pushTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
         const startTime = Date.now();
         try {
             const isCoinBase = false;
@@ -205,7 +205,7 @@ class MemPool {
                 };
             }
     
-            if (!this.#transactionUTXOsAreNotSpent(UTXOsByPointer, transaction)) {
+            if (!this.#transactionUTXOsAreNotSpent(UTXOsByPath, transaction)) {
                 throw new Error('UTXOs(one at least) are spent'); }
     
             // Third validation: medium computation cost.
@@ -218,7 +218,7 @@ class MemPool {
             await Validation.controlAllWitnessesSignatures(transaction);
     
             // Sixth validation: high computation cost.
-            await Validation.addressOwnershipConfirmation(UTXOsByPointer, transaction);
+            await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
     
             txInclusionFunction();
             //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
@@ -236,7 +236,7 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         /** @type {Object<string, number>} */
         this.addressesBalances = {};
         /** @type {Object<string, TransactionIO>} */
-        this.UTXOsByPointer = {};
+        this.UTXOsByPath = {};
 
         /** @type {BlockMiningData[]} */
         this.blockMiningData = [];
@@ -272,14 +272,14 @@ class HotData { // Used to store, addresses's UTXOs and balance.
         if ( Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
-        TxIO_Builder.checkMalformedUTXOsPointer(TxInputs);
-        TxIO_Builder.checkDuplicateUTXOsPointer(TxInputs);
+        TxIO_Builder.checkMalformedUtxoPaths(TxInputs);
+        TxIO_Builder.checkDuplicateUtxoPaths(TxInputs);
 
         for (let i = 0; i < TxInputs.length; i++) {
-            const pointer = TxInputs[i].pointer;
-            const { address, amount } = this.UTXOsByPointer[pointer];
+            const utxoPath = TxInputs[i].utxoPath;
+            const { address, amount } = this.UTXOsByPath[utxoPath];
 
-            this.#removeUTXO(address, pointer);
+            this.#removeUTXO(address, utxoPath);
             this.#changeBalance(address, -amount);
         }
 
@@ -287,20 +287,20 @@ class HotData { // Used to store, addresses's UTXOs and balance.
     }
     /**
      * @param {string} address
-     * @param {pointer} pointer
+     * @param {string} utxoPath
      */
-    #removeUTXO(address, pointer) {
+    #removeUTXO(address, utxoPath) {
         // remove from addressesUTXOs
         if (this.addressesUTXOs[address] === undefined) { throw new Error(`${address} has no UTXOs`); }
 
-        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray => utxoInArray.pointer === pointer);
-        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${pointer}`); }
+        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray => utxoInArray.utxoPath === utxoPath);
+        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${utxoPath}`); }
 
         this.addressesUTXOs[address].splice(addressUtxoIndex, 1);
         if (this.addressesUTXOs[address].length === 0) { delete this.addressesUTXOs[address]; }
 
-        // remove from UTXOsByPointer
-        delete this.UTXOsByPointer[pointer];
+        // remove from UTXOsByPath
+        delete this.UTXOsByPath[utxoPath];
         // console.log(`[HotData]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
     }
     /**
@@ -315,15 +315,15 @@ class HotData { // Used to store, addresses's UTXOs and balance.
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
             // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
-            const pointer = utils.pointer.from_TransactionInputReferences(blockIndex, TxID, i);
-            if (!utils.pointer.isValidPointer(pointer)) { throw new Error(`Invalid UTXO pointer: ${pointer}`); }
+            const utxoPath = utils.utxoPath.from_TransactionInputReferences(blockIndex, TxID, i);
+            if (!utils.utxoPath.isValidUtxoPath(utxoPath)) { throw new Error(`Invalid UTXO utxoPath: ${utxoPath}`); }
             
-            // output become ouput -> set UTXO's pointer
-            TxOutputs[i].pointer = pointer;
+            // output become ouput -> set UTXO's utxoPath
+            TxOutputs[i].utxoPath = utxoPath;
 
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
             this.addressesUTXOs[address].push(TxOutputs[i]);
-            this.UTXOsByPointer[pointer] = TxOutputs[i];
+            this.UTXOsByPath[utxoPath] = TxOutputs[i];
             this.#changeBalance(address, amount);
 
             const rule = TxOutputs[i].rule;
@@ -517,7 +517,7 @@ export class FullNode {
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
         await this.hotData.digestConfirmedBlock(blockDataCloneToDigest);
-        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.UTXOsByPointer);
+        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.hotData.UTXOsByPath);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
 
         // simple log for debug ----------------------
@@ -547,7 +547,7 @@ export class FullNode {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.hotData.UTXOsByPointer, signedTansaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID);
     }
 
     // TODO: Fork management
@@ -576,7 +576,7 @@ export class FullNode {
         const posRewardAddress = this.validatorAccount.address;
         const posStakedAddress = this.validatorAccount.address;
         const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, posRewardAddress, posStakedAddress);
-        const signedPosFeeTx = await this.validatorAccount.signAndReturnTransaction(posFeeTx);
+        const signedPosFeeTx = await this.validatorAccount.signTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
 
         return blockCandidate;

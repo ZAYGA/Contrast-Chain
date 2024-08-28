@@ -879,12 +879,12 @@ const mining = {
         return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
     }
 };
-const pointer = {
-    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    isValidPointer(pointer) {
-        if (typeof pointer !== 'string') { return false; }
+const utxoPath = {
+    /** @param {string} utxoPath - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    isValidUtxoPath(utxoPath) {
+        if (typeof utxoPath !== 'string') { return false; }
 
-        const splitted = pointer.split(':');
+        const splitted = utxoPath.split(':');
         if (splitted.length !== 3) { return false; }
 
         // height
@@ -904,9 +904,9 @@ const pointer = {
 
         return true;
     },
-    /** @param {string} pointer - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    to_height_utxoTxID_vout(pointer) { // should be in utils (LOL !)
-        const splitted = pointer.split(':');
+    /** @param {string} utxoPath - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    to_Height_TxID_Vout(utxoPath) { // should be in utils (LOL !)
+        const splitted = utxoPath.split(':');
 
         const utxoBlockHeight = splitted[0];
         const utxoTxID = splitted[1];
@@ -940,7 +940,7 @@ const utils = {
     compression,
     conditionnals,
     mining,
-    pointer
+    utxoPath,
 };
 
 export default utils;

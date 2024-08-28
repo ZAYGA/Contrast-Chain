@@ -20,7 +20,7 @@ export class Account {
    }
 
    /** @param {Transaction} transaction */
-   async signAndReturnTransaction(transaction) {
+   async signTransaction(transaction) {
        if (typeof this.#privKey !== 'string') { throw new Error('Invalid private key'); }
 
        const message = transaction.id

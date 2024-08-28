@@ -47,7 +47,7 @@ export class Validation {
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
-        if (type === 'input' && !utils.pointer.isValidPointer(TxIO.pointer)) { throw new Error('Invalid pointer'); }
+        if (type === 'input' && !utils.utxoPath.isValidUtxoPath(TxIO.utxoPath)) { throw new Error('Invalid utxoPath'); }
 
         if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
         if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
@@ -129,10 +129,10 @@ export class Validation {
     /** ==> Sixth validation, high computation cost.
      * 
      * - control the inputAddresses/witnessesPubKeys correspondence
-     * @param {Object<string, TransactionIO>} UTXOsByPointer - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(UTXOsByPointer, transaction) {
+    static async addressOwnershipConfirmation(UTXOsByPath, transaction) {
         const witnessesAddresses = [];
 
         // derive witnesses addresses
@@ -147,10 +147,10 @@ export class Validation {
 
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const pointer = transaction.inputs[i].pointer;
-            if (!utils.pointer.isValidPointer(pointer)) { throw new Error('Invalid pointer'); }
+            const utxoPath = transaction.inputs[i].utxoPath;
+            if (!utils.utxoPath.isValidUtxoPath(utxoPath)) { throw new Error('Invalid utxoPath'); }
 
-            const referencedUTXO = UTXOsByPointer[pointer];
+            const referencedUTXO = UTXOsByPath[utxoPath];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
             if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
                 throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }

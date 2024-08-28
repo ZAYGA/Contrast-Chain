@@ -67,7 +67,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
         transfers.push(transfer);
     }
     const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, transfers);
-    const signedTx = await senderAccount.signAndReturnTransaction(transaction);
+    const signedTx = await senderAccount.signTransaction(transaction);
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
@@ -93,7 +93,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
     const stakingAddress = accounts[senderAccountIndex].address;
     
     const transaction = await Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
-    const signedTx = await senderAccount.signAndReturnTransaction(transaction);
+    const signedTx = await senderAccount.signTransaction(transaction);
     const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx);
     if (signedTxJSON) {
         //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
