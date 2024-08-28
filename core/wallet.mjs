@@ -1,7 +1,7 @@
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
 import { Account } from './account.mjs';
 import utils from './utils.mjs';
-import storage from "./storage-local-files.mjs";
+import localStorage_v1 from "../storage/local-storage-management.mjs";
 
 export class AddressTypeInfo {
     name = '';
@@ -42,10 +42,12 @@ export class Wallet {
         return new Wallet(argon2HashResult.hex);
     }
     saveAccounts() {
-        storage.saveJSON('accounts', this.accountsGenerated);
+        const id = this.masterHex.slice(0, 6);
+        localStorage_v1.saveJSON(`accounts/${id}_accounts`, this.accountsGenerated);
     }
     loadAccounts() {
-        const accountsGenerated = storage.loadJSON('accounts');
+        const id = this.masterHex.slice(0, 6);
+        const accountsGenerated = localStorage_v1.loadJSON(`accounts/${id}_accounts`);
         if (!accountsGenerated) { return false; }
 
         this.accountsGenerated = accountsGenerated;

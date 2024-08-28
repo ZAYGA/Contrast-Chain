@@ -1,11 +1,14 @@
-import storage from './storage-local-files.mjs';
+import localStorage_v1 from '../storage/local-storage-management.mjs';
 import { Vss } from './vss.mjs';
 import { Validation } from './validation.mjs';
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData, BlockData, Block } from './block.mjs';
+import { CallStack } from './callstack.mjs';
 import utils from './utils.mjs';
 
-const callStack = utils.CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
+/**
+* @typedef {import("../core/account.mjs").Account} Account
+*/
 
 /** Used by MemPool
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
@@ -158,78 +161,72 @@ class MemPool { // Store transactions that are not yet included in a block
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    submitTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
-        callStack.push(() => this.#pushTransaction(UTXOsByPath, transaction, replaceExistingTxID));
+    submitTransaction(callStack, UTXOsByPath, transaction, replaceExistingTxID) { // DEPRECATED
+        callStack.push(() => this.pushTransaction(UTXOsByPath, transaction, replaceExistingTxID));
     }
     /**
-     * should be used with the callstack
      * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    async #pushTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
+    async pushTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
         const startTime = Date.now();
-        try {
-            const isCoinBase = false;
-    
-            // First control format of : amount, address, rule, version, TxID
-            Validation.isConformTransaction(transaction, isCoinBase);
-    
-            // Second control : input > output
-            const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
-    
-            // Calculate fee per byte
-            const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
-            //console.log(`[MEMPOOL] weight: ${TxWeight} bytes`);
+        const isCoinBase = false;
 
-            const feePerByte = fee / TxWeight;
-            transaction.byteWeight = TxWeight;
-            transaction.feePerByte = feePerByte.toFixed(6);
-    
-            // Manage the mempool inclusion and collision
-            let txInclusionFunction = () => {
+        // First control format of : amount, address, rule, version, TxID
+        Validation.isConformTransaction(transaction, isCoinBase);
+
+        // Second control : input > output
+        const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
+
+        // Calculate fee per byte
+        const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
+        //console.log(`[MEMPOOL] weight: ${TxWeight} bytes`);
+
+        const feePerByte = fee / TxWeight;
+        transaction.byteWeight = TxWeight;
+        transaction.feePerByte = feePerByte.toFixed(6);
+
+        // Manage the mempool inclusion and collision
+        let txInclusionFunction = () => {
+            this.#addMempoolTransaction(transaction);
+        };
+
+        const identicalIDTransaction = this.transactionsByID[transaction.id];
+        const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
+        if (collidingTx) {
+            //TODO: active in production
+            if (!replaceExistingTxID) { throw new Error(`Conflicting UTXOs with: ${collidingTx.id}`); }
+            if (replaceExistingTxID !== collidingTx.id) { throw new Error('Invalid replaceExistingTxID'); }
+            if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
+
+            txInclusionFunction = () => {
+                this.#removeMempoolTransaction(collidingTx);
                 this.#addMempoolTransaction(transaction);
             };
-    
-            const identicalIDTransaction = this.transactionsByID[transaction.id];
-            const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
-            if (collidingTx) {
-                //TODO: active in production
-                if (!replaceExistingTxID) { throw new Error(`Conflicting UTXOs with: ${collidingTx.id}`); }
-                if (replaceExistingTxID !== collidingTx.id) { throw new Error('Invalid replaceExistingTxID'); }
-                if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
-    
-                txInclusionFunction = () => {
-                    this.#removeMempoolTransaction(collidingTx);
-                    this.#addMempoolTransaction(transaction);
-                };
-            }
-    
-            if (!this.#transactionUTXOsAreNotSpent(UTXOsByPath, transaction)) {
-                throw new Error('UTXOs(one at least) are spent'); }
-    
-            // Third validation: medium computation cost.
-            await Validation.controlTransactionHash(transaction);
-
-            // Fourth validation: low computation cost.
-            await Validation.controlTransactionOutputsRulesConditions(transaction);
-    
-            // Fifth validation: medium computation cost.
-            await Validation.controlAllWitnessesSignatures(transaction);
-    
-            // Sixth validation: high computation cost.
-            await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
-    
-            txInclusionFunction();
-            //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
-        } catch (error) {
-            //console.log(`[MEMPOOL] transaction: ${transaction.id} rejected in ${Date.now() - startTime}ms =reason> ${error.message}`);
-            throw error;
         }
+
+        if (!this.#transactionUTXOsAreNotSpent(UTXOsByPath, transaction)) {
+            throw new Error('UTXOs(one at least) are spent'); }
+
+        // Third validation: medium computation cost.
+        await Validation.controlTransactionHash(transaction);
+
+        // Fourth validation: low computation cost.
+        await Validation.controlTransactionOutputsRulesConditions(transaction);
+
+        // Fifth validation: medium computation cost.
+        await Validation.controlAllWitnessesSignatures(transaction);
+
+        // Sixth validation: high computation cost.
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
+
+        txInclusionFunction();
+        //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
     }
 }
 
-class HotData { // Used to store, addresses's UTXOs and balance.
+export class HotData { // Used to store, addresses's UTXOs and balance.
     constructor() {
         /** @type {Object<string, TransactionIO[]>} */
         this.addressesUTXOs = {};
@@ -414,6 +411,8 @@ class HotData { // Used to store, addresses's UTXOs and balance.
 export class FullNode {
     /** @param {Account} validatorAccount */
     constructor(validatorAccount) {
+        this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
+
         /** @type {Account} */
         this.validatorAccount = validatorAccount;
         /** @type {BlockData} */
@@ -421,37 +420,14 @@ export class FullNode {
 
         this.memPool = new MemPool();
         this.hotData = new HotData();
-
-        this.callStack = callStack;
     }
 
     /** @param {Account} validatorAccount */
     static async load(validatorAccount, saveBlocksInfo = false) {
         const node = new FullNode(validatorAccount);
-        const blocksFolders = storage.getListOfFoldersInBlocksDirectory();
-        const nbOfBlocksInStorage = storage.countFilesInBlocksDirectory(blocksFolders, 'bin');
-        const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
+
+        const lastBlockData = await localStorage_v1.loadBlockchainLocally(node, saveBlocksInfo);
         
-        /** @type {BlockData} */
-        let lastBlockData = undefined;
-        let blockLoadedCount = 0;
-        for (let i = 0; i < blocksFolders.length; i++) {
-            const blocksFolder = blocksFolders[i];
-            const chainPart = storage.loadBlockchainPartLocally(blocksFolder, 'bin');
-            const controlChainPart = storage.loadBlockchainPartLocally(blocksFolder, 'json');
-            FullNode.controlChainIntegrity(chainPart, controlChainPart);
-
-            await node.hotData.digestChainPart(chainPart);
-            lastBlockData = chainPart[chainPart.length - 1];
-
-            blockLoadedCount += chainPart.length;
-            progressLogger.logProgress(blockLoadedCount);
-
-            if (saveBlocksInfo) { // basic informations .csv
-                const blocksInfo = node.#getBlocksMiningInfo(chainPart);
-                storage.saveBlockchainInfoLocally(blocksInfo);
-            }
-        }
         // TODO: mempool digest mempool from other validator node
         // TODO: Get the Txs from the mempool and add them
         // TODO: Verify the Txs
@@ -462,37 +438,9 @@ export class FullNode {
 
         return node;
     }
-    /**
-     * @param {BlockData[]} chain
-     * @param {BlockData[]} controlChain
-     */
-    static controlChainIntegrity(chain, controlChain) {
-        // Control the chain integrity
-        for (let i = 0; i < controlChain.length; i++) {
-            const controlBlock = controlChain[i];
-            const block = chain[i];
-            FullNode.controlObjectEqualValues(controlBlock, block);
-        }
-    }
-    /**
-     * @param {object} object1
-     * @param {object} object2
-     */
-    static controlObjectEqualValues(object1, object2) {
-        for (const key in object1) {
-            const value1 = object1[key];
-            const value2 = object2[key];
-            if (typeof value1 === 'object') {
-                FullNode.controlObjectEqualValues(value1, value2);
-            } else if (value1 !== value2) {
-                throw new Error(`Control failed - key: ${key}`);
-            }
-        }
-    }
-    
     /** @param {BlockData} minerBlockCandidate */
     submitPowProposal(minerBlockCandidate) {
-        callStack.push(() => this.#blockProposal(minerBlockCandidate));
+        this.callStack.push(() => this.#blockProposal(minerBlockCandidate));
     }
     /** 
      * should be used with the callstack
@@ -510,8 +458,8 @@ export class FullNode {
         if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
         
         const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        if (this.blockCandidate.index < 2000) { storage.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
-        const saveResult = storage.saveBlockDataLocally(blockDataCloneToSave, 'bin');
+        if (this.blockCandidate.index < 2000) { localStorage_v1.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
+        const saveResult = localStorage_v1.saveBlockDataLocally(blockDataCloneToSave, 'bin');
         if (!saveResult.success) { throw new Error(saveResult.message); }
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
@@ -528,7 +476,7 @@ export class FullNode {
         console.log(`[FullNode] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
         // -------------------------------------------
 
-        callStack.push(async () => {
+        this.callStack.push(async () => {
             await this.hotData.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
             const myLegitimacy = this.hotData.vss.getAddressLegitimacy(this.validatorAccount.address);
             if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.validatorAccount.address}, can't create a candidate`); }
@@ -547,7 +495,10 @@ export class FullNode {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.callStack, this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID);
+
+        // not working with the callstack //TODO: fix
+        //this.callStack.push(() => { this.memPool.pushTransaction(this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID) });
     }
 
     // TODO: Fork management
@@ -580,22 +531,5 @@ export class FullNode {
         blockCandidate.Txs.unshift(signedPosFeeTx);
 
         return blockCandidate;
-    }
-    #getBlocksMiningInfo(chain) { // DEPRECATED
-        const blocksInfo = [];
-
-        for (let i = 0; i < chain.length; i++) {
-            const block = chain[i];
-
-            blocksInfo.push({ 
-                blockIndex: block.index,
-                coinbaseReward: block.coinBase,
-                timestamp: block.timestamp,
-                difficulty: block.difficulty,
-                timeBetweenBlocks: i === 0 ? 0 : block.timestamp - chain[i - 1].timestamp
-            });
-        }
-
-        return blocksInfo;
     }
 }

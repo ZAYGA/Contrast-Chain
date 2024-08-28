@@ -1,7 +1,7 @@
 'use strict';
 import { test } from './ContrastTests.mjs';
 
-// Run simple express server to serve test-front.html
+// Simple express server to serve test-front.html
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';

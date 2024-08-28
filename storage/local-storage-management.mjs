@@ -1,7 +1,12 @@
 'use strict';
 
-import { BlockData, Block } from "./block.mjs";
-import utils from './utils.mjs';
+import { BlockData, Block } from "../core/block.mjs";
+import utils from '../core/utils.mjs';
+
+/**
+* @typedef {import("../core/block.mjs").BlockData} BlockData
+* @typedef {import("../core/node.mjs").FullNode} FullNode
+*/
 
 const fs = await import('fs');
 const path = await import('path');
@@ -10,17 +15,99 @@ const __filename = url.fileURLToPath(import.meta.url);
 const parentFolder = path.dirname(__filename);
 const __dirname = path.dirname(parentFolder);
 
-const savedDataPath = path.join(__dirname, 'savedData');
-const powDataPath = path.join(__dirname, 'powData');
-const blocksPath = path.join(powDataPath, 'blocks');
-if (path && !fs.existsSync(savedDataPath)) { fs.mkdirSync(savedDataPath); }
-if (path && !fs.existsSync(powDataPath)) { fs.mkdirSync(powDataPath); }
+const filesStoragePath = path.join(__dirname, 'storage');
+const blocksPath = path.join(filesStoragePath, 'blocks');
+if (path && !fs.existsSync(filesStoragePath)) { fs.mkdirSync(filesStoragePath); }
 if (path && !fs.existsSync(blocksPath)) { fs.mkdirSync(blocksPath); }
 const numberOfBlockFilesInFolder = 1000;
 
-// we are now splitting blocks files into subFolder to avoid performance issues
+// A primitive way to store the blockchain data and wallet data etc...
+// Only few functions are exported, the rest are used internally
+// As usual, use Ctrl + k, Ctrl + 0 to fold all blocks of code
+
+// Better in a class with static methods...
+
+//#region --- UTILS ---
+/**
+ * @param {BlockData[]} chain
+ * @param {BlockData[]} controlChain
+ */
+function controlChainIntegrity(chain, controlChain) {
+    // Control the chain integrity
+    for (let i = 0; i < controlChain.length; i++) {
+        const controlBlock = controlChain[i];
+        const block = chain[i];
+        controlObjectEqualValues(controlBlock, block);
+    }
+}
+/**
+ * @param {object} object1
+ * @param {object} object2
+ */
+function controlObjectEqualValues(object1, object2) {
+    for (const key in object1) {
+        const value1 = object1[key];
+        const value2 = object2[key];
+        if (typeof value1 === 'object') {
+            controlObjectEqualValues(value1, value2);
+        } else if (value1 !== value2) {
+            throw new Error(`Control failed - key: ${key}`);
+        }
+    }
+}
+function extractBlocksMiningInfo(chain) {
+    const blocksInfo = [];
+
+    for (let i = 0; i < chain.length; i++) {
+        const block = chain[i];
+
+        blocksInfo.push({ 
+            blockIndex: block.index,
+            coinbaseReward: block.coinBase,
+            timestamp: block.timestamp,
+            difficulty: block.difficulty,
+            timeBetweenBlocks: i === 0 ? 0 : block.timestamp - chain[i - 1].timestamp
+        });
+    }
+
+    return blocksInfo;
+}
+//#endregion -----------------------------
 
 //#region --- LOADING BLOCKCHAIN/BLOCKS ---
+/**
+ * Load the blockchain from the local storage
+ * @param {FullNode} node - The node to load the blockchain into
+ * @param {boolean} saveBlocksInfo - Whether to save the basic informations of the blocks in a .csv file
+ */
+async function loadBlockchainLocally(node, saveBlocksInfo = false) {
+    const blocksFolders = getListOfFoldersInBlocksDirectory();
+    const nbOfBlocksInStorage = countFilesInBlocksDirectory(blocksFolders, 'bin');
+    const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
+    
+    /** @type {BlockData} */
+    let lastBlockData = undefined;
+    let blockLoadedCount = 0;
+    for (let i = 0; i < blocksFolders.length; i++) {
+        const blocksFolder = blocksFolders[i];
+        const chainPart = loadBlockchainPartLocally(blocksFolder, 'bin');
+        const controlChainPart = loadBlockchainPartLocally(blocksFolder, 'json');
+        controlChainIntegrity(chainPart, controlChainPart);
+
+        await node.hotData.digestChainPart(chainPart);
+        lastBlockData = chainPart[chainPart.length - 1];
+
+        blockLoadedCount += chainPart.length;
+        progressLogger.logProgress(blockLoadedCount);
+
+        if (saveBlocksInfo) { // basic informations .csv
+            const blocksInfo = extractBlocksMiningInfo(chainPart);
+            saveBlockchainInfoLocally(blocksInfo);
+        }
+    }
+
+    return lastBlockData;
+}
 function getListOfFoldersInBlocksDirectory() {
     if (path) { 
         const blocksFolders = fs.readdirSync(blocksPath).filter(fileName => fs.lstatSync(path.join(blocksPath, fileName)).isDirectory());
@@ -174,7 +261,7 @@ function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
  */
 function saveJSON(fileName, data) {
     try {
-        const filePath = path.join(savedDataPath, `${fileName}.json`);
+        const filePath = path.join(filesStoragePath, `${fileName}.json`);
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     } catch (error) {
         return false;
@@ -187,7 +274,7 @@ function saveJSON(fileName, data) {
  */
 function loadJSON(fileName) {
     try {
-        const filePath = path.join(savedDataPath, `${fileName}.json`);
+        const filePath = path.join(filesStoragePath, `${fileName}.json`);
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (error) {
         return false;
@@ -195,14 +282,13 @@ function loadJSON(fileName) {
 }
 //#endregion -----------------------------
 
-const storage = {
-    getListOfFoldersInBlocksDirectory,
-    countFilesInBlocksDirectory,
-    loadBlockchainPartLocally,
+
+
+const localStorage_v1 = {
+    loadBlockchainLocally,
     saveBlockDataLocally,
-    saveBlockchainInfoLocally,
     saveJSON,
     loadJSON
 };
 
-export default storage;
+export default localStorage_v1;
