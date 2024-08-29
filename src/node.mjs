@@ -117,11 +117,12 @@ export class FullNode {
      */
     async #createBlockCandidate(lastBlockData, myLegitimacy) {
         //console.log(`[FullNode] Creating block candidate from lastHeight: ${lastBlockData.index}`);
-        const Txs = this.memPool.getMostLucrativeTransactionsBatch(1000);
+        const Txs = this.memPool.getMostLucrativeTransactionsBatch();
         if (Txs.length > 1) {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
         }
 
+        // Create the block candidate, genesis block if no lastBlockData
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
         if (lastBlockData) {
             const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
