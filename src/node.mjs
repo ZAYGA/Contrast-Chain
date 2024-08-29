@@ -495,10 +495,10 @@ export class FullNode {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.callStack, this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID);
+        //this.memPool.submitTransaction(this.callStack, this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID);
 
         // not working with the callstack //TODO: fix
-        //this.callStack.push(() => { this.memPool.pushTransaction(this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID) });
+        this.callStack.push(() => { this.memPool.pushTransaction(this.hotData.UTXOsByPath, signedTansaction, replaceExistingTxID) });
     }
 
     // TODO: Fork management
