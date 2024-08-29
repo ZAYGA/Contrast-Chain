@@ -1,6 +1,7 @@
-import utils from './utils.mjs';
 import { BlockData, Block } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
+import utils from './utils.mjs';
+
 /**
  * @typedef {import("./account.mjs").Account} Account
  */

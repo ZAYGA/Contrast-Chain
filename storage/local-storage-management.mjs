@@ -5,7 +5,7 @@ import utils from '../src/utils.mjs';
 
 /**
 * @typedef {import("../src/block.mjs").BlockData} BlockData
-* @typedef {import("../src/node.mjs").FullNode} FullNode
+* @typedef {import("../src/node.mjs").Node} Node
 */
 
 const fs = await import('fs');
@@ -77,12 +77,13 @@ function extractBlocksMiningInfo(chain) {
 //#region --- LOADING BLOCKCHAIN/BLOCKS ---
 /**
  * Load the blockchain from the local storage
- * @param {FullNode} node - The node to load the blockchain into
+ * @param {Node} node - The node to load the blockchain into
  * @param {boolean} saveBlocksInfo - Whether to save the basic informations of the blocks in a .csv file
  */
 async function loadBlockchainLocally(node, saveBlocksInfo = false) {
-    const blocksFolders = getListOfFoldersInBlocksDirectory();
-    const nbOfBlocksInStorage = countFilesInBlocksDirectory(blocksFolders, 'bin');
+    const id = node.id;
+    const blocksFolders = getListOfFoldersInBlocksDirectory(id);
+    const nbOfBlocksInStorage = countFilesInBlocksDirectory(id, blocksFolders, 'bin');
     const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
     
     /** @type {BlockData} */
@@ -90,8 +91,12 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
     let blockLoadedCount = 0;
     for (let i = 0; i < blocksFolders.length; i++) {
         const blocksFolder = blocksFolders[i];
-        const chainPart = loadBlockchainPartLocally(blocksFolder, 'bin');
-        const controlChainPart = loadBlockchainPartLocally(blocksFolder, 'json');
+        const chainFiles = getListOfFilesInBlocksDirectory(id, blocksFolder, 'bin');
+        const chainPart = loadBlocksOfFolderLocally(id, chainFiles, 'bin');
+
+        const controlChainFiles = getListOfFilesInBlocksDirectory(id, blocksFolder, 'json');
+        const controlChainPart = loadBlocksOfFolderLocally(id, controlChainFiles, 'json');
+
         controlChainIntegrity(chainPart, controlChainPart);
 
         const newStakesOutputs = await node.utxoCache.digestChainPart(chainPart);
@@ -109,37 +114,40 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
 
     return lastBlockData;
 }
-function getListOfFoldersInBlocksDirectory() {
-    if (path) { 
-        const blocksFolders = fs.readdirSync(blocksPath).filter(fileName => fs.lstatSync(path.join(blocksPath, fileName)).isDirectory());
-        
-        // named as 0-999, 1000-1999, 2000-2999, etc... => sorting by the first number
-        const blocksFoldersSorted = blocksFolders.sort((a, b) => parseInt(a.split('-')[0], 10) - parseInt(b.split('-')[0], 10));
+function getListOfFoldersInBlocksDirectory(id) {
+    if (!path) { return false; }
 
-        return blocksFoldersSorted;
-    }
+    const targetPath = path.join(blocksPath, id);
+    if (!fs.existsSync(targetPath)) { fs.mkdirSync(targetPath); }
+    const blocksFolders = fs.readdirSync(targetPath).filter(fileName => fs.lstatSync(path.join(targetPath, fileName)).isDirectory());
+    
+    // named as 0-999, 1000-1999, 2000-2999, etc... => sorting by the first number
+    const blocksFoldersSorted = blocksFolders.sort((a, b) => parseInt(a.split('-')[0], 10) - parseInt(b.split('-')[0], 10));
+
+    return blocksFoldersSorted;
 }
-function countFilesInBlocksDirectory(blocksFolders, extension = 'bin') {
+function countFilesInBlocksDirectory(id, blocksFolders, extension = 'bin') {
+    const targetPath = path.join(blocksPath, id);
     let totalFiles = 0;
     blocksFolders.forEach(folder => {
-        const files = fs.readdirSync(path.join(blocksPath, folder)).filter(fileName => fileName.endsWith('.bin'));
+        const files = fs.readdirSync(path.join(targetPath, folder)).filter(fileName => fileName.endsWith(`.${extension}`));
         totalFiles += files.length;
     });
 
     return totalFiles;
 }
-function loadBlockchainPartLocally(blocksFolder, extension = 'json') { // DEPRECATED
-    const blockFilesSorted = getListOfFilesInBlocksDirectory(blocksFolder, extension);
-    return loadBlocksOfFolderLocally(blockFilesSorted, extension);
-}
-/** @param {number[]} blockFilesSorted */
-function loadBlocksOfFolderLocally(blockFilesSorted, extension = 'json') {
+/**
+ * @param {string} id
+ * @param {number[]} blockFilesSorted
+ * @param {string} extension
+ */
+function loadBlocksOfFolderLocally(id, blockFilesSorted, extension = 'json') {
     const chainPart = [];
     for (let i = 0; i < blockFilesSorted.length; i++) {
         const blockIndex = blockFilesSorted[i];
 
         try {
-            const block = loadBlockLocally(blockIndex, extension);
+            const block = loadBlockLocally(id, blockIndex, extension);
             chainPart.push(block);
         } catch (error) {
             console.error(error.stack);
@@ -151,22 +159,28 @@ function loadBlocksOfFolderLocally(blockFilesSorted, extension = 'json') {
 
     return chainPart;
 }
-function getListOfFilesInBlocksDirectory(subFolder = '', extension = 'json') {
-    if (path) {
-        const subFolderPath = path.join(blocksPath, subFolder);
-        return fs.readdirSync(subFolderPath).filter(fileName => fileName.endsWith('.' + extension))
-        .map(fileName => (
-          parseInt(fileName.split('.')[0], 10)
-        ))
-        .sort((a, b) => a - b);
-    }
+function getListOfFilesInBlocksDirectory(id, subFolder = '', extension = 'json') {
+    if (!path) { return false; }
+
+    const targetPath = path.join(blocksPath, id);
+    const subFolderPath = path.join(targetPath, subFolder);
+    return fs.readdirSync(subFolderPath).filter(fileName => fileName.endsWith('.' + extension))
+    .map(fileName => (
+        parseInt(fileName.split('.')[0], 10)
+    ))
+    .sort((a, b) => a - b);
     // TODO: Implement for browser - localStorage.setItem('blocks', JSON.stringify([]));
     // TODO: Implement for extension - chrome.storage.local.set({ blocks: [] });
 }
-/** @param {number} blockIndex */
-function loadBlockLocally(blockIndex, extension = 'json') {
+/** 
+ * @param {string} id
+ * @param {number} blockIndex
+ * @param {string} extension
+ */
+function loadBlockLocally(id, blockIndex, extension = 'json') {
+    const targetPath = path.join(blocksPath, id);
     const blocksFolderName = `${Math.floor(blockIndex / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockIndex / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
-    const blocksFolderPath = path.join(blocksPath, blocksFolderName);
+    const blocksFolderPath = path.join(targetPath, blocksFolderName);
     
     const blockIndexStr = blockIndex.toString();
 
@@ -198,12 +212,13 @@ function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
  * Save a block to the local storage
  * @param {BlockData} blockData - The block to save
  */
-function saveBlockDataLocally(blockData, extension = 'json') {
+function saveBlockDataLocally(id, blockData, extension = 'json') {
     const result = { success: true, message: 'Block ${blockContent.index} saved' };
-    
+    const targetPath = path.join(blocksPath, id);
+
     try {
         const blocksFolderName = `${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
-        const blocksFolderPath = path.join(blocksPath, blocksFolderName);
+        const blocksFolderPath = path.join(targetPath, blocksFolderName);
         if (!fs.existsSync(blocksFolderPath)) { fs.mkdirSync(blocksFolderPath); }
 
         if (extension === 'json') {

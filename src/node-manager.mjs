@@ -1,90 +1,33 @@
-import { ValidatorNode } from './nodes/validator-node.mjs';
-import { MinerNode } from './nodes/miner-node.mjs';
-import { BlockchainNode } from './blockchain-node.mjs';
-import { PubSubManager } from './pubsub-manager.mjs';
-import { BlockManager } from './block-manager.mjs';
-import pkg from 'bloom-filters';
-const { BloomFilter } = pkg;
-import { BlockSerializer } from './serializers/block-serializer.mjs';
-import { TransactionSerializer } from './serializers/transaction-serializer.mjs';
-import { EventBus } from './event-bus.mjs';
-import { VSSShareSerializer } from './vrf/vss-share-serializer.mjs';
-import { AnnouncementSerializer } from './serializers/announcement-serializer.mjs';
+import { Account } from "./account.mjs";
+import { NodeFactory } from './node-factory.mjs';
 
-import {
-	BlockMessageHandler,
-	TransactionMessageHandler,
-	BlockCandidateMessageHandler,
-	MinedBlockMessageHandler,
-	VSSShareMessageHandler,
-	AnnouncementMessageHandler,
-	VRFProofMessageHandler
-} from './messages-handlers.mjs';
+/**
+ * @typedef {import("./node.mjs").Node} Node
+ */
 
-class NodeManager {
-	constructor(bootstrapNodes = []) {
+export class NodeManager {
+    /**
+     * @param {Account[]} accounts
+     * @param {string[]} bootstrapNodes ?
+     */
+	constructor(accounts, bootstrapNodes = []) {
+        /** @type {Account[]} */
+        this.accounts = accounts;
+		/** @type {Object.<string, Node>} */
 		this.nodes = {};
-		this.bootstrapNodes = bootstrapNodes;
+		this.bootstrapNodes = bootstrapNodes; // merci de déclarer le type =)
 	}
 
-	async createNode(nodeId, options) {
-		try {
-			const bloomFilter = new BloomFilter(1024, 4);
+    async createsNodes(nbOfNodes = 1) {
+        const nodesToCreate = Math.min(nbOfNodes, this.accounts.length);
+        for (let i = 0; i < nodesToCreate; i++) {
+			const nodeId = this.accounts[i].address;
+            const node = await NodeFactory.createNode(this.bootstrapNodes, nodeConfig);
+            this.nodes[nodeId] = node;
+        }
+    }
 
-			const storage = new LevelDBStorage('./blockchain-db' + nodeId);
-			storage.open();
-
-			const blockManager = new BlockManager(storage, nodeId);
-			await blockManager.initialize();
-			//await blockManager.initialize();
-			const pubSubManager = new PubSubManager(bloomFilter, {
-				logging: true,
-				logLevel: 'info'
-			});
-			const blockSerializer = new BlockSerializer(1);
-			const transactionSerializer = new TransactionSerializer(1);
-			const vssShareSerializer = new VSSShareSerializer(1);
-			const announcementSerializer = new AnnouncementSerializer(1);
-
-
-			let eventBus = new EventBus();
-
-
-			// Register message handlers
-			pubSubManager.registerMessageType('blocks', new BlockMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('transactions', new TransactionMessageHandler(eventBus), transactionSerializer);
-			pubSubManager.registerMessageType('block_candidate', new BlockCandidateMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('mined_block', new MinedBlockMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('vssShare', new VSSShareMessageHandler(eventBus), vssShareSerializer);
-			pubSubManager.registerMessageType('validator-announce', new AnnouncementMessageHandler(eventBus), announcementSerializer);
-
-			options.bootstrapNodes = this.bootstrapNodes;
-
-			let node;
-			switch (options.role) {
-				case 'validator':
-					options.totalValidators = 2;
-					options.validatorIndex = 0;
-					node = new ValidatorNode(options, pubSubManager, blockManager, eventBus);
-					break;
-				case 'miner':
-					node = new MinerNode(options, pubSubManager, blockManager, eventBus);
-					break;
-
-				default:
-					node = new BlockchainNode(options, pubSubManager, blockManager, eventBus);
-			}
-
-			await node.start();
-			this.nodes[nodeId] = node;
-			return node;
-		} catch (error) {
-			console.error(`Error creating node ${nodeId}:`, error);
-			throw error;
-		}
-	}
-
-	getNode(nodeId) {
+    getNode(nodeId) {
 		return this.nodes[nodeId];
 	}
 
@@ -125,5 +68,3 @@ class NodeManager {
 		console.log('All nodes connected');
 	}
 }
-
-export { NodeManager };

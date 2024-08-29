@@ -4,7 +4,7 @@ import { BlockData, Block } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { Account } from './account.mjs';
 import { Wallet } from './wallet.mjs';
-import { FullNode } from './node.mjs';
+import { Node } from './node.mjs';
 import { Miner } from './miner.mjs';
 //import { BlockchainNode } from './blockchain-node.mjs';
 
@@ -19,7 +19,7 @@ const contrast = {
     Transaction_Builder,
     Wallet,
     Account,
-    FullNode,
+    Node,
     Miner,
 
     utils

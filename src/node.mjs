@@ -1,20 +1,24 @@
 import localStorage_v1 from '../storage/local-storage-management.mjs';
-import { Vss } from './vss.mjs';
 import { Validation } from './validation.mjs';
-import { Transaction_Builder } from './transaction.mjs';
-import { BlockData, Block } from './block.mjs';
+import { CallStack } from './callstack.mjs';
+import { Vss } from './vss.mjs';
 import { MemPool } from './memPool.mjs';
 import { UtxoCache } from './utxoCache.mjs';
-import { CallStack } from './callstack.mjs';
+import { BlockData, Block } from './block.mjs';
+import { Transaction_Builder } from './transaction.mjs';
+import { Miner } from './miner.mjs';
 import utils from './utils.mjs';
 
 /**
-* @typedef {import("../src/account.mjs").Account} Account
+* @typedef {import("./account.mjs").Account} Account
 */
 
-export class FullNode {
+export class Node {
     /** @param {Account} validatorAccount */
     constructor(validatorAccount) {
+        /** @type {string} */
+        this.id = validatorAccount.address;
+        /** @type {CallStack} */
         this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
 
         /** @type {Account} */
@@ -24,13 +28,17 @@ export class FullNode {
 
         /** @type {Vss} */
         this.vss = new Vss();
+        /** @type {MemPool} */
         this.memPool = new MemPool();
+        /** @type {UtxoCache} */
         this.utxoCache = new UtxoCache();
+        /** @type {Miner} */
+        this.miner = new Miner(validatorAccount);
     }
 
     /** @param {Account} validatorAccount */
     static async load(validatorAccount, saveBlocksInfo = false) {
-        const node = new FullNode(validatorAccount);
+        const node = new Node(validatorAccount);
 
         const lastBlockData = await localStorage_v1.loadBlockchainLocally(node, saveBlocksInfo);
         
@@ -64,8 +72,8 @@ export class FullNode {
         if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
         
         const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        if (this.blockCandidate.index < 2000) { localStorage_v1.saveBlockDataLocally(blockDataCloneToSave, 'json'); }
-        const saveResult = localStorage_v1.saveBlockDataLocally(blockDataCloneToSave, 'bin');
+        if (this.blockCandidate.index <= 100) { localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'json'); }
+        const saveResult = localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'bin');
         if (!saveResult.success) { throw new Error(saveResult.message); }
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
@@ -80,8 +88,8 @@ export class FullNode {
         const powMinerTx = minerBlockCandidate.Txs[0];
         const address = powMinerTx.outputs[0].address;
         const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
-        //console.log(`[FullNode] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
-        console.log(`[FullNode] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
+        //console.log(`[Node] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        console.log(`[Node] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
         // -------------------------------------------
 
         this.callStack.push(async () => {
@@ -116,7 +124,7 @@ export class FullNode {
      * @param {number} myLegitimacy
      */
     async #createBlockCandidate(lastBlockData, myLegitimacy) {
-        //console.log(`[FullNode] Creating block candidate from lastHeight: ${lastBlockData.index}`);
+        //console.log(`[Node] Creating block candidate from lastHeight: ${lastBlockData.index}`);
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
         if (Txs.length > 1) {
             console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);

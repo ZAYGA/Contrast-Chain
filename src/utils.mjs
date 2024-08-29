@@ -76,12 +76,9 @@ class ProgressLogger {
 
     logProgress(current) {
         const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
-        const currentStep = Math.floor(progress / this.stepSizePercent);
+        //const currentStep = Math.floor(progress / this.stepSizePercent);
 
-        //if (currentStep > this.lastLoggedStep) {
-            //this.lastLoggedStep = currentStep;
-            console.log(`[utxoCache] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
-        //}
+        console.log(`[utxoCache] digestChain : ${progress.toFixed(1)}% (${current}/${this.total})`);
     }
 }
 class AddressTypeInfo {

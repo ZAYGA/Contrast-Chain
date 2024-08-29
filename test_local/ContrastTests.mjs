@@ -1,10 +1,9 @@
 'use strict';
-import { Transaction_Builder } from '../src/transaction.mjs';
 import contrast from '../src/contrast.mjs';
 
 /**
 * @typedef {import("../src/account.mjs").Account} Account
-* @typedef {import("../src/node.mjs").FullNode} FullNode
+* @typedef {import("../src/node.mjs").Node} Node
 */
 
 const testParams = {
@@ -14,7 +13,7 @@ const testParams = {
 }
 
 /** Simple user to user transaction
- * @param {FullNode} node
+ * @param {Node} node
  * @param {Account[]} accounts
  * @param {number} senderAccountIndex
  * @param {number} receiverAccountIndex
@@ -24,7 +23,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
     const receiverAddress = accounts[receiverAccountIndex].address;
 
     const amountToSend = 1_000_000;
-    const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
+    const { signedTxJSON, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
     if (signedTxJSON) {
         //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${JSON.parse(signedTxJSON).id}`);
         node.addTransactionJSONToMemPool(signedTxJSON);
@@ -33,7 +32,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
     }
 }
 /** All users send to the next user
-* @param {FullNode} node
+* @param {Node} node
 * @param {Account[]} accounts
 * @param {number} nbOfUsers
  */
@@ -43,7 +42,7 @@ async function userSendToNextUser(node, accounts) {
         const receiverAccount = i === accounts.length - 1 ? accounts[0] : accounts[i + 1];
 
         const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
-        const { signedTxJSON, error } = await Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
+        const { signedTxJSON, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
         if (signedTxJSON) {
             //console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
             //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
@@ -54,7 +53,7 @@ async function userSendToNextUser(node, accounts) {
     }
 }
 /** User send to all other accounts
-* @param {FullNode} node
+* @param {Node} node
 * @param {Account[]} accounts
 * @param {number} senderAccountIndex
  */
@@ -67,9 +66,9 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
         const transfer = { recipientAddress: accounts[i].address, amount };
         transfers.push(transfer);
     }
-    const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, transfers);
+    const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
     const signedTx = await senderAccount.signTransaction(transaction);
-    const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx)
+    const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx)
 
     if (signedTxJSON) {
         //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
@@ -84,7 +83,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
     }
 }
 /** User stakes in VSS
- * @param {FullNode} node
+ * @param {Node} node
  * @param {Account[]} accounts
  * @param {number} senderAccountIndex
  * @param {number} amountToStake
@@ -93,9 +92,9 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
     const senderAccount = accounts[senderAccountIndex];
     const stakingAddress = accounts[senderAccountIndex].address;
     
-    const transaction = await Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
+    const transaction = await contrast.Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
     const signedTx = await senderAccount.signTransaction(transaction);
-    const signedTxJSON = Transaction_Builder.getTransactionJSON(signedTx);
+    const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx);
     if (signedTxJSON) {
         //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
         //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
@@ -105,7 +104,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
     }
 }
 /**
- * @param {FullNode} node
+ * @param {Node} node
  * @param {Account[]} accounts
  */
 function refreshAllBalances(node, accounts) {
@@ -122,13 +121,15 @@ function refreshAllBalances(node, accounts) {
 async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
-    /** @type {FullNode} */
-    const node = await contrast.FullNode.load(accounts[0]);
-    if (!node) { console.error('Failed to load FullNode.'); return; }
-
+    /** @type {Node} */
+    const node = await contrast.Node.load(accounts[0]);
+    if (!node) { console.error('Failed to load Node.'); return; }
+    
     const miner = new contrast.Miner(accounts[1]);
     if (!miner) { console.error('Failed to load Miner.'); return; }
 
+    console.log('[TEST] Node & Miner => Initialized. - start mining');
+    
     for (let i = 0; i < 1_000_000; i++) {
         refreshAllBalances(node, accounts);
         
