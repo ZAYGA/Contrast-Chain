@@ -163,8 +163,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         const newStakesOutputs = [];
         for (let i = 0; i < chainPart.length; i++) {
             const blockData = chainPart[i];
-            //await this.digestConfirmedBlock(blockData);
-            const newStakesOutputsFromBlock = this.#digestBlockTransactions(blockData.index, blockData.Txs);
+            const newStakesOutputsFromBlock = await this.digestConfirmedBlock(blockData);
             newStakesOutputs.push(...newStakesOutputsFromBlock);
         }
         return newStakesOutputs;
