@@ -151,4 +151,20 @@ export class Validation {
                 throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
         }
     }
+
+    /** ==> Sequencially call the full set of validations
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Transaction} transaction
+     * @param {boolean} isCoinBase
+     * @returns {number} - the fee
+     */
+    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase) {
+        Validation.isConformTransaction(transaction, isCoinBase);
+        const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
+        await Validation.controlTransactionHash(transaction);
+        await Validation.controlAllWitnessesSignatures(transaction);
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
+
+        return fee;
+    }
 }
