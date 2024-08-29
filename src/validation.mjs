@@ -124,7 +124,7 @@ export class Validation {
     /** ==> Sixth validation, high computation cost.
      * 
      * - control the inputAddresses/witnessesPubKeys correspondence
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from hotData
+     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
      * @param {Transaction} transaction
      */
     static async addressOwnershipConfirmation(UTXOsByPath, transaction) {

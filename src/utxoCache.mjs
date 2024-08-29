@@ -79,7 +79,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
      * @param {Transaction} transaction
      */
     #digestTransactionOutputs(blockIndex, transaction) {
-        const newStakeOutputs = [];
+        const newStakesOutputs = [];
         const TxID = transaction.id;
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
@@ -100,11 +100,11 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
             const rule = TxOutputs[i].rule;
             if (rule === "sigOrSlash") {
-                newStakeOutputs.push(TxOutputs[i]); // for now we only create new range
+                newStakesOutputs.push(TxOutputs[i]); // for now we only create new range
             }
         }
 
-        return newStakeOutputs;
+        return newStakesOutputs;
     }
 
     // Public methods
@@ -144,28 +144,35 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     * @param {number} blockIndex
     * @param {Transaction[]} Txs
     */
-    digestBlockTransactions(blockIndex, Txs) {
+    #digestBlockTransactions(blockIndex, Txs) {
         if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
         //console.log(`Digesting block ${blockIndex} with ${Txs.length} transactions`);
+        const newStakesOutputs = [];
 
         for (let i = 0; i < Txs.length; i++) {
             const transaction = Txs[i];
             this.#digestTransactionInputs(transaction, i); // Reverse function's call ?
-            const newStakeOutputs = this.#digestTransactionOutputs(blockIndex, transaction);
-            if (newStakeOutputs.length > 0) { this.vss.newStake(TxOutputs[i]); }
+            const newStakesOutputsFromTx = this.#digestTransactionOutputs(blockIndex, transaction);
+            newStakesOutputs.push(...newStakesOutputsFromTx);
         }
+
+        return newStakesOutputs;
     }
     /** @param {BlockData[]} chainPart */
     async digestChainPart(chainPart) {
+        const newStakesOutputs = [];
         for (let i = 0; i < chainPart.length; i++) {
             const blockData = chainPart[i];
-            await this.digestConfirmedBlock(blockData);
+            //await this.digestConfirmedBlock(blockData);
+            const newStakesOutputsFromBlock = this.#digestBlockTransactions(blockData.index, blockData.Txs);
+            newStakesOutputs.push(...newStakesOutputsFromBlock);
         }
+        return newStakesOutputs;
     }
     /** @param {BlockData} blockData */
     async digestConfirmedBlock(blockData) {
         const Txs = blockData.Txs;
-        this.digestBlockTransactions(blockData.index, Txs);
+        const newStakesOutputs = this.#digestBlockTransactions(blockData.index, Txs);
 
         const supplyFromBlock = blockData.supply;
         const coinBase = blockData.coinBase;
@@ -181,6 +188,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         }
 
         this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
+
+        return newStakesOutputs;
     }
 
     digestBlockProposal(blockData) {}

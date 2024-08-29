@@ -135,7 +135,7 @@ async function nodeSpecificTest(accounts, wss) {
         // wss broadcast - utxoCache
         wss.clients.forEach(function each(client) {
             if (client.readyState === 1) {
-                client.send( JSON.stringify({ hotData: node.utxoCache }) );
+                client.send( JSON.stringify({ utxoCache: node.utxoCache }) );
             }
         });
 

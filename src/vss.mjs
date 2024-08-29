@@ -5,17 +5,17 @@ import utils from "./utils.mjs";
 /**
  * @typedef {Object} StakeReference
  * @property {string} address
- * @property {string} utxoPointer
+ * @property {string} utxoPath
  */
 /**
  * @param {string} address - Example: "WCHMD65Q7qR2uH9XF5dJ"
- * @param {string} utxoPointer - Example: "0:bdadb7ab:0"
+ * @param {string} utxoPath - Example: "0:bdadb7ab:0"
  * @returns {VssRange}
  */
-const StakeReference = (address, utxoPointer) => {
+const StakeReference = (address, utxoPath) => {
     return {
         address,
-        utxoPointer,
+        utxoPath,
     };
 }
 
@@ -81,7 +81,7 @@ export class Vss {
     constructor() {
         /** Validator Selection Spectrum (VSS)
          * - Can search key with number, will be converted to string.
-         * @example { '100': { address: 'WCHMD65Q7qR2uH9XF5dJ', utxoPointer: '0:bdadb7ab:0' } }
+         * @example { '100': { address: 'WCHMD65Q7qR2uH9XF5dJ', utxoPath: '0:bdadb7ab:0' } }
          * @type {Object<string, StakeReference | undefined>} */
         this.spectrum = {};
         /** @type {StakeReference[]} */
@@ -94,7 +94,7 @@ export class Vss {
      */
     newStake(UTXO, upperBound) {
         const address = UTXO.address;
-        const utxoPointer = UTXO.pointer;
+        const utxoPath = UTXO.utxoPath;
         const amount = UTXO.amount;
         
         if (upperBound) {
@@ -103,7 +103,13 @@ export class Vss {
             const lastUpperBound = spectrumFunctions.getHighestUpperBound(this.spectrum);
             // TODO: manage this case even if it's impossible to reach
             if (lastUpperBound + amount >= utils.blockchainSettings.maxSupply) { throw new Error('VSS: Max supply reached.'); }
-            this.spectrum[lastUpperBound + amount] = StakeReference(address, utxoPointer);
+            this.spectrum[lastUpperBound + amount] = StakeReference(address, utxoPath);
+        }
+    }
+
+    newStakes(UTXOs) {
+        for (let i = 0; i < UTXOs.length; i++) {
+            this.newStake(UTXOs[i]);
         }
     }
 
@@ -123,7 +129,7 @@ export class Vss {
             
             const winningNumber = await spectrumFunctions.hashToIntWithRejection(blockHash, i, maxRange);
             // can't be existing winner
-            if (roundLegitimacies.find(stake => stake.utxoPointer === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPointer)) { continue; }
+            if (roundLegitimacies.find(stake => stake.utxoPath === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPath)) { continue; }
 
             roundLegitimacies.push(spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber));
             

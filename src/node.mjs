@@ -70,7 +70,9 @@ export class FullNode {
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
-        await this.utxoCache.digestConfirmedBlock(blockDataCloneToDigest);
+        const newStakesOutputs = await this.utxoCache.digestConfirmedBlock(blockDataCloneToDigest);
+        if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
+
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.UTXOsByPath);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
 
