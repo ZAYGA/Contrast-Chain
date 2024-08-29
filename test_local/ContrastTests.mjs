@@ -110,7 +110,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToSt
  */
 function refreshAllBalances(node, accounts) {
     for (let i = 0; i < accounts.length; i++) {
-        const { spendableBalance, balance, UTXOs } = node.hotData.getBalanceSpendableAndUTXOs(accounts[i].address);
+        const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(accounts[i].address);
         accounts[i].setBalanceAndUTXOs(balance, UTXOs);
     }
 }
@@ -132,10 +132,10 @@ async function nodeSpecificTest(accounts, wss) {
     for (let i = 0; i < 1_000_000; i++) {
         refreshAllBalances(node, accounts);
         
-        // wss broadcast - hotData
+        // wss broadcast - utxoCache
         wss.clients.forEach(function each(client) {
             if (client.readyState === 1) {
-                client.send( JSON.stringify({ hotData: node.hotData }) );
+                client.send( JSON.stringify({ hotData: node.utxoCache }) );
             }
         });
 
