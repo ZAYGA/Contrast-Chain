@@ -75,7 +75,6 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         }
     }
     // -------------------------------------
-
     getMostLucrativeTransactionsBatch() {
         const maxTotalBytes = utils.blockchainSettings.maxBlockSize;
         const totalBytesTrigger = maxTotalBytes * 0.98;
