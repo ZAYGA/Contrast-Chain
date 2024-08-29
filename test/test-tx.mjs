@@ -1,6 +1,6 @@
 import assert from 'assert';
-import { NodeManager } from '../core/node-manager.mjs';
-import Transaction from '../core/transaction.mjs';
+import { NodeManager } from '../src/node-manager.mjs';
+import Transaction from '../src/transaction.mjs';
 
 describe('Transaction to Block Inclusion Test', function() {
     let nodeManager, node, senderAccount, receiverAccount, miner, validator;

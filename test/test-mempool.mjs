@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import Mempool from '../core/mempool.mjs';
+import Mempool from '../src/mempool.mjs';
 
 describe('Mempool', () => {
   let mempool;

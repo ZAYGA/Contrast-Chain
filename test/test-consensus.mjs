@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { NodeManager } from '../core/node-manager.mjs';
-import Transaction from '../core/transaction.mjs';
+import { NodeManager } from '../src/node-manager.mjs';
+import Transaction from '../src/transaction.mjs';
 describe('Consensus Test with 6 Validators and 6 Miners to Block 2', function() {
   this.timeout(120000); // 2 minutes should be sufficient for 2 blocks
 

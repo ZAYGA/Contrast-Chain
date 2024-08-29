@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import LevelDBStorage from '../core/leveldb-storage.mjs';
-import FlexibleSerializer from '../core/flexible-serializer.mjs';
+import LevelDBStorage from '../src/leveldb-storage.mjs';
+import FlexibleSerializer from '../src/flexible-serializer.mjs';
 import os from 'os';
 import path from 'path';
 

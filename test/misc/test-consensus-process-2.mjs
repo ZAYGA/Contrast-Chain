@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NodeManager } from '../../core/node-manager.mjs';
+import { NodeManager } from '../../src/node-manager.mjs';
 
 describe('Extended Consensus Process', function() {
   this.timeout(60000); // Set a longer timeout for these extended tests

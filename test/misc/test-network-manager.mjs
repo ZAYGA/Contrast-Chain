@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NetworkManager } from '../../core/network-manager.mjs';
+import { NetworkManager } from '../../src/network-manager.mjs';
 
 describe('NetworkManager', () => {
   let networkManager;

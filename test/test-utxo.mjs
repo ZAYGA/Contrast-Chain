@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import fs from 'fs';
-import UTXOManager from '../core/utxo-manager.mjs';
+import UTXOManager from '../src/utxo-manager.mjs';
 
 /**
  * Utility function to clear the test database

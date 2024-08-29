@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { CompressionManager } from '../core/compression-manager.mjs';
+import { CompressionManager } from '../src/compression-manager.mjs';
 
 describe('CompressionManager', () => {
   let compressionManager;

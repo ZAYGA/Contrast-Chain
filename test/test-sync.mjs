@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { SyncManager } from '../core/sync-manager.mjs';
+import { SyncManager } from '../src/sync-manager.mjs';
 
 describe('SyncManager', () => {
   let syncManager;

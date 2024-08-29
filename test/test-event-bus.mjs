@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import EventBus from '../core/event-bus.mjs';
+import EventBus from '../src/event-bus.mjs';
 
 describe('EventBus', () => {
   let eventBus;

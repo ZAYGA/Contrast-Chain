@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import TimeSynchronizer from '../core/time-synchronizer.mjs';
+import TimeSynchronizer from '../src/time-synchronizer.mjs';
 import ntpClient from 'ntp-client';
 
 describe('TimeSynchronizer', () => {

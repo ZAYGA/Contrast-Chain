@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Wallet } from '../core/wallet.mjs';
+import { Wallet } from '../src/wallet.mjs';
 
 describe('Wallet', function() {
   let wallet;

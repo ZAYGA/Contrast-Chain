@@ -5,8 +5,8 @@ import { tcp } from '@libp2p/tcp';
 import { mplex } from '@libp2p/mplex';
 import { noise } from '@chainsafe/libp2p-noise';
 import { multiaddr } from 'multiaddr';
-import { NodeManager } from '../core/node-manager.mjs';
-import { BlockchainNode } from '../core/blockchain-node.mjs';
+import { NodeManager } from '../src/node-manager.mjs';
+import { BlockchainNode } from '../src/blockchain-node.mjs';
 
 describe('Node Bootstrapping', function() {
   this.timeout(10000); // Increase timeout for network operations

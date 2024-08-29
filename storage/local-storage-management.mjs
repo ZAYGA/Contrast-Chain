@@ -1,11 +1,11 @@
 'use strict';
 
-import { BlockData, Block } from "../core/block.mjs";
-import utils from '../core/utils.mjs';
+import { BlockData, Block } from "../src/block.mjs";
+import utils from '../src/utils.mjs';
 
 /**
-* @typedef {import("../core/block.mjs").BlockData} BlockData
-* @typedef {import("../core/node.mjs").FullNode} FullNode
+* @typedef {import("../src/block.mjs").BlockData} BlockData
+* @typedef {import("../src/node.mjs").FullNode} FullNode
 */
 
 const fs = await import('fs');

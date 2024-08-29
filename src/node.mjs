@@ -7,7 +7,7 @@ import { CallStack } from './callstack.mjs';
 import utils from './utils.mjs';
 
 /**
-* @typedef {import("../core/account.mjs").Account} Account
+* @typedef {import("../src/account.mjs").Account} Account
 */
 
 /** Used by MemPool
