@@ -94,7 +94,8 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
         const controlChainPart = loadBlockchainPartLocally(blocksFolder, 'json');
         controlChainIntegrity(chainPart, controlChainPart);
 
-        await node.hotData.digestChainPart(chainPart);
+        const newStakesOutputs = await node.utxoCache.digestChainPart(chainPart);
+        if (newStakesOutputs.length > 0) { node.vss.newStakes(newStakesOutputs); }
         lastBlockData = chainPart[chainPart.length - 1];
 
         blockLoadedCount += chainPart.length;

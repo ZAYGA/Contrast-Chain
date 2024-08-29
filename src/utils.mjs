@@ -80,7 +80,7 @@ class ProgressLogger {
 
         //if (currentStep > this.lastLoggedStep) {
             //this.lastLoggedStep = currentStep;
-            console.log(`[HotData] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
+            console.log(`[utxoCache] digestChain : ${progress.toFixed(1)}% (${current + 1}/${this.total})`);
         //}
     }
 }

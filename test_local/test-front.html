@@ -43,11 +43,11 @@
                 //console.log(data.memPool.transactionsByID);
             }
 
-            if (data.hotData && data.hotData.addressesUTXOs) {
+            if (data.utxoCache && data.utxoCache.addressesUTXOs) {
                 //console.log('received: addressesUTXOs');
-                //console.log(data.hotData.addressesUTXOs);
-                //console.log(JSON.stringify(data.hotData.addressesUTXOs));
-                displayUTXOs(data.hotData);
+                //console.log(data.utxoCache.addressesUTXOs);
+                //console.log(JSON.stringify(data.utxoCache.addressesUTXOs));
+                displayUTXOs(data.utxoCache);
             }
         };
 
@@ -60,7 +60,7 @@
         };
 
 
-        function createAddressesUTXOLine(address, amount, pointer, rule, version) {
+        function createAddressesUTXOLine(address, amount, utxoPath, rule, version) {
             const line = document.createElement('li');
             line.classList.add('utxoLine');
             // add div for each element
@@ -74,10 +74,10 @@
             amountDiv.textContent = amount;
             line.appendChild(amountDiv);
 
-            const utxoPointerDiv = document.createElement('div');
-            utxoPointerDiv.style.width = '160px';
-            utxoPointerDiv.textContent = pointer;
-            line.appendChild(utxoPointerDiv);
+            const utxoPathDiv = document.createElement('div');
+            utxoPathDiv.style.width = '160px';
+            utxoPathDiv.textContent = utxoPath;
+            line.appendChild(utxoPathDiv);
 
             const ruleDiv = document.createElement('div');
             ruleDiv.textContent = rule;
@@ -90,9 +90,9 @@
 
             return line;
         }
-        function displayUTXOs(hotData) {
-            const utxos = hotData.addressesUTXOs;
-            const lastBlockMiningData = hotData.blockMiningData[hotData.blockMiningData.length - 1];
+        function displayUTXOs(utxoCache) {
+            const utxos = utxoCache.addressesUTXOs;
+            const lastBlockMiningData = utxoCache.blockMiningData[utxoCache.blockMiningData.length - 1];
             const blockIndex = lastBlockMiningData.index;
 
             const container = document.getElementById('utxosList');
@@ -110,10 +110,10 @@
 
                 const listElement = document.createElement('ul');
                 listElement.classList.add('utxoList');
-                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'Pointer', 'Rule', 'Version'));
+                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'utxoPath', 'Rule', 'Version'));
 
                 utxos[address].forEach(utxo => {
-                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.pointer, utxo.rule, utxo.version));
+                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.utxoPath, utxo.rule, utxo.version));
                 });
 
                 wrap.appendChild(listElement);
