@@ -30,6 +30,8 @@ class P2PNetwork extends EventEmitter {
         this.peers = new Map();
         this.subscriptions = new Set();
         this.logger = this.initLogger();
+        this.announceIntervalId = null;
+        this.cleanupIntervalId = null;
     }
 
     initLogger() {
@@ -113,8 +115,8 @@ class P2PNetwork extends EventEmitter {
     }
 
     startPeriodicTasks() {
-        setInterval(() => this.announcePeer(), this.options.announceInterval);
-        setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
+        this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
+        this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
     }
 
     handlePeerConnect = ({ detail: peerId }) => {
@@ -138,8 +140,20 @@ class P2PNetwork extends EventEmitter {
         }
     }
 
+
     async stop() {
         if (this.node) {
+            // Clear periodic tasks
+            if (this.announceIntervalId) {
+                clearInterval(this.announceIntervalId);
+                this.announceIntervalId = null;
+            }
+            if (this.cleanupIntervalId) {
+                clearInterval(this.cleanupIntervalId);
+                this.cleanupIntervalId = null;
+            }
+
+            // Stop the libp2p node
             await this.node.stop();
             this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
         }
