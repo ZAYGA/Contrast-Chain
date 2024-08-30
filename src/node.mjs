@@ -176,8 +176,8 @@ export class Node {
         const blockIsTooOld = minerBlockCandidate.index <= index;
         const blockIsAhead = minerBlockCandidate.index > index + 1;
 
-        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
-        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
+        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.lastBlockData.index}`); return false; }
+        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${this.lastBlockData.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
 
         const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
         if (!hashConfInfo) { return false; }

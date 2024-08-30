@@ -59,7 +59,7 @@ export class Miner {
         const blockCandidateClone = Block.cloneBlockData(blockCandidate);
         if (blockCandidateClone.index > this.highestBlockIndex) { 
             this.highestBlockIndex = blockCandidateClone.index;
-            this.cleanupCandidates();
+            //this.cleanupCandidates();
         }
         this.candidates.push(blockCandidateClone);
     }
