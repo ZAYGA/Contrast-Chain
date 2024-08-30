@@ -48,17 +48,14 @@ export class Node {
         this.considerDefinitiveAfter = 6; // in blocks
         this.confirmedBlocks = [];
         this.utxoCacheSnapshots = [];
+        this.lastBlockData = null;
     }
 
     /** @param {Account} account */
     static async load(account, role, p2pOptions = {}, saveBlocksInfo = false) {
         const node = new Node(account, role, p2pOptions);
 
-        const lastBlockData = await localStorage_v1.loadBlockchainLocally(node, saveBlocksInfo);
-        
-        if (lastBlockData) { await node.vss.calculateRoundLegitimacies(lastBlockData.hash); }
-        const myLegitimacy = node.vss.getAddressLegitimacy(node.account.address);
-        node.blockCandidate = await node.#createBlockCandidate(lastBlockData, myLegitimacy);
+       // node.blockCandidate = await node.createBlockCandidate(lastBlockData, myLegitimacy);
 
         return node;
     }
@@ -66,9 +63,22 @@ export class Node {
     async start() {
         await this.p2pNetwork.start();
         this.setupEventListeners();
-        console.log(`Node ${this.id} (${this.role}) started`);
+        console.warn(`Node ${this.id.toString()} , ${this.role.toString()} started`);
         if (this.role === 'miner') {
-            await this.miner.startWithWorker();
+            this.miner.startWithWorker();
+        }
+
+        if (this.role === 'validator') {
+            this.callStack.push(async () => {
+                await this.vss.calculateRoundLegitimacies(this.blockCandidate.hash);
+                const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
+                if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
+
+                const newBlockCandidate = await this.createBlockCandidate(this.blockCandidate, myLegitimacy);
+                this.blockCandidate = newBlockCandidate; // Can be sent to the network
+                console.warn(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
+                this.broadcastBlockProposal(newBlockCandidate);
+            }, true);
         }
     }
 
@@ -115,11 +125,10 @@ export class Node {
     }
 
     async handleNewBlockFromMiners(message) {
+        console.warn(`Node ${this.id} received new block PoW`);
         if (this.role === 'validator') {
-            this.powBlocksQueue.push(message.blockPow);
-
             try {
-                await this.#processPowBlock(blockPow);
+                await this.#processPowBlock(message.blockPow);
             } catch (error) {
                 console.error(`Error processing PoW block:`, error);
             } 
@@ -157,7 +166,7 @@ export class Node {
                     const error = txValidation;
                     throw new Error(`Invalid transaction: ${tx.id} - ${error}`); }
             }
-    
+            this.lastBlockData = blockData;
             return hashConfInfo;
         } catch (error) {
             console.warn(`[NODE] Block Proposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy} | ${error.message}`);
@@ -170,6 +179,7 @@ export class Node {
      * @param {BlockData} minerBlockCandidate
      */
     async #processPowBlock(minerBlockCandidate) {
+        console.log(`[NODE] Processing PoW block: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
         const startTime = Date.now();
         // verify the height
         if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
@@ -215,11 +225,13 @@ export class Node {
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
             if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
 
-            const newBlockCandidate = await this.#createBlockCandidate(minerBlockCandidate, myLegitimacy);
+            const newBlockCandidate = await this.createBlockCandidate();
             this.blockCandidate = newBlockCandidate; // Can be sent to the network
+            console.log(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
             this.broadcastBlockProposal(newBlockCandidate);
         }, true);
-
+        
+        console.warn(`[NODE] Block Proposal accepted: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
         return true;
     }
 
@@ -253,16 +265,19 @@ export class Node {
      * @param {BlockData | undefined} lastBlockData
      * @param {number} myLegitimacy
      */
-    async #createBlockCandidate(lastBlockData, myLegitimacy) {
-         //console.log(`[Node] Creating block candidate from lastHeight: ${lastBlockData.index}`);
+    async createBlockCandidate() {
         const startTime = Date.now();
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
+        
+        const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
 
         // Create the block candidate, genesis block if no lastBlockData
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
-        if (lastBlockData) {
+       
+        if (this.lastBlockData) {
+            console.warn(`[NODE] Creating block candidate from last block: ${this.lastBlockData.index} | ${this.lastBlockData.hash}`);
             const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
-            const clone = Block.cloneBlockData(lastBlockData);
+            const clone = Block.cloneBlockData(this.lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
             blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
@@ -277,7 +292,9 @@ export class Node {
 
         if (blockCandidate.Txs.length > 3) {
             console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
-        }return blockCandidate;
+        }
+        this.blockCandidate = blockCandidate;
+        return blockCandidate;
     }
     /** @param {Transaction} */
     async broadcastTransaction(transaction) {

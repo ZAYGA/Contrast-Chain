@@ -53,6 +53,7 @@ export class Miner {
     }
     /** @param {BlockData} blockCandidate */
     pushCandidate(blockCandidate) {
+        console.log(`[MINER] New block candidate received (Height: ${blockCandidate.index})`);
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
         
@@ -68,7 +69,8 @@ export class Miner {
         this.candidates = this.candidates.filter(candidate => this.highestBlockIndex - candidate.index <= heightTolerance);
     }
     getMostLegitimateBlockCandidate() {
-        if (this.candidates.length === 0) { return null; }
+        if (this.candidates.length === 0) { 
+            return null; }
         const filteredCandidates = this.candidates.filter(candidate => candidate.index === this.highestBlockIndex);
         // the lower the legitimacy, the more legitimate the block is, 0 is the most legitimate
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
@@ -79,15 +81,15 @@ export class Miner {
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {
+      
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
                 if (message.error) { throw new Error(message.error); }
                 try {
+
                     utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
                     this.validPowCallback(message.blockCandidate);
                 } catch (error) {
-                    let errorToSkip = error.message.slice(0, 7) === 'unlucky';
-                    if (!errorToSkip) { console.error(error); }
                 }
                 workersStatus[message.id] = 'free';
             });
@@ -101,12 +103,17 @@ export class Miner {
         }
 
         while (true) {
+      
             await new Promise((resolve) => setTimeout(resolve, 1));
             const id = workersStatus.indexOf('free');
-            if (id === -1) { continue; }
+       
+            if (id === -1) { 
+                continue; }
             
             const blockCandidate = this.getMostLegitimateBlockCandidate();
-            if (!blockCandidate) { continue; }
+            if (!blockCandidate) { 
+                console.warn('No block candidate to mine');
+                continue; }
             
             workersStatus[id] = 'busy';
 

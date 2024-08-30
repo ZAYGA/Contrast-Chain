@@ -21,7 +21,7 @@ describe('Consensus Test', function() {
         // Create nodes (mixture of validators and miners)
         for (let i = 0; i < NUM_NODES; i++) {
             const role = i < NUM_MINERS ? 'miner' : 'validator';
-            const { node, nodeId } = await factory.createNode(accounts[i], { role });
+            const { node, nodeId } = await factory.createNode(accounts[i], role );
             nodes.push({ node, nodeId, account: accounts[i] });
         }
 
@@ -32,9 +32,9 @@ describe('Consensus Test', function() {
                 address: nodeInfo.account.address,
                 rule: 'sig_v1',
                 version: 1,
-                utxoPath: `0:${utils.convert.number.toHex(nodeInfo.account.address.charCodeAt(0))}000000:0`
+                utxoPath: `0:${utils.convert.string.toHex(nodeInfo.account.address).slice(0, 8)}:0`
             };
-            nodeInfo.account.UTXOs.push(utxo);
+            nodeInfo.account.setBalanceAndUTXOs(INITIAL_BALANCE, [utxo]);
             
             // Add the UTXO to all nodes' UTXO caches
             for (const otherNodeInfo of nodes) {
@@ -43,8 +43,14 @@ describe('Consensus Test', function() {
                     otherNodeInfo.node.utxoCache.addressesUTXOs[nodeInfo.account.address] = [];
                 }
                 otherNodeInfo.node.utxoCache.addressesUTXOs[nodeInfo.account.address].push(utxo);
-                otherNodeInfo.node.utxoCache.addressesBalances[nodeInfo.account.address] = utxo.amount;
+                otherNodeInfo.node.utxoCache.addressesBalances[nodeInfo.account.address] = INITIAL_BALANCE;
             }
+        }
+
+        // Sync UTXO caches across all nodes
+        const masterUTXOCache = JSON.parse(JSON.stringify(nodes[0].node.utxoCache));
+        for (let i = 1; i < nodes.length; i++) {
+            nodes[i].node.utxoCache = JSON.parse(JSON.stringify(masterUTXOCache));
         }
 
         // Start all nodes
@@ -68,11 +74,19 @@ describe('Consensus Test', function() {
         const recipient = nodes[1].account;
         const amount = 10000; // 10,000 microConts
 
+        console.log('Sender address:', sender.address);
+        console.log('Recipient address:', recipient.address);
+
         const transaction = await Transaction_Builder.createTransferTransaction(
             sender,
-            [{ recipientAddress: recipient.address, amount }]
+            [{ recipientAddress: recipient.address, amount }],
+            1 // Set a fixed fee per byte for testing
         );
+        console.log('Transaction:', JSON.stringify(transaction, null, 2));
+
         const signedTx = await sender.signTransaction(transaction);
+        console.log('Signed transaction:', JSON.stringify(signedTx, null, 2));
+
         const txJSON = Transaction_Builder.getTransactionJSON(signedTx);
 
         // Broadcast the transaction from the first node
@@ -82,7 +96,7 @@ describe('Consensus Test', function() {
         await new Promise(resolve => setTimeout(resolve, 30000));
 
         // Check if all nodes have reached consensus
-        const heights = nodes.map(n => n.node.currentBlockHeight);
+        const heights = nodes.map(n => n.node.getNodeStatus().currentBlockHeight);
         const consensusHeight = Math.max(...heights);
 
         console.log('Node heights:', heights);
@@ -90,7 +104,7 @@ describe('Consensus Test', function() {
 
         // Verify that all nodes have reached the consensus height
         for (const node of nodes) {
-            expect(node.node.currentBlockHeight).to.equal(consensusHeight);
+            expect(node.node.getNodeStatus().currentBlockHeight).to.equal(consensusHeight);
         }
 
         // Verify that the transaction is included in the blockchain
@@ -107,23 +121,21 @@ describe('Consensus Test', function() {
         expect(senderBalance).to.be.lessThan(INITIAL_BALANCE - amount); // Less than because of fees
     });
 
-  
+    async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const allNodesConnected = nodes.every(node => {
+                const peerCount = node.node.p2pNetwork.getConnectedPeers().length;
+                return peerCount >= Math.min(NUM_NODES - 1, node.node.p2pNetwork.options.maxPeers);
+            });
 
-async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const allNodesConnected = nodes.every(node => {
-            const peerCount = node.node.p2pNetwork.getConnectedPeers().length;
-            return peerCount >= Math.min(NUM_NODES - 1, node.node.p2pNetwork.options.maxPeers);
-        });
+            if (allNodesConnected) {
+                console.log('P2P network is ready');
+                return;
+            }
 
-        if (allNodesConnected) {
-            console.log('P2P network is ready');
-            return;
+            await new Promise(resolve => setTimeout(resolve, interval));
         }
 
-        await new Promise(resolve => setTimeout(resolve, interval));
+        throw new Error('P2P network failed to initialize within the expected time');
     }
-
-    throw new Error('P2P network failed to initialize within the expected time');
-}
 });
