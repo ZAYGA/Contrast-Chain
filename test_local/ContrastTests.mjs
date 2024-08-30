@@ -7,7 +7,7 @@ import contrast from '../src/contrast.mjs';
 */
 
 const testParams = {
-    devmode: true,
+    useDevArgon2: true,
     nbOfAccounts: 100,
     addressType: 'W',
     testTxEachNbBlock: 10,
@@ -142,13 +142,13 @@ async function nodeSpecificTest(accounts, wss) {
     /** @type {Node} */
     const node = await contrast.Node.load(accounts[0]);
     if (!node) { console.error('Failed to load Node.'); return; }
-    node.devmode = testParams.devmode;
-    node.memPool.devmode = testParams.devmode;
-    node.utxoCache.bypassValidation = true;
+    node.useDevArgon2 = testParams.useDevArgon2;
+    node.memPool.useDevArgon2 = testParams.useDevArgon2;
+    //node.utxoCache.bypassValidation = true;
     
     const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
     if (!miner) { console.error('Failed to load Miner.'); return; }
-    miner.devmode = testParams.devmode;
+    miner.useDevArgon2 = testParams.useDevArgon2;
 
     miner.startWithWorker(1);
 
@@ -240,7 +240,7 @@ async function nodeSpecificTest(accounts, wss) {
 export async function test(wss) {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
-    const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.devmode);
+    const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
     if (!wallet) { console.error('Failed to restore wallet.'); return; }
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 

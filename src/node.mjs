@@ -41,7 +41,7 @@ export class Node {
             ...p2pOptions
         });
    
-        this.devmode = false;
+        this.useDevArgon2 = false;
     }
 
     /** @param {Account} validatorAccount */
@@ -113,7 +113,7 @@ export class Node {
             if (blockData.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${blockData.index} - current candidate: ${this.blockCandidate.index}`); }
     
             // verify the hash
-            const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.devmode);
+            const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.useDevArgon2);
             if (blockData.hash !== hex) { throw new Error('Invalid hash'); }
             const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockData);
     
@@ -129,7 +129,7 @@ export class Node {
             for (let i = 0; i < blockData.Txs.length; i++) {
                 const tx = blockData.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
-                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.UTXOsByPath, tx, isCoinBase, this.devmode);
+                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.UTXOsByPath, tx, isCoinBase, this.useDevArgon2);
                 if (!txValidation.success) {
                     const error = txValidation;
                     throw new Error(`Invalid transaction: ${tx.id} - ${error}`); }

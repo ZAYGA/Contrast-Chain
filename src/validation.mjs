@@ -135,7 +135,7 @@ export class Validation {
      * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(UTXOsByPath, transaction, devmode = false) {
+    static async addressOwnershipConfirmation(UTXOsByPath, transaction, useDevArgon2 = false) {
         //const startTime = Date.now();
         const witnessesAddresses = [];
 
@@ -143,7 +143,7 @@ export class Validation {
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const witnessParts = transaction.witnesses[i].split(':');
             const pubKeyHex = witnessParts[1];
-            const argon2Fnc = devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+            const argon2Fnc = useDevArgon2 ? HashFunctions.devArgon2 : HashFunctions.Argon2;
             const derivedAddressBase58 = await utils.addressUtils.deriveAddress(argon2Fnc, pubKeyHex);
             if (witnessesAddresses.includes(derivedAddressBase58)) { throw new Error('Duplicate witness'); }
 
@@ -170,14 +170,14 @@ export class Validation {
      * @param {boolean} isCoinBase
      * @returns {number} - the fee
      */
-    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase, devmode = false) {
+    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase, useDevArgon2 = false) {
         Validation.isConformTransaction(transaction, isCoinBase);
         const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
         await Validation.controlTransactionHash(transaction);
         await Validation.controlAllWitnessesSignatures(transaction);
         if (isCoinBase) { return { fee, success: true }; }
         
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, devmode);
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, useDevArgon2);
 
         return { fee, success: true };
     }

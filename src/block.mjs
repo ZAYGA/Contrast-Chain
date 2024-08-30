@@ -99,7 +99,7 @@ export class Block {
         return await HashFunctions.SHA256(signatureStr);
     }
     /** @param {BlockData} blockData */
-    static async getMinerHash(blockData, devmode = false) {
+    static async getMinerHash(blockData, useDevArgon2 = false) {
         if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
         const signatureHex = await Block.getBlockSignature(blockData);
 
@@ -107,7 +107,7 @@ export class Block {
         const coinbaseNonce = blockData.Txs[0].inputs[0];
         const nonce = `${headerNonce}${coinbaseNonce}`;
 
-        const argon2Fnc = devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+        const argon2Fnc = useDevArgon2 ? HashFunctions.devArgon2 : HashFunctions.Argon2;
         const blockHash = await utils.mining.hashBlockSignature(argon2Fnc, signatureHex, nonce);
         if (!blockHash) { throw new Error('Invalid block hash'); }
 

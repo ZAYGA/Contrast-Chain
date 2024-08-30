@@ -14,7 +14,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         /** @type {Object<string, Transaction>} */
         this.transactionByPath = {};
 
-        this.devmode = false;
+        this.useDevArgon2 = false;
     }
 
     /** @param {Transaction} transaction */
@@ -207,7 +207,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         await Validation.controlAllWitnessesSignatures(transaction);
 
         // Sixth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, this.devmode);
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, this.useDevArgon2);
 
         txInclusionFunction();
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);

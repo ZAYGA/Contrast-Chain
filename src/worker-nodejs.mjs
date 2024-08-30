@@ -17,7 +17,7 @@ import { HashFunctions } from './conCrypto.mjs';
 parentPort.on('message', async (task) => {
 	const id = task.id;
 	const response = { id };
-	const argon2Fnc = task.devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+	const argon2Fnc = task.useDevArgon2 ? HashFunctions.devArgon2 : HashFunctions.Argon2;
     switch (task.type) {
         case 'mine':
 			try {

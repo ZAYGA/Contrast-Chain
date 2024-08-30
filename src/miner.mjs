@@ -20,13 +20,13 @@ export class Miner {
         this.validPowCallback = validPowCallback;
 
         this.highestBlockIndex = 0;
-        this.devmode = false;
+        this.useDevArgon2 = false;
     }
 
     /** @param {BlockData} blockCandidate */
     async minePow(blockCandidate) { // Will probably DEPRECATE
         await this.prepareBlockCandidateBeforeMining(blockCandidate);
-        const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate, this.devmode);
+        const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate, this.useDevArgon2);
         utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate); // throw error if not conform
 
         blockCandidate.hash = hex;
@@ -109,7 +109,7 @@ export class Miner {
             workersStatus[id] = 'busy';
 
             const { signatureHex, nonce } = await this.prepareBlockCandidateBeforeMining(blockCandidate);
-            workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, devmode: this.devmode });
+            workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
         }
     }
 }
