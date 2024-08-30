@@ -290,7 +290,6 @@ export class Node {
     }
 
     async broadcastBlockProposal(blockProposal) {
-        console.log(`[NODE] Broadcasting block proposal: ${blockProposal.index} | ${blockProposal.hash}`);
         await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
     }
 

@@ -132,6 +132,24 @@ function refreshAllBalances(node, accounts) {
     }
 }
 
+async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const allNodesConnected = nodes.every(node => {
+            const peerCount = node.node.p2pNetwork.getConnectedPeers().length;
+            return peerCount >= 1; // We only need one connection in this test
+        });
+
+        if (allNodesConnected) {
+            console.log('P2P network is ready');
+            return;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, interval));
+    }
+
+    throw new Error('P2P network failed to initialize within the expected time');
+}
+
 /** 
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
@@ -139,34 +157,25 @@ function refreshAllBalances(node, accounts) {
 async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
-    /*const node = await contrast.Node.load(accounts[0]);
-    if (!node) { console.error('Failed to load Node.'); return; }*/
-
-    //node.utxoCache.bypassValidation = true;
-    // Create validator node
     const factory = new NodeFactory();
-    const createdNode = await factory.createNode(accounts[0],  'validator' );
-    const node = createdNode.node;
-    node.useDevArgon2 = testParams.useDevArgon2;
-    node.memPool.useDevArgon2 = testParams.useDevArgon2;
-    await node.start();
-    //await node.createBlockCandidate();
-
-    //await node.callStack.breathe();
-    
-    //const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
     const createdMinerNode = await factory.createNode(accounts[1], 'miner' );
-    //createdMinerNode.node.validPowCallback = node.submitPowProposal.bind(node);
+    const validatorNode = { node: createdMinerNode.node, nodeId: accounts[1].address, account: accounts[1] };
     createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
     await createdMinerNode.node.start();
 
-    //createdMinerNode.node.miner.startWithWorker(1);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // Create validator node
+    const createdNode = await factory.createNode(accounts[0],  'validator' );
+    const node = createdNode.node;
+    const minerNode = { node, nodeId: accounts[0].address, account: accounts[0] };
+    node.useDevArgon2 = testParams.useDevArgon2;
+    node.memPool.useDevArgon2 = testParams.useDevArgon2;
+    await node.start();
 
-    //if (!miner) { console.error('Failed to load Miner.'); return; }
-    //miner.useDevArgon2 = testParams.useDevArgon2;
+    await waitForP2PNetworkReady([validatorNode, minerNode]);
 
-    //miner.startWithWorker(1);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };
