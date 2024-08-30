@@ -141,8 +141,8 @@ export class Transaction_Builder {
         const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
         if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
 
-        const validatorHash = await Block.getValidatorHash(blockCandidate);
-        const posInput = `${posStakedAddress}:${validatorHash}`;
+        const posHashHex = await Block.getBlockSignature(blockCandidate, true);
+        const posInput = `${posStakedAddress}:${posHashHex}`;
         const inputs = [ posInput ];
         const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);
         const outputs = [ posOutput ];
@@ -194,8 +194,7 @@ export class Transaction_Builder {
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom([{recipientAddress: stakingAddress, amount}], 'sigOrSlash', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
 
-        const feeSupplement = utils.blockchainSettings.newVssSpaceFee;
-        const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement);
+        const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, amount);
         //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {

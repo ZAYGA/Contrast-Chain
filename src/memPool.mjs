@@ -13,6 +13,8 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.transactionsByFeePerByte = {};
         /** @type {Object<string, Transaction>} */
         this.transactionByPath = {};
+
+        this.devmode = false;
     }
 
     /** @param {Transaction} transaction */
@@ -161,7 +163,6 @@ export class MemPool { // Store transactions that are not yet included in a bloc
      * @param {false | string} replaceExistingTxID
      */
     async pushTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
-        const startTime = Date.now();
         const isCoinBase = false;
 
         // First control format of : amount, address, rule, version, TxID
@@ -171,12 +172,8 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
 
         // Calculate fee per byte
-        const TxWeight = Transaction_Builder.getWeightOfTransaction(transaction);
-        //console.log(`[MEMPOOL] weight: ${TxWeight} bytes`);
-
-        const feePerByte = fee / TxWeight;
-        transaction.byteWeight = TxWeight;
-        transaction.feePerByte = feePerByte.toFixed(6);
+        transaction.byteWeight = Transaction_Builder.getWeightOfTransaction(transaction);
+        transaction.feePerByte = (fee / transaction.byteWeight).toFixed(6);
 
         // Manage the mempool inclusion and collision
         let txInclusionFunction = () => {
@@ -210,7 +207,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         await Validation.controlAllWitnessesSignatures(transaction);
 
         // Sixth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, this.devmode);
 
         txInclusionFunction();
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);

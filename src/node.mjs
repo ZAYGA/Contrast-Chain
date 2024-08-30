@@ -19,7 +19,7 @@ export class Node {
         /** @type {string} */
         this.id = validatorAccount.address;
         /** @type {CallStack} */
-        this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:']);
+        this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
 
         /** @type {Account} */
         this.validatorAccount = validatorAccount;
@@ -34,6 +34,8 @@ export class Node {
         this.utxoCache = new UtxoCache();
         /** @type {Miner} */
         this.miner = new Miner(validatorAccount);
+
+        this.devmode = false;
     }
 
     /** @param {Account} validatorAccount */
@@ -56,29 +58,59 @@ export class Node {
     submitPowProposal(minerBlockCandidate) {
         this.callStack.push(() => this.#blockProposal(minerBlockCandidate));
     }
+    /** @param {BlockData} blockData */
+    async #validateBlockProposal(blockData) {
+        try {
+            // verify the height
+            if (!blockData) { throw new Error('Invalid block candidate'); }
+            if (blockData.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${blockData.index} - current candidate: ${this.blockCandidate.index}`); }
+    
+            // verify the hash
+            const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.devmode);
+            if (blockData.hash !== hex) { throw new Error('Invalid hash'); }
+            const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockData);
+    
+            // control coinBase Amount
+            const coinBaseAmount = blockData.Txs[0].outputs[0].amount;
+            const expectedCoinBase = Block.calculateNextCoinbaseReward(blockData);
+            if (coinBaseAmount !== expectedCoinBase) { throw new Error(`Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`); }
+    
+            // double spend control
+            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.UTXOsByPath, blockData);
+    
+            // verify the transactions
+            for (let i = 0; i < blockData.Txs.length; i++) {
+                const tx = blockData.Txs[i];
+                const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
+                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.UTXOsByPath, tx, isCoinBase, this.devmode);
+                if (!txValidation.success) {
+                    const error = txValidation;
+                    throw new Error(`Invalid transaction: ${tx.id} - ${error}`); }
+            }
+    
+            return hashConfInfo;
+        } catch (error) {
+            console.warn(`[NODE] Block Proposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy} | ${error.message}`);
+            return false;
+        }
+    }
     /** 
      * should be used with the callstack
      * @param {BlockData} minerBlockCandidate
      */
     async #blockProposal(minerBlockCandidate) { // TODO: WILL NEED TO USE BRANCHES
-        if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
-        if (minerBlockCandidate.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${minerBlockCandidate.index} - current candidate: ${this.blockCandidate.index}`); }
-        
-        //TODO : VALIDATE THE BLOCK
-        // TODO verify if coinBase Tx release the correct amount of coins
-        const { hex, bitsArrayAsString } = await Block.getMinerHash(minerBlockCandidate);
-        const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerBlockCandidate);
+        const startTime = Date.now();
+        const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
+        if (!hashConfInfo) { return false; }
 
-        if (minerBlockCandidate.hash !== hex) { throw new Error('Invalid hash'); }
-        
         const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        if (this.blockCandidate.index <= 100) { localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'json'); }
+        if (this.blockCandidate.index <= 200) { localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'json'); }
         const saveResult = localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'bin');
         if (!saveResult.success) { throw new Error(saveResult.message); }
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         
-        const newStakesOutputs = await this.utxoCache.digestConfirmedBlock(blockDataCloneToDigest);
+        const newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
         if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
 
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.UTXOsByPath);
@@ -88,8 +120,10 @@ export class Node {
         const powMinerTx = minerBlockCandidate.Txs[0];
         const address = powMinerTx.outputs[0].address;
         const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
-        //console.log(`[Node] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
-        console.log(`[Node] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust}`);
+        //console.log(`[NODE] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        const timeBetweenPosPow = ((minerBlockCandidate.timestamp - minerBlockCandidate.posTimestamp) / 1000).toFixed(2);
+        console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        //console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s`);
         // -------------------------------------------
 
         this.callStack.push(async () => {
@@ -125,10 +159,8 @@ export class Node {
      */
     async #createBlockCandidate(lastBlockData, myLegitimacy) {
         //console.log(`[Node] Creating block candidate from lastHeight: ${lastBlockData.index}`);
+        const startTime = Date.now();
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
-        if (Txs.length > 1) {
-            console.log(`[Height:${lastBlockData.index}] ${Txs.length} transactions in the block candidate`);
-        }
 
         // Create the block candidate, genesis block if no lastBlockData
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
@@ -147,6 +179,9 @@ export class Node {
         const signedPosFeeTx = await this.validatorAccount.signTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
 
+        if (blockCandidate.Txs.length > 3) {
+            //console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        }
         return blockCandidate;
     }
 }

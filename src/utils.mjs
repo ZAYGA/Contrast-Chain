@@ -19,24 +19,29 @@ const isNode = typeof process !== 'undefined' && process.versions != null && pro
 const cryptoLib = isNode ? crypto : window.crypto;
 
 async function getArgon2Lib() {
-    try {
-        if (argon2) { return argon2; }
-    } catch (error) {
-        // console.log('Argon2 not found, importing...');
-    }
-
     if (isNode) {
         const a = await import('argon2');
         a.limits.timeCost.min = 1; // ByPass the minimum time cost
         return a;
-    } else {
-        const argon2Import = await import('../externalLibs/argon2-ES6.min.mjs');
-        const a = argon2Import.default;
-        window.argon2 = a;
-        return a;
     }
-};
-const argon2Lib = await getArgon2Lib();
+
+    try {
+        if (argon2) { return argon2; }
+    } catch (error) {}
+
+    const argon2Import = await import('../externalLibs/argon2-ES6.min.mjs');
+    window.argon2 = argon2Import.default;
+    return argon2Import.default;
+}; const argon2Lib = await getArgon2Lib();
+
+const WorkerModule = isNode ? (await import('worker_threads')).Worker : Worker;
+function newWorker(scriptPath) {
+    if (utils.isNode) {
+        return new WorkerModule(new URL(scriptPath, import.meta.url));
+    } else {
+        return new WorkerModule(scriptPath, { workerData: { password } });
+    }
+}
 
 const blockchainSettings = {
     targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
@@ -50,7 +55,6 @@ const blockchainSettings = {
     maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
     minTransactionFeePerByte: 1,
-    newVssSpaceFee: 1_000_000,
     //maxBlockSize: 1_000_000, // 1MB
     maxBlockSize: 200_000, // 200KB
 };
@@ -78,7 +82,7 @@ class ProgressLogger {
         const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
         //const currentStep = Math.floor(progress / this.stepSizePercent);
 
-        console.log(`[utxoCache] digestChain : ${progress.toFixed(1)}% (${current}/${this.total})`);
+        console.log(`[LOADING] digestChain : ${progress.toFixed(1)}% (${current}/${this.total})`);
     }
 }
 class AddressTypeInfo {
@@ -879,6 +883,7 @@ const utils = {
     isNode,
     cryptoLib,
     argon2: argon2Lib,
+    newWorker,
     blockchainSettings,
     ProgressLogger,
     addressUtils,

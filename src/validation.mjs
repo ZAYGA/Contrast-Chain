@@ -2,6 +2,10 @@ import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
 import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
 
+/**
+ * @typedef {import("./block.mjs").BlockData} BlockData
+ */
+
 export class Validation {
     /** ==> First validation, low computation cost.
      * 
@@ -15,6 +19,8 @@ export class Validation {
         if (!Array.isArray(transaction.inputs)) { throw new Error('Invalid transaction inputs'); }
         if (!Array.isArray(transaction.outputs)) { throw new Error('Invalid transaction outputs'); }
         if (!Array.isArray(transaction.witnesses)) { throw new Error('Invalid transaction witnesses'); }
+        if (isCoinBase && transaction.inputs.length !== 1) { throw new Error(`Invalid coinbase transaction: ${transaction.inputs.length} inputs`); }
+        if (isCoinBase && transaction.outputs.length !== 1) { throw new Error(`Invalid coinbase transaction: ${transaction.outputs.length} outputs`); }
 
         for (let i = 0; i < transaction.inputs.length; i++) {
             if (isCoinBase && typeof transaction.inputs[i] !== 'string') { throw new Error('Invalid coinbase input'); }
@@ -60,9 +66,11 @@ export class Validation {
     static calculateRemainingAmount(transaction, isCoinBaseOrFeeTx) {
         const inputsAmount = transaction.inputs.reduce((a, b) => a + b.amount, 0);
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
+        if (isCoinBaseOrFeeTx && !isNaN(inputsAmount)) { throw new Error('Invalid coinbase transaction'); }
+        if (isCoinBaseOrFeeTx) { return 0; }
+
         const fee = inputsAmount - outputsAmount;
         if (fee < 0) { throw new Error('Negative transaction'); }
-        if (isCoinBaseOrFeeTx && fee !== 0) { throw new Error('Invalid coinbase transaction'); }
         if (!isCoinBaseOrFeeTx && fee === 0) {
             throw new Error('Invalid transaction: fee = 0'); }
         if (fee % 1 !== 0) { throw new Error('Invalid fee: not integer'); }
@@ -127,14 +135,16 @@ export class Validation {
      * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(UTXOsByPath, transaction) {
+    static async addressOwnershipConfirmation(UTXOsByPath, transaction, devmode = false) {
+        //const startTime = Date.now();
         const witnessesAddresses = [];
 
         // derive witnesses addresses
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const witnessParts = transaction.witnesses[i].split(':');
             const pubKeyHex = witnessParts[1];
-            const derivedAddressBase58 = await utils.addressUtils.deriveAddress(HashFunctions.Argon2, pubKeyHex);
+            const argon2Fnc = devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+            const derivedAddressBase58 = await utils.addressUtils.deriveAddress(argon2Fnc, pubKeyHex);
             if (witnessesAddresses.includes(derivedAddressBase58)) { throw new Error('Duplicate witness'); }
 
             witnessesAddresses.push(derivedAddressBase58);
@@ -150,6 +160,8 @@ export class Validation {
             if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
                 throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); }
         }
+
+        //console.log(`[VALIDATION] .addressOwnershipConfirmation() took ${Date.now() - startTime} ms`);
     }
 
     /** ==> Sequencially call the full set of validations
@@ -158,13 +170,39 @@ export class Validation {
      * @param {boolean} isCoinBase
      * @returns {number} - the fee
      */
-    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase) {
+    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase, devmode = false) {
         Validation.isConformTransaction(transaction, isCoinBase);
         const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
         await Validation.controlTransactionHash(transaction);
         await Validation.controlAllWitnessesSignatures(transaction);
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction);
+        if (isCoinBase) { return { fee, success: true }; }
+        
+        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, devmode);
 
-        return fee;
+        return { fee, success: true };
+    }
+
+    /**
+     * @param {Object<string, TransactionIO>} UTXOsByPath
+     * @param {BlockData} blockData
+     */
+    static isFinalizedBlockDoubleSpending(UTXOsByPath, blockData) {
+        const utxoSpent = {};
+        for (let i = 0; i < blockData.Txs.length; i++) {
+            if (i === 0 || i === 1) { continue; } // coinbase Tx / validator Tx
+            
+            const Tx = blockData.Txs[i];
+            const utxoSpentInTx = {};
+            for (let j = 0; j < Tx.inputs.length; j++) {
+                const utxoPath = Tx.inputs[j].utxoPath;
+
+                if (utxoSpentInTx[utxoPath]) { continue; } // we can see the same utxoPath multiple times in the same Tx
+                utxoSpentInTx[utxoPath] = true;
+
+                if (utxoSpent[utxoPath]) { throw new Error('Double spending'); }
+                if (!UTXOsByPath[utxoPath]) { throw new Error('UTXO not found in utxoCache, already spent?'); }
+                utxoSpent[utxoPath] = true;
+            }
+        }
     }
 }

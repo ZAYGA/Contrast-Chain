@@ -56,8 +56,15 @@ export class CallStack {
     /** Function used in debug for testing only, to avoid stack overflow
      * @param {number} timeout */
     async breathe(timeout = 1000) { // timeout in ms
+        const purgeTimes = [];
         while (this.stack.length > 10) {
+            const startTime = Date.now();
             await this.#executeNextFunction();
+            purgeTimes.push(Date.now() - startTime);
+        }
+        if (purgeTimes.length > 0) {
+            const total = purgeTimes.reduce((a, b) => a + b, 0);
+            console.log(`[CALLSTACK] purged ${purgeTimes.length} fnc | in: ${(total/1000).toFixed(2)}s | avg: ${(total / purgeTimes.length).toFixed(2)} ms`);
         }
 
         if (this.stack.length === 0) { return Promise.resolve(); }

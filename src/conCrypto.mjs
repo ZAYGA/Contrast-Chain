@@ -39,7 +39,7 @@ class Argon2Unified {
  * @param {number} type - 0: Argon2d, 1: Argon2i, 2: Argon2id
  * @param {number} hashLen - Length of the hash in bytes
  */
-export const argon2Hash = async (pass, salt, time = 1, mem = 2**10, parallelism = 1, type = 2, hashLen = 32) => {
+export const argon2Hash = async (pass, salt, time = 1, mem = 2**20, parallelism = 1, type = 2, hashLen = 32) => {
     const params = Argon2Unified.createArgon2Params(pass, salt, time, mem, parallelism, type, hashLen);
     const hashResult = utils.isNode ? await utils.argon2.hash(pass, params) : await utils.argon2.hash(params);
     if (!hashResult) { return false; }
@@ -50,8 +50,25 @@ export const argon2Hash = async (pass, salt, time = 1, mem = 2**10, parallelism 
 
     return result;
 }
+const devArgon2Hash = async (pass, salt, time = 1, mem = 2**10, parallelism = 1, type = 2, hashLen = 32) => {
+    const pauseBasis = utils.isNode ? 56 : 56 * 8; // ms - Ryzen 5900HX
+    const memBasis = 2**16; // KiB
+    const effectivePause = Math.round(pauseBasis * (mem / memBasis));
+    await new Promise(resolve => setTimeout(resolve, effectivePause)); // Simulate a slow hash
+
+    const params = Argon2Unified.createArgon2Params(pass, salt, time, 2**10, parallelism, type, hashLen);
+    const hashResult = utils.isNode ? await utils.argon2.hash(pass, params) : await utils.argon2.hash(params);
+    if (!hashResult) { return false; }
+    
+    const encoded = hashResult.encoded ? hashResult.encoded : hashResult;
+    const result = Argon2Unified.standardizeArgon2FromEncoded(encoded);
+    if (!result) { return false; }
+
+    return result;
+}
 export class HashFunctions {
     static Argon2 = argon2Hash;
+    static devArgon2 = devArgon2Hash;
 
     static async SHA256(message) {
         const messageUint8 = utils.convert.string.toUint8Array(message);

@@ -7,9 +7,10 @@ import contrast from '../src/contrast.mjs';
 */
 
 const testParams = {
+    devmode: true,
     nbOfAccounts: 100,
     addressType: 'W',
-    testTxEachNbBlock: 10
+    testTxEachNbBlock: 10,
 }
 
 /** Simple user to user transaction
@@ -37,6 +38,9 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
 * @param {number} nbOfUsers
  */
 async function userSendToNextUser(node, accounts) {
+    let startTime = Date.now();
+
+    const signedTxsJSON = [];
     for (let i = 0; i < accounts.length; i++) {
         const senderAccount = accounts[i];
         const receiverAccount = i === accounts.length - 1 ? accounts[0] : accounts[i + 1];
@@ -44,13 +48,21 @@ async function userSendToNextUser(node, accounts) {
         const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
         const { signedTxJSON, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
         if (signedTxJSON) {
+            signedTxsJSON.push(signedTxJSON);
             //console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
             //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
-            node.addTransactionJSONToMemPool(signedTxJSON);
         } else {
             console.log(error);
         }
     }
+    const timeToCreateAndSignAllTxs = Date.now() - startTime; startTime = Date.now();
+
+    for (let i = 0; i < signedTxsJSON.length; i++) {
+        node.addTransactionJSONToMemPool(signedTxsJSON[i]);
+    }
+    const timeToPushAllTxsToMempool = Date.now() - startTime;
+
+    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeToPush: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
 }
 /** User send to all other accounts
 * @param {Node} node
@@ -58,29 +70,35 @@ async function userSendToNextUser(node, accounts) {
 * @param {number} senderAccountIndex
  */
 async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
-    const senderAccount = accounts[senderAccountIndex];
-    const transfers = [];
-    for (let i = 0; i < accounts.length; i++) {
-        if (i === senderAccountIndex) { continue; }
-        const amount = Math.floor(Math.random() * (1_000_000) + 1_100_000);
-        const transfer = { recipientAddress: accounts[i].address, amount };
-        transfers.push(transfer);
+    try {
+        //const startTime = Date.now();
+        const senderAccount = accounts[senderAccountIndex];
+        const transfers = [];
+        for (let i = 0; i < accounts.length; i++) {
+            if (i === senderAccountIndex) { continue; }
+            const amount = Math.floor(Math.random() * (1_000_000) + 1_100_000);
+            const transfer = { recipientAddress: accounts[i].address, amount };
+            transfers.push(transfer);
+        }
+        const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
+        const signedTx = await senderAccount.signTransaction(transaction);
+        const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx)
+    
+        if (signedTxJSON) {
+            //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
+            //console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+            const fee = JSON.parse(signedTxJSON)
+            if (fee <= 0) {
+                console.log('[TEST] Transaction fee is invalid.');};
+                
+            node.addTransactionJSONToMemPool(signedTxJSON);
+        } else {
+            console.log(error);
+        }
+    } catch (error) {
+        console.log(`[TEST-USTAO] Can't send to all others: ${error.message}`);
     }
-    const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
-    const signedTx = await senderAccount.signTransaction(transaction);
-    const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx)
-
-    if (signedTxJSON) {
-        //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
-        //console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
-        const fee = JSON.parse(signedTxJSON)
-        if (fee <= 0) {
-            console.log('[TEST] Transaction fee is invalid.');};
-            
-        node.addTransactionJSONToMemPool(signedTxJSON);
-    } else {
-        console.log(error);
-    }
+    //console.log(`[TEST-USTAO] NbTxs: ${transfers.length} | Time: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 }
 /** User stakes in VSS
  * @param {Node} node
@@ -124,14 +142,29 @@ async function nodeSpecificTest(accounts, wss) {
     /** @type {Node} */
     const node = await contrast.Node.load(accounts[0]);
     if (!node) { console.error('Failed to load Node.'); return; }
+    node.devmode = testParams.devmode;
+    node.memPool.devmode = testParams.devmode;
     
-    const miner = new contrast.Miner(accounts[1]);
+    const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
     if (!miner) { console.error('Failed to load Miner.'); return; }
+    miner.devmode = testParams.devmode;
+
+    miner.startWithWorker(1);
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
+    let lastBlockIndexAndTime = { index: 0, time: Date.now() };
     
     for (let i = 0; i < 1_000_000; i++) {
+        /*if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block
+            const timeDiff = Date.now() - lastBlockIndexAndTime.time;
+            console.log(`[TEST] New block: ${node.blockCandidate.index} | Time: ${timeDiff}ms`);
+            lastBlockIndexAndTime = { index: node.blockCandidate.index, time: Date.now() };
+        }*/
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         refreshAllBalances(node, accounts);
+        const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
+        miner.pushCandidate(blockCandidateClone);
         
         // wss broadcast - utxoCache
         wss.clients.forEach(function each(client) {
@@ -141,7 +174,7 @@ async function nodeSpecificTest(accounts, wss) {
         });
 
         // user send to multiple users
-        if (node.blockCandidate.index > 0 && (node.blockCandidate.index - 1) % 7 === 0) {
+        if (node.blockCandidate.index > 7 && (node.blockCandidate.index - 1) % 7 === 0) {
             try {
                 await userSendToAllOthers(node, accounts);
             } catch (error) {
@@ -150,9 +183,9 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // user stakes in VSS
-        if (node.blockCandidate.index > 9 && node.blockCandidate.index < 20) { // < 20
+        if (node.blockCandidate.index > 24 && node.blockCandidate.index < 35) {
             try {
-                const senderAccountIndex = node.blockCandidate.index - 10;
+                const senderAccountIndex = node.blockCandidate.index - 25;
                 await userStakeInVSS(node, accounts, senderAccountIndex);
             } catch (error) {
                 console.error(error);
@@ -160,7 +193,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // simple user to user transactions
-        if (node.blockCandidate.index > 25 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
+        if (node.blockCandidate.index > 50 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
             try {
                 await userSendToUser(node, accounts);
             } catch (error) {
@@ -184,7 +217,7 @@ async function nodeSpecificTest(accounts, wss) {
             }
         });
 
-        try { // JUST MINING
+        /*try { // JUST MINING
             // like we receive a block from network
             const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
             const { validBlockCandidate } = await miner.minePow(blockCandidateClone);
@@ -195,7 +228,7 @@ async function nodeSpecificTest(accounts, wss) {
             const errorIncludesPOWerror = error.message.includes('unlucky--'); // mining invalid nonce/hash
             const errorSkippingLog = ['Not valid nonce.'];
             if (errorIncludesPOWerror === false && errorSkippingLog.includes(error.message) === false) { console.error(error.stack); }
-        }
+        }*/
 
         await node.callStack.breathe();
     }
@@ -206,7 +239,7 @@ async function nodeSpecificTest(accounts, wss) {
 export async function test(wss) {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
-    const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00");
+    const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.devmode);
     if (!wallet) { console.error('Failed to restore wallet.'); return; }
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 

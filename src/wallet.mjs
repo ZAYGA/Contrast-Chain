@@ -15,7 +15,7 @@ class generatedAccount {
     seedModifierHex = '';
 }
 export class Wallet {
-    constructor(masterHex) {
+    constructor(masterHex, devmode = false) {
         /** @type {string} */
         this.masterHex = masterHex; // 30 bytes - 60 chars
         /** @type {Object<string, Account[]>} */
@@ -34,20 +34,24 @@ export class Wallet {
             P: [],
             U: []
         };
+
+        this.devmode = devmode;
     }
-    static async restore(mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") {
+    static async restore(mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", devmode = false) {
         const argon2HashResult = await HashFunctions.Argon2(mnemonicHex, "Contrast's Salt Isnt Pepper But It Is Tasty", 27, 1024, 1, 2, 26);
         if (!argon2HashResult) { return false; }
 
-        return new Wallet(argon2HashResult.hex);
+        return new Wallet(argon2HashResult.hex, devmode);
     }
     saveAccounts() {
         const id = this.masterHex.slice(0, 6);
-        localStorage_v1.saveJSON(`accounts/${id}_accounts`, this.accountsGenerated);
+        const folder = this.devmode ? `accounts(dev)/${id}_accounts` : `accounts/${id}_accounts`;
+        localStorage_v1.saveJSON(folder, this.accountsGenerated);
     }
     loadAccounts() {
         const id = this.masterHex.slice(0, 6);
-        const accountsGenerated = localStorage_v1.loadJSON(`accounts/${id}_accounts`);
+        const folder = this.devmode ? `accounts(dev)/${id}_accounts` : `accounts/${id}_accounts`;
+        const accountsGenerated = localStorage_v1.loadJSON(folder);
         if (!accountsGenerated) { return false; }
 
         this.accountsGenerated = accountsGenerated;
@@ -115,7 +119,8 @@ export class Wallet {
         return keyPair;
     }
     async #deriveAccount(keyPair, desiredPrefix = "C") {
-        const addressBase58 = await utils.addressUtils.deriveAddress(HashFunctions.Argon2, keyPair.pubKeyHex);
+        const argon2Fnc = this.devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+        const addressBase58 = await utils.addressUtils.deriveAddress(argon2Fnc, keyPair.pubKeyHex);
         if (!addressBase58) { throw new Error('Failed to derive address'); }
 
         if (addressBase58.substring(0, 1) !== desiredPrefix) { return false; }

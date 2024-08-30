@@ -99,7 +99,7 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
 
         controlChainIntegrity(chainPart, controlChainPart);
 
-        const newStakesOutputs = await node.utxoCache.digestChainPart(chainPart);
+        const newStakesOutputs = await node.utxoCache.digestConfirmedBlocks(chainPart);
         if (newStakesOutputs.length > 0) { node.vss.newStakes(newStakesOutputs); }
         lastBlockData = chainPart[chainPart.length - 1];
 
@@ -278,8 +278,11 @@ function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
 function saveJSON(fileName, data) {
     try {
         const filePath = path.join(filesStoragePath, `${fileName}.json`);
+        const subFolder = path.dirname(filePath);
+        if (!fs.existsSync(subFolder)) { fs.mkdirSync(subFolder); }
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     } catch (error) {
+        console.error(error.stack);
         return false;
     }
 }

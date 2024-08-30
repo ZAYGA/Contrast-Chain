@@ -85,32 +85,33 @@ export class Block {
         const txsIDStr = txsIDStrArray.join('');
         return await HashFunctions.SHA256(txsIDStr);
     };
-    /** @param {BlockData} blockData */
-    static async getMinerHash(blockData) {
-        if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
-        const txsHash = await Block.getBlockTxsHash(blockData);
+    /**
+     * @param {BlockData} blockData
+     * @param {boolean} isPosHash - if true, exclude coinbase/pos Txs and blockTimestamp
+     * @returns {Promise<string>} signature Hex
+     */
+    static async getBlockSignature(blockData, isPosHash = false) {
+        const txsHash = await Block.getBlockTxsHash(blockData, isPosHash);
         const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp } = blockData;
-        const signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
-        const signatureHex = await HashFunctions.SHA256(signatureStr);
+        let signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
+        if (!isPosHash) { signatureStr += blockData.timestamp; }
+
+        return await HashFunctions.SHA256(signatureStr);
+    }
+    /** @param {BlockData} blockData */
+    static async getMinerHash(blockData, devmode = false) {
+        if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
+        const signatureHex = await Block.getBlockSignature(blockData);
 
         const headerNonce = blockData.nonce;
         const coinbaseNonce = blockData.Txs[0].inputs[0];
-        const nonce = `${headerNonce.Hex}${coinbaseNonce.Hex}`;
+        const nonce = `${headerNonce}${coinbaseNonce}`;
 
-        const newBlockHash = await utils.mining.hashBlockSignature(HashFunctions.Argon2, signatureHex, nonce);
-        if (!newBlockHash) { throw new Error('Invalid block hash'); }
+        const argon2Fnc = devmode ? HashFunctions.devArgon2 : HashFunctions.Argon2;
+        const blockHash = await utils.mining.hashBlockSignature(argon2Fnc, signatureHex, nonce);
+        if (!blockHash) { throw new Error('Invalid block hash'); }
 
-        return { hex: newBlockHash.hex, bitsArrayAsString: newBlockHash.bitsArray.join('') };
-    }
-    /** @param {BlockData} blockData */
-    static async getValidatorHash(blockData) {
-        // posTx and coinbaseTx doesn't exist at this point, then we ensure that they are not included in the hash
-        const txsHash = await Block.getBlockTxsHash(blockData, true);
-
-        const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp } = blockData;
-        const signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
-
-        return await HashFunctions.SHA256(signatureStr);
+        return { hex: blockHash.hex, bitsArrayAsString: blockHash.bitsArray.join('') };
     }
     /**
      * @param {BlockData} blockData

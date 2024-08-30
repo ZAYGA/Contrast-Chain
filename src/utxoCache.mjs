@@ -15,7 +15,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         this.branches = {};
 
         /** @type {BlockMiningData[]} */
-        this.blockMiningData = []; // just for .csv mining datas research
+        this.blockMiningData = []; // .csv mining datas research
     }
 
     #calculateTotalOfBalances() {
@@ -106,8 +106,50 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
         return newStakesOutputs;
     }
+    /**
+    * @param {number} blockIndex
+    * @param {Transaction[]} Txs
+    */
+    #digestBlockTransactions(blockIndex, Txs) {
+        if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
+        //console.log(`Digesting block ${blockIndex} with ${Txs.length} transactions`);
+        const newStakesOutputs = [];
+
+        for (let i = 0; i < Txs.length; i++) {
+            const transaction = Txs[i];
+            this.#digestTransactionInputs(transaction, i); // Reverse function's call ?
+            const newStakesOutputsFromTx = this.#digestTransactionOutputs(blockIndex, transaction);
+            newStakesOutputs.push(...newStakesOutputsFromTx);
+        }
+
+        return newStakesOutputs;
+    }
 
     // Public methods
+    /** @param {BlockData[]} blocksData */
+    async digestConfirmedBlocks(blocksData) {
+        const newStakesOutputs = [];
+        for (let i = 0; i < blocksData.length; i++) {
+            const blockData = blocksData[i];
+            const Txs = blockData.Txs;
+            const newStakesOutputsFromBlock = this.#digestBlockTransactions(blockData.index, Txs);
+    
+            const supplyFromBlock = blockData.supply;
+            const coinBase = blockData.coinBase;
+            const totalSupply = supplyFromBlock + coinBase;
+            const totalOfBalances = this.#calculateTotalOfBalances();
+    
+            if (totalOfBalances !== totalSupply) {
+                console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
+                throw new Error('Invalid total of balances'); 
+            }
+    
+            this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
+            newStakesOutputs.push(...newStakesOutputsFromBlock);
+        }
+
+        return newStakesOutputs;
+    }
     /** @param {string} address */
     getBalanceAndUTXOs(address) {
         // clone values to avoid modification
@@ -139,56 +181,6 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         }
 
         return { spendableBalance, balance, UTXOs };
-    }
-    /**
-    * @param {number} blockIndex
-    * @param {Transaction[]} Txs
-    */
-    #digestBlockTransactions(blockIndex, Txs) {
-        if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
-        //console.log(`Digesting block ${blockIndex} with ${Txs.length} transactions`);
-        const newStakesOutputs = [];
-
-        for (let i = 0; i < Txs.length; i++) {
-            const transaction = Txs[i];
-            this.#digestTransactionInputs(transaction, i); // Reverse function's call ?
-            const newStakesOutputsFromTx = this.#digestTransactionOutputs(blockIndex, transaction);
-            newStakesOutputs.push(...newStakesOutputsFromTx);
-        }
-
-        return newStakesOutputs;
-    }
-    /** @param {BlockData[]} chainPart */
-    async digestChainPart(chainPart) {
-        const newStakesOutputs = [];
-        for (let i = 0; i < chainPart.length; i++) {
-            const blockData = chainPart[i];
-            const newStakesOutputsFromBlock = await this.digestConfirmedBlock(blockData);
-            newStakesOutputs.push(...newStakesOutputsFromBlock);
-        }
-        return newStakesOutputs;
-    }
-    /** @param {BlockData} blockData */
-    async digestConfirmedBlock(blockData) {
-        const Txs = blockData.Txs;
-        const newStakesOutputs = this.#digestBlockTransactions(blockData.index, Txs);
-
-        const supplyFromBlock = blockData.supply;
-        const coinBase = blockData.coinBase;
-        const totalSupply = supplyFromBlock + coinBase;
-        const totalOfBalances = this.#calculateTotalOfBalances();
-
-        const currencySupply = utils.convert.number.formatNumberAsCurrency(totalSupply);
-        const currencyBalances = utils.convert.number.formatNumberAsCurrency(totalOfBalances);
-
-        if (totalOfBalances !== totalSupply) {
-            console.info(`supplyFromBlock+coinBase: ${currencySupply} - totalOfBalances: ${currencyBalances}`);
-            throw new Error('Invalid total of balances'); 
-        }
-
-        this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
-
-        return newStakesOutputs;
     }
 
     digestBlockProposal(blockData) {}
