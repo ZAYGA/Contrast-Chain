@@ -19,7 +19,7 @@ parentPort.on('message', async (task) => {
 
 				task.blockCandidate.hash = blockHash.hex;
 				response.blockCandidate = task.blockCandidate;
-				response.bitsArrayAsString = blockHash.bitsArray.join('')
+				response.bitsArrayAsString = blockHash.bitsArray.join('');
 			  } catch (err) {
 				response.error = err.message;
 				return;

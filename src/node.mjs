@@ -64,8 +64,6 @@ export class Node {
         await this.p2pNetwork.start();
         this.setupEventListeners();
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
-
-
     }
 
     async startMining() {

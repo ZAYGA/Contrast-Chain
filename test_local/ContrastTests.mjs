@@ -160,22 +160,23 @@ async function nodeSpecificTest(accounts, wss) {
     const factory = new NodeFactory();
     const createdMinerNode = await factory.createNode(accounts[1], 'miner' );
     const minerNode = createdMinerNode.node;
-    createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
-    createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
+    //createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
+    //createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
     await createdMinerNode.node.start();
     // Create validator node
     const createdNode = await factory.createNode(accounts[0],  'validator' );
     const validatorNode = createdNode.node;
 
-    validatorNode.useDevArgon2 = testParams.useDevArgon2;
-    validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
+    //validatorNode.useDevArgon2 = testParams.useDevArgon2;
+    //validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
     await validatorNode.start();
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
-
+    //minerNode.miner.pushCandidate(validatorNode.blockCandidate);
 
     minerNode.startMining();
-    validatorNode.createBlockCandidateAndBroadcast();
+
+    await validatorNode.createBlockCandidateAndBroadcast();
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -185,6 +186,7 @@ async function nodeSpecificTest(accounts, wss) {
     
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
+            //minerNode.miner.pushCandidate(validatorNode.blockCandidate);
             lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
             txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
             
@@ -201,8 +203,6 @@ async function nodeSpecificTest(accounts, wss) {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         refreshAllBalances(validatorNode, accounts);
-
-        minerNode.miner.pushCandidate(validatorNode.blockCandidate);
         
         // user send to multiple users
         if (validatorNode.blockCandidate.index > 7 && (validatorNode.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {

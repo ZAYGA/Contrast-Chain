@@ -88,8 +88,7 @@ export class Miner {
                     utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
                     this.validPowCallback(message.blockCandidate);
                 } catch (error) {
-                    if (error.message.includes('unlucky')) { return; }
-                    console.error('error');
+                    console.error('prout');
                 }
                 workersStatus[message.id] = 'free';
             });
@@ -103,17 +102,16 @@ export class Miner {
         }
 
         while (true) {
-      
             await new Promise((resolve) => setTimeout(resolve, 1));
             const id = workersStatus.indexOf('free');
        
-            if (id === -1) { 
-                continue; }
+            if (id === -1) { continue; }
             
             const blockCandidate = this.getMostLegitimateBlockCandidate();
             if (!blockCandidate) { 
                 console.warn('No block candidate to mine');
-                continue; }
+                continue; 
+            }
             
             workersStatus[id] = 'busy';
 
