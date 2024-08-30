@@ -131,10 +131,6 @@ function refreshAllBalances(node, accounts) {
     }
 }
 
-function buildNodeAsWorker(account, p2pOptions = {}) {
-
-}
-
 /** 
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
