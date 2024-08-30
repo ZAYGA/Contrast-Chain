@@ -4,7 +4,8 @@
   "description": "The ultra lightweight L1.",
   "main": "",
   "scripts": {
-    "test": "mocha --experimental-modules"
+    "test": "mocha --experimental-modules",
+    "test_local": "node ./test_local/test-NodeJS-FrontES6.mjs"
   },
   "keywords": [],
   "author": "Doc. Pink Parrot",

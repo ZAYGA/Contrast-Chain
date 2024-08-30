@@ -45,8 +45,8 @@ export class Node {
     }
 
     /** @param {Account} validatorAccount */
-    static async load(validatorAccount, minerAccount, p2pOptions = {}, saveBlocksInfo = false) {
-        const node = new Node(validatorAccount, minerAccount, p2pOptions);
+    static async load(validatorAccount, p2pOptions = {}, saveBlocksInfo = false) {
+        const node = new Node(validatorAccount, p2pOptions);
 
         const lastBlockData = await localStorage_v1.loadBlockchainLocally(node, saveBlocksInfo);
         
