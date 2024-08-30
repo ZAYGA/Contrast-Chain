@@ -30,6 +30,8 @@ describe('Two-Node Mining Test', function() {
 
         // Wait for the P2P network to be ready
         await waitForP2PNetworkReady([validatorNode, minerNode]);
+
+        minerNode.startMining();
     });
 
     after(async function() {

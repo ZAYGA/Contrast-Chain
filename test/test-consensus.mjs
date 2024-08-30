@@ -36,6 +36,13 @@ describe('Consensus Test', function() {
             };
             nodeInfo.account.setBalanceAndUTXOs(INITIAL_BALANCE, [utxo]);
             
+
+            // start mining on all miners nodes 
+            if (nodeInfo.node.role === 'miner') {
+                await nodeInfo.node.startMining();
+            }
+
+
             // Add the UTXO to all nodes' UTXO caches
             for (const otherNodeInfo of nodes) {
                 otherNodeInfo.node.utxoCache.UTXOsByPath[utxo.utxoPath] = utxo;
@@ -91,6 +98,13 @@ describe('Consensus Test', function() {
 
         // Broadcast the transaction from the first node
         await nodes[0].node.broadcastTransaction(txJSON);
+
+        
+
+        // get a random validator node
+        const validatorNode = nodes.find(node => node.node.role === 'validator');
+        console.log('Validator node:', validatorNode.nodeId);
+        validatorNode.node.createBlockCandidateAndBroadcast();
 
         // Wait for the transaction to be included in a block and propagated
         await new Promise(resolve => setTimeout(resolve, 30000));
