@@ -42,6 +42,9 @@ export class Node {
         });
    
         this.useDevArgon2 = false;
+        this.considerDefinitiveAfter = 6; // in blocks
+        this.confirmedBlocks = [];
+        this.utxoCacheSnapshots = [];
     }
 
     /** @param {Account} validatorAccount */
@@ -66,12 +69,10 @@ export class Node {
         this.setupEventListeners();
         console.log(`Node ${this.id} started`);
     }
-
     async stop() {
         await this.p2pNetwork.stop();
         console.log(`Node ${this.id} stopped`);
     }
-
     setupEventListeners() {
         this.p2pNetwork.on('peer:connect', (peerId) => {
             console.log(`Node ${this.id} connected to peer ${peerId}`);
@@ -104,14 +105,9 @@ export class Node {
     submitPowProposal(minerBlockCandidate) {
         this.callStack.push(() => this.#blockProposal(minerBlockCandidate));
     }
-
     /** @param {BlockData} blockData */
     async #validateBlockProposal(blockData) {
         try {
-            // verify the height
-            if (!blockData) { throw new Error('Invalid block candidate'); }
-            if (blockData.index !== this.blockCandidate.index) { throw new Error(`Invalid block index: ${blockData.index} - current candidate: ${this.blockCandidate.index}`); }
-    
             // verify the hash
             const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.useDevArgon2);
             if (blockData.hash !== hex) { throw new Error('Invalid hash'); }
@@ -147,31 +143,44 @@ export class Node {
      */
     async #blockProposal(minerBlockCandidate) { // TODO: WILL NEED TO USE BRANCHES
         const startTime = Date.now();
+        // verify the height
+        if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
+        if (minerBlockCandidate.index < this.blockCandidate.index) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
+        if (minerBlockCandidate.index > this.blockCandidate.index) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
+
         const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
         if (!hashConfInfo) { return false; }
 
-        const blockDataCloneToSave = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        if (this.blockCandidate.index <= 200) { localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'json'); }
-        const saveResult = localStorage_v1.saveBlockDataLocally(this.id, blockDataCloneToSave, 'bin');
-        if (!saveResult.success) { throw new Error(saveResult.message); }
-
         const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-        
-        const newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
-        if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
+
+        let newStakesOutputs;
+        try {
+            newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
+        } catch (error) {
+            console.warn(`[NODE] Block Proposal rejected: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy} | ${error.message}
+----------------------
+-> Rollback UTXO cache
+----------------------`);
+            this.utxoCache.rollbackUtxoCacheSnapshot(this.utxoCacheSnapshots.pop());
+            return false;
+        }
+        if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }   
 
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.UTXOsByPath);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
 
+        this.#digestBlock(minerBlockCandidate); // will store the block in ram, and save older blocks if ahead enough
+        this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
+        if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
+
         // simple log for debug ----------------------
-        const powMinerTx = minerBlockCandidate.Txs[0];
-        const address = powMinerTx.outputs[0].address;
-        const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
+        //const powMinerTx = minerBlockCandidate.Txs[0];
+        //const address = powMinerTx.outputs[0].address;
+        //const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
         //console.log(`[NODE] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
         const timeBetweenPosPow = ((minerBlockCandidate.timestamp - minerBlockCandidate.posTimestamp) / 1000).toFixed(2);
         console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         //console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s`);
-        // -------------------------------------------
 
         this.callStack.push(async () => {
             await this.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
@@ -183,6 +192,19 @@ export class Node {
         }, true);
 
         return true;
+    }
+    /** @param {BlockData} minerBlockCandidate */
+    #digestBlock(minerBlockCandidate) {
+        const blockDataCloneToStore = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
+        this.confirmedBlocks.push(blockDataCloneToStore); // store the block in ram
+        
+        if (this.confirmedBlocks.length <= this.considerDefinitiveAfter) { return; }
+
+        // save the block in local storage definitively
+        const blockToDefinitivelySave = this.confirmedBlocks.shift();
+        if (this.blockCandidate.index <= 200) { localStorage_v1.saveBlockDataLocally(this.id, blockToDefinitivelySave, 'json'); }
+        const saveResult = localStorage_v1.saveBlockDataLocally(this.id, blockToDefinitivelySave, 'bin');
+        if (!saveResult.success) { throw new Error(saveResult.message); }
     }
 
     /** 

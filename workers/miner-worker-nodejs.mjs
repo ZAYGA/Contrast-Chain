@@ -1,18 +1,11 @@
-/*const { parentPort } = require('worker_threads');
-const { CallStack } = require('./callstack.mjs');
-const { Miner } = require('./miner.mjs');*/
 import { parentPort } from 'worker_threads';
-import utils from './utils.mjs';
-import { HashFunctions } from './conCrypto.mjs';
-
-//const callStack = CallStack.buildNewStack([]);
+import utils from '../src/utils.mjs';
+import { HashFunctions } from '../src/conCrypto.mjs';
 
 // just testing ES6 browser worker: 
 
-// The nodejs worker is able to:
+// The miner worker is able to:
 // mine POW of candidate blocks
-// treat a blockProposal from a miner.
-
 
 parentPort.on('message', async (task) => {
 	const id = task.id;

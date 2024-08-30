@@ -1,22 +1,24 @@
+import localStorage_v1 from '../storage/local-storage-management.mjs';
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData } from './block.mjs';
 import utils from './utils.mjs';
 
+/**
+* @typedef {import("./block.mjs").BlockData} BlockData
+*/
+
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
-    constructor() {
+    constructor(addressesUTXOs = {}, addressesBalances = {}, UTXOsByPath = {}, blockMiningData = []) {
         this.bypassValidation = false;
         /** @type {Object<string, TransactionIO[]>} */
-        this.addressesUTXOs = {};
+        this.addressesUTXOs = addressesUTXOs;
         /** @type {Object<string, number>} */
-        this.addressesBalances = {};
+        this.addressesBalances = addressesBalances;
         /** @type {Object<string, TransactionIO>} */
-        this.UTXOsByPath = {};
-
-        /** @type {Object<string, object>} */
-        this.branches = {};
+        this.UTXOsByPath = UTXOsByPath; // UTXO by utxoPath
 
         /** @type {BlockMiningData[]} */
-        this.blockMiningData = []; // .csv mining datas research
+        this.blockMiningData = blockMiningData; // .csv mining datas research
     }
 
     #calculateTotalOfBalances() {
@@ -182,6 +184,20 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         }
 
         return { spendableBalance, balance, UTXOs };
+    }
+    getUtxoCacheSnapshot() {
+        return {
+            addressesUTXOs: JSON.parse(JSON.stringify(this.addressesUTXOs)),
+            addressesBalances: JSON.parse(JSON.stringify(this.addressesBalances)),
+            UTXOsByPath: JSON.parse(JSON.stringify(this.UTXOsByPath)),
+            blockMiningData: JSON.parse(JSON.stringify(this.blockMiningData))
+        };
+    }
+    rollbackUtxoCacheSnapshot(snapshot) {
+        this.addressesUTXOs = snapshot.addressesUTXOs;
+        this.addressesBalances = snapshot.addressesBalances;
+        this.UTXOsByPath = snapshot.UTXOsByPath;
+        this.blockMiningData = snapshot.blockMiningData;
     }
 
     digestBlockProposal(blockData) {}

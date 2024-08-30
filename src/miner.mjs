@@ -21,6 +21,8 @@ export class Miner {
 
         this.highestBlockIndex = 0;
         this.useDevArgon2 = false;
+        /** @type {Worker[]} */
+        this.workers = [];
     }
 
     /** @param {BlockData} blockCandidate */
@@ -53,12 +55,13 @@ export class Miner {
     pushCandidate(blockCandidate) {
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
-
-        if (blockCandidate.index > this.highestBlockIndex) { 
-            this.highestBlockIndex = blockCandidate.index;
+        
+        const blockCandidateClone = Block.cloneBlockData(blockCandidate);
+        if (blockCandidateClone.index > this.highestBlockIndex) { 
+            this.highestBlockIndex = blockCandidateClone.index;
             this.cleanupCandidates();
         }
-        this.candidates.push(blockCandidate);
+        this.candidates.push(blockCandidateClone);
     }
     cleanupCandidates(heightTolerance = 3) {
         // remove candidates with height tolerance, to avoid memory leak
@@ -74,10 +77,9 @@ export class Miner {
 
     // logic is a bit complex, but it avoid stack overflow
     async startWithWorker(nbOfWorkers = 1) {
-        const workers = [];
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {
-            const worker = utils.newWorker('./worker-nodejs.mjs');
+            const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
                 if (message.error) { throw new Error(message.error); }
                 try {
@@ -93,7 +95,7 @@ export class Miner {
                 console.log(`Worker stopped with exit code ${code}`);
             });
 
-            workers.push(worker);
+            this.workers.push(worker);
             workersStatus.push('free');
             console.log('Worker started');
         }
@@ -109,7 +111,12 @@ export class Miner {
             workersStatus[id] = 'busy';
 
             const { signatureHex, nonce } = await this.prepareBlockCandidateBeforeMining(blockCandidate);
-            workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
+            this.workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
+        }
+    }
+    terminate() {
+        for (let i = 0; i < this.workers.length; i++) {
+            this.workers[i].terminate();
         }
     }
 }

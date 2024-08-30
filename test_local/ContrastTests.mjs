@@ -10,7 +10,6 @@ const testParams = {
     useDevArgon2: true,
     nbOfAccounts: 100,
     addressType: 'W',
-    testTxEachNbBlock: 10,
 }
 
 /** Simple user to user transaction
@@ -132,6 +131,10 @@ function refreshAllBalances(node, accounts) {
     }
 }
 
+function buildNodeAsWorker(account, p2pOptions = {}) {
+
+}
+
 /** 
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
@@ -154,82 +157,78 @@ async function nodeSpecificTest(accounts, wss) {
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };
+    let txsTaskDoneThisBlock = {};
     
     for (let i = 0; i < 1_000_000; i++) {
-        /*if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block
-            const timeDiff = Date.now() - lastBlockIndexAndTime.time;
+        if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
+            lastBlockIndexAndTime.index = node.blockCandidate.index;
+            txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
+            
+            wss.clients.forEach(function each(client) { // wss broadcast - utxoCache
+                if (client.readyState === 1) {
+                    client.send( JSON.stringify({ utxoCache: node.utxoCache }) );
+                }
+            });
+
+            /*const timeDiff = Date.now() - lastBlockIndexAndTime.time;
             console.log(`[TEST] New block: ${node.blockCandidate.index} | Time: ${timeDiff}ms`);
-            lastBlockIndexAndTime = { index: node.blockCandidate.index, time: Date.now() };
-        }*/
+            lastBlockIndexAndTime.time = Date.now();*/
+        }
         await new Promise(resolve => setTimeout(resolve, 100));
 
         refreshAllBalances(node, accounts);
-        const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
-        miner.pushCandidate(blockCandidateClone);
-        
-        // wss broadcast - utxoCache
-        wss.clients.forEach(function each(client) {
-            if (client.readyState === 1) {
-                client.send( JSON.stringify({ utxoCache: node.utxoCache }) );
-            }
-        });
 
+        miner.pushCandidate(node.blockCandidate);
+        
         // user send to multiple users
-        if (node.blockCandidate.index > 7 && (node.blockCandidate.index - 1) % 7 === 0) {
+        if (node.blockCandidate.index > 7 && (node.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
             try {
                 await userSendToAllOthers(node, accounts);
+                txsTaskDoneThisBlock['userSendToAllOthers'] = true;
             } catch (error) {
                 console.error(error);
             }
         }
 
         // user stakes in VSS
-        if (node.blockCandidate.index > 24 && node.blockCandidate.index < 35) {
+        if (node.blockCandidate.index > 24 && node.blockCandidate.index < 35 && !txsTaskDoneThisBlock['userStakeInVSS']) {
             try {
                 const senderAccountIndex = node.blockCandidate.index - 25;
                 await userStakeInVSS(node, accounts, senderAccountIndex);
+                txsTaskDoneThisBlock['userStakeInVSS'] = true;
             } catch (error) {
                 console.error(error);
             }
         }
 
         // simple user to user transactions
-        if (node.blockCandidate.index > 50 && (node.blockCandidate.index - 1) % testParams.testTxEachNbBlock === 0) { // TRANSACTION TEST
+        if (node.blockCandidate.index > 50 && (node.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
             try {
                 await userSendToUser(node, accounts);
+                txsTaskDoneThisBlock['userSendToUser'] = true;
             } catch (error) {
                 console.error(error);
             }
         }
 
         // users Send To Next Users
-        if (node.blockCandidate.index > 100 && (node.blockCandidate.index - 1) % 5 === 0) {
+        if (node.blockCandidate.index > 100 && (node.blockCandidate.index - 1) % 5 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
             try {
                 await userSendToNextUser(node, accounts);
+                txsTaskDoneThisBlock['userSendToNextUser'] = true;
             } catch (error) {
                 console.error(error);
             }
-        } // Disabled
+        }
 
         // wss broadcast - mempool
-        wss.clients.forEach(function each(client) {
-            if (client.readyState === 1) {
-                client.send( JSON.stringify({ memPool: node.memPool }) );
-            }
-        });
-
-        /*try { // JUST MINING
-            // like we receive a block from network
-            const blockCandidateClone = contrast.Block.cloneBlockData(node.blockCandidate);
-            const { validBlockCandidate } = await miner.minePow(blockCandidateClone);
-            if (!validBlockCandidate) { throw new Error('Not valid nonce.'); }
-
-            node.submitPowProposal(validBlockCandidate);
-        } catch (error) {
-            const errorIncludesPOWerror = error.message.includes('unlucky--'); // mining invalid nonce/hash
-            const errorSkippingLog = ['Not valid nonce.'];
-            if (errorIncludesPOWerror === false && errorSkippingLog.includes(error.message) === false) { console.error(error.stack); }
-        }*/
+        if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
+            wss.clients.forEach(function each(client) {
+                if (client.readyState === 1) {
+                    client.send( JSON.stringify({ memPool: node.memPool }) );
+                }
+            });
+        }
 
         await node.callStack.breathe();
     }
