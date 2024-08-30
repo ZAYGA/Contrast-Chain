@@ -63,22 +63,14 @@ export class Node {
     async start() {
         await this.p2pNetwork.start();
         this.setupEventListeners();
-        console.warn(`Node ${this.id.toString()} , ${this.role.toString()} started`);
+        console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
         if (this.role === 'miner') {
             this.miner.startWithWorker();
         }
 
         if (this.role === 'validator') {
-            this.callStack.push(async () => {
-                await this.vss.calculateRoundLegitimacies(this.blockCandidate.hash);
-                const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
-                if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
-
-                const newBlockCandidate = await this.createBlockCandidate(this.blockCandidate, myLegitimacy);
-                this.blockCandidate = newBlockCandidate; // Can be sent to the network
-                console.warn(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
-                this.broadcastBlockProposal(newBlockCandidate);
-            }, true);
+            this.blockCandidate = await this.createBlockCandidate();
+            this.broadcastBlockProposal(this.blockCandidate);
         }
     }
 
@@ -125,7 +117,6 @@ export class Node {
     }
 
     async handleNewBlockFromMiners(message) {
-        console.warn(`Node ${this.id} received new block PoW`);
         if (this.role === 'validator') {
             try {
                 await this.#processPowBlock(message.blockPow);
@@ -169,7 +160,6 @@ export class Node {
             this.lastBlockData = blockData;
             return hashConfInfo;
         } catch (error) {
-            console.warn(`[NODE] Block Proposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy} | ${error.message}`);
             return false;
         }
     }
@@ -226,12 +216,11 @@ export class Node {
             if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
 
             const newBlockCandidate = await this.createBlockCandidate();
-            this.blockCandidate = newBlockCandidate; // Can be sent to the network
-            console.log(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
+            this.blockCandidate = newBlockCandidate;
+            //console.log(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
             this.broadcastBlockProposal(newBlockCandidate);
         }, true);
         
-        console.warn(`[NODE] Block Proposal accepted: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
         return true;
     }
 
@@ -273,9 +262,7 @@ export class Node {
 
         // Create the block candidate, genesis block if no lastBlockData
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
-       
         if (this.lastBlockData) {
-            console.warn(`[NODE] Creating block candidate from last block: ${this.lastBlockData.index} | ${this.lastBlockData.hash}`);
             const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
             const clone = Block.cloneBlockData(this.lastBlockData);
             const supply = clone.supply + clone.coinBase;
@@ -298,14 +285,17 @@ export class Node {
     }
     /** @param {Transaction} */
     async broadcastTransaction(transaction) {
+        console.log(`[NODE] Broadcasting transaction: ${transaction.id}`);
         await this.p2pNetwork.broadcast('new_transaction', { transaction });
     }
 
     async broadcastBlockProposal(blockProposal) {
+        console.log(`[NODE] Broadcasting block proposal: ${blockProposal.index} | ${blockProposal.hash}`);
         await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
     }
 
     async broadcastBlockPow(blockPow) {
+        console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
         await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
     }
 
@@ -322,5 +312,4 @@ export class Node {
             peerCount: this.p2pNetwork.getConnectedPeers().length,
         };
     }
-
 }

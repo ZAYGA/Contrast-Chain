@@ -798,10 +798,10 @@ const mining = {
     },
     getBlockFinalDifficulty: (blockData) => {
         const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
-        console.log('Difficulty:', difficulty, 'Legitimacy:', legitimacy, 'PosTimestamp:', posTimestamp, 'Timestamp:', timestamp);
+
         if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
         if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
-        console.log('Difficulty:', difficulty, 'Legitimacy:', legitimacy, 'PosTimestamp:', posTimestamp, 'Timestamp:', timestamp);
+
         const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
         const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
 
@@ -823,15 +823,13 @@ const mining = {
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = mining.getBlockFinalDifficulty(blockData);
         const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
-        console.log('Difficulty:', difficulty, 'TimeDiffAdjustment:', timeDiffAdjustment, 'Legitimacy:', legitimacy, 'FinalDifficulty:', finalDifficulty, 'Zeros:', zeros, 'Adjust:', adjust);
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
         if (!condition1) { throw new Error(`unlucky--(condition 1)=> hash does not start with ${zeros} zeros`); }
-        console.log('lucky--(condition 1)=> hash starts with', zeros, 'zeros');
+
         const next5Bits = HashBitsAsString.substring(zeros, zeros + 5);
         const condition2 = conditionnals.binaryStringSupOrEqual(next5Bits, adjust);
         if (!condition2) { throw new Error(`unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}`); }
 
-        console.log('lucky--(condition 1)=> hash starts with', zeros, 'zeros');
         return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
     }
 };

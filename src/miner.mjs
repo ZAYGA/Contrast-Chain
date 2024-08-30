@@ -53,7 +53,6 @@ export class Miner {
     }
     /** @param {BlockData} blockCandidate */
     pushCandidate(blockCandidate) {
-        console.log(`[MINER] New block candidate received (Height: ${blockCandidate.index})`);
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
         
@@ -86,10 +85,11 @@ export class Miner {
             worker.on('message', (message) => {
                 if (message.error) { throw new Error(message.error); }
                 try {
-
                     utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
                     this.validPowCallback(message.blockCandidate);
                 } catch (error) {
+                    if (error.message.includes('unlucky')) { return; }
+                    console.error('error');
                 }
                 workersStatus[message.id] = 'free';
             });

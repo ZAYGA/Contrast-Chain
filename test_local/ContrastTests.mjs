@@ -1,5 +1,6 @@
 'use strict';
 import contrast from '../src/contrast.mjs';
+import { NodeFactory } from '../src/node-factory.mjs';
 
 /**
 * @typedef {import("../src/account.mjs").Account} Account
@@ -138,18 +139,34 @@ function refreshAllBalances(node, accounts) {
 async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
-    /** @type {Node} */
-    const node = await contrast.Node.load(accounts[0]);
-    if (!node) { console.error('Failed to load Node.'); return; }
+    /*const node = await contrast.Node.load(accounts[0]);
+    if (!node) { console.error('Failed to load Node.'); return; }*/
+
+    //node.utxoCache.bypassValidation = true;
+    // Create validator node
+    const factory = new NodeFactory();
+    const createdNode = await factory.createNode(accounts[0],  'validator' );
+    const node = createdNode.node;
     node.useDevArgon2 = testParams.useDevArgon2;
     node.memPool.useDevArgon2 = testParams.useDevArgon2;
-    //node.utxoCache.bypassValidation = true;
-    
-    const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
-    if (!miner) { console.error('Failed to load Miner.'); return; }
-    miner.useDevArgon2 = testParams.useDevArgon2;
+    await node.start();
+    //await node.createBlockCandidate();
 
-    miner.startWithWorker(1);
+    //await node.callStack.breathe();
+    
+    //const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
+    const createdMinerNode = await factory.createNode(accounts[1], 'miner' );
+    //createdMinerNode.node.validPowCallback = node.submitPowProposal.bind(node);
+    createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
+    await createdMinerNode.node.start();
+
+    //createdMinerNode.node.miner.startWithWorker(1);
+
+
+    //if (!miner) { console.error('Failed to load Miner.'); return; }
+    //miner.useDevArgon2 = testParams.useDevArgon2;
+
+    //miner.startWithWorker(1);
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };

@@ -1,4 +1,3 @@
-import localStorage_v1 from '../storage/local-storage-management.mjs';
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData } from './block.mjs';
 import utils from './utils.mjs';
