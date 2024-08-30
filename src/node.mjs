@@ -54,9 +54,6 @@ export class Node {
     /** @param {Account} account */
     static async load(account, role, p2pOptions = {}, saveBlocksInfo = false) {
         const node = new Node(account, role, p2pOptions);
-
-       // node.blockCandidate = await node.createBlockCandidate(lastBlockData, myLegitimacy);
-
         return node;
     }
     async start() {
@@ -171,12 +168,16 @@ export class Node {
         const startTime = Date.now();
         // verify the height
         if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
-        let index = 0; 
+        let index = -1;
 
         if (this.lastBlockData) { index = this.lastBlockData.index; }
+        //const blockIsTooOld = index === 0 || this.lastBlockData === null ? false : minerBlockCandidate.index <= index;
+        //const blockIsAhead = index === 0 && this.lastBlockData === null ? false : minerBlockCandidate.index > index + 1;
+        const blockIsTooOld = minerBlockCandidate.index <= index;
+        const blockIsAhead = minerBlockCandidate.index > index + 1;
 
-        if (minerBlockCandidate.index < index) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
-        if (minerBlockCandidate.index > index) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
+        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
+        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
 
         const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
         if (!hashConfInfo) { return false; }
@@ -271,7 +272,7 @@ export class Node {
             const clone = Block.cloneBlockData(this.lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(index, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
+            blockCandidate = BlockData(index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
         }
 
         // Add the PoS reward transaction
