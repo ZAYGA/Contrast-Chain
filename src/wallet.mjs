@@ -73,14 +73,14 @@ export class Wallet {
             }
 
             const { account, iterations } = await this.tryDerivationUntilValidAccount(i, addressPrefix);
-            if (!account) { console.error('deriveAccounts interrupted!'); return false; }
+            if (!account) { console.error('deriveAccounts interrupted!'); return {}; }
 
             iterationsPerAccount.push(iterations);
             this.accounts[addressPrefix].push(account);
         }
         
         const derivedAccounts = this.accounts[addressPrefix].slice(nbOfExistingAccounts);
-        if (derivedAccounts.length !== nbOfAccounts) { console.error('Failed to derive all accounts'); return false; }
+        if (derivedAccounts.length !== nbOfAccounts) { console.error('Failed to derive all accounts'); return {}; }
         return { derivedAccounts, avgIterations: (iterationsPerAccount.reduce((a, b) => a + b, 0) / nbOfAccounts).toFixed(2) };
     }
     async tryDerivationUntilValidAccount(accountIndex = 0, desiredPrefix = "C") {

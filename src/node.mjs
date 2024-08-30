@@ -12,6 +12,7 @@ import utils from './utils.mjs';
 
 /**
 * @typedef {import("./account.mjs").Account} Account
+* @typedef {import("./transaction.mjs").Transaction} Transaction
 */
 
 export class Node {
@@ -131,7 +132,7 @@ export class Node {
     submitPowProposal(minerBlockCandidate) {
         this.callStack.push(() => this.#processPowBlock(minerBlockCandidate));
     }
-
+    /** @param {BlockData} minerBlockCandidate */
     async #validateBlockProposal(blockData) {
         try {
             // verify the hash
@@ -200,6 +201,12 @@ export class Node {
         this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
         if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
 
+        // simple log for debug ----------------------
+        //const powMinerTx = minerBlockCandidate.Txs[0];
+        //const address = powMinerTx.outputs[0].address;
+        //const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
+        //console.log(`[NODE] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+
         const timeBetweenPosPow = ((minerBlockCandidate.timestamp - minerBlockCandidate.posTimestamp) / 1000).toFixed(2);
         console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
@@ -238,7 +245,8 @@ export class Node {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTransaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        await this.memPool.pushTransaction(this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
+        //await this.memPool.pushTransaction(this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.callStack, this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
     }
 
     /**
@@ -246,6 +254,7 @@ export class Node {
      * @param {number} myLegitimacy
      */
     async #createBlockCandidate(lastBlockData, myLegitimacy) {
+         //console.log(`[Node] Creating block candidate from lastHeight: ${lastBlockData.index}`);
         const startTime = Date.now();
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
 
@@ -270,7 +279,7 @@ export class Node {
             console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         }return blockCandidate;
     }
-
+    /** @param {Transaction} */
     async broadcastTransaction(transaction) {
         await this.p2pNetwork.broadcast('new_transaction', { transaction });
     }
