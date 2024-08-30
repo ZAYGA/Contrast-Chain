@@ -133,7 +133,8 @@ export class Transaction_Builder {
     }
     /**
      * @param {BlockData} blockCandidate
-     * @param {string} address
+     * @param {string} address - who will receive the reward
+     * @param {string} posStakedAddress - who will be slashed if fraud proof is provided
      */
     static async createPosRewardTransaction(blockCandidate, address, posStakedAddress) {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
