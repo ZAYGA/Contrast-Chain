@@ -144,6 +144,7 @@ async function nodeSpecificTest(accounts, wss) {
     if (!node) { console.error('Failed to load Node.'); return; }
     node.devmode = testParams.devmode;
     node.memPool.devmode = testParams.devmode;
+    node.utxoCache.bypassValidation = true;
     
     const miner = new contrast.Miner(accounts[1], node.submitPowProposal.bind(node));
     if (!miner) { console.error('Failed to load Miner.'); return; }

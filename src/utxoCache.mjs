@@ -4,6 +4,7 @@ import utils from './utils.mjs';
 
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     constructor() {
+        this.bypassValidation = false;
         /** @type {Object<string, TransactionIO[]>} */
         this.addressesUTXOs = {};
         /** @type {Object<string, number>} */
@@ -139,9 +140,9 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             const totalSupply = supplyFromBlock + coinBase;
             const totalOfBalances = this.#calculateTotalOfBalances();
     
-            if (totalOfBalances !== totalSupply) {
+            if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
                 console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
-                throw new Error('Invalid total of balances'); 
+                throw new Error('Invalid total of balances');
             }
     
             this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
