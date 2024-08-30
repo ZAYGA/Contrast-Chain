@@ -1,7 +1,7 @@
 import { expect } from 'chai';
-import { NodeFactory } from '../../src/node-factory.mjs';
-import { Account } from '../../src/account.mjs';
-import { Transaction_Builder } from '../../src/transaction.mjs';
+import { NodeFactory } from '../src/node-factory.mjs';
+import { Account } from '../src/account.mjs';
+import { Transaction_Builder } from '../src/transaction.mjs';
 
 describe('NodeFactory', function() {
     let factory;

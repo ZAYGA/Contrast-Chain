@@ -64,16 +64,24 @@ export class Node {
         await this.p2pNetwork.start();
         this.setupEventListeners();
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
+
+
+    }
+
+    async startMining() {
         if (this.role === 'miner') {
             this.miner.startWithWorker();
         }
+    }
 
+    async createBlockCandidateAndBroadcast() {
         if (this.role === 'validator') {
             this.blockCandidate = await this.createBlockCandidate();
             this.broadcastBlockProposal(this.blockCandidate);
         }
     }
 
+    
     async stop() {
         await this.p2pNetwork.stop();
         if (this.role === 'miner') {

@@ -135,7 +135,7 @@ function refreshAllBalances(node, accounts) {
 async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const allNodesConnected = nodes.every(node => {
-            const peerCount = node.node.p2pNetwork.getConnectedPeers().length;
+            const peerCount = node.p2pNetwork.getConnectedPeers().length;
             return peerCount >= 1; // We only need one connection in this test
         });
 
@@ -159,21 +159,23 @@ async function nodeSpecificTest(accounts, wss) {
 
     const factory = new NodeFactory();
     const createdMinerNode = await factory.createNode(accounts[1], 'miner' );
-    const validatorNode = { node: createdMinerNode.node, nodeId: accounts[1].address, account: accounts[1] };
+    const minerNode = createdMinerNode.node;
     createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
+    createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
     await createdMinerNode.node.start();
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
     // Create validator node
     const createdNode = await factory.createNode(accounts[0],  'validator' );
-    const node = createdNode.node;
-    const minerNode = { node, nodeId: accounts[0].address, account: accounts[0] };
-    node.useDevArgon2 = testParams.useDevArgon2;
-    node.memPool.useDevArgon2 = testParams.useDevArgon2;
-    await node.start();
+    const validatorNode = createdNode.node;
+
+    validatorNode.useDevArgon2 = testParams.useDevArgon2;
+    validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
+    await validatorNode.start();
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
+
+
+    minerNode.startMining();
+    validatorNode.createBlockCandidateAndBroadcast();
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -182,13 +184,13 @@ async function nodeSpecificTest(accounts, wss) {
     let txsTaskDoneThisBlock = {};
     
     for (let i = 0; i < 1_000_000; i++) {
-        if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
-            lastBlockIndexAndTime.index = node.blockCandidate.index;
+        if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
+            lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
             txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
             
             wss.clients.forEach(function each(client) { // wss broadcast - utxoCache
                 if (client.readyState === 1) {
-                    client.send( JSON.stringify({ utxoCache: node.utxoCache }) );
+                    client.send( JSON.stringify({ utxoCache: validatorNode.utxoCache }) );
                 }
             });
 
@@ -198,14 +200,14 @@ async function nodeSpecificTest(accounts, wss) {
         }
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        refreshAllBalances(node, accounts);
+        refreshAllBalances(validatorNode, accounts);
 
-        miner.pushCandidate(node.blockCandidate);
+        minerNode.miner.pushCandidate(validatorNode.blockCandidate);
         
         // user send to multiple users
-        if (node.blockCandidate.index > 7 && (node.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
+        if (validatorNode.blockCandidate.index > 7 && (validatorNode.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
             try {
-                await userSendToAllOthers(node, accounts);
+                await userSendToAllOthers(validatorNode, accounts);
                 txsTaskDoneThisBlock['userSendToAllOthers'] = true;
             } catch (error) {
                 console.error(error);
@@ -213,10 +215,10 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // user stakes in VSS
-        if (node.blockCandidate.index > 24 && node.blockCandidate.index < 35 && !txsTaskDoneThisBlock['userStakeInVSS']) {
+        if (validatorNode.blockCandidate.index > 24 && validatorNode.blockCandidate.index < 35 && !txsTaskDoneThisBlock['userStakeInVSS']) {
             try {
-                const senderAccountIndex = node.blockCandidate.index - 25;
-                await userStakeInVSS(node, accounts, senderAccountIndex);
+                const senderAccountIndex = validatorNode.blockCandidate.index - 25;
+                await userStakeInVSS(validatorNode, accounts, senderAccountIndex);
                 txsTaskDoneThisBlock['userStakeInVSS'] = true;
             } catch (error) {
                 console.error(error);
@@ -224,9 +226,9 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // simple user to user transactions
-        if (node.blockCandidate.index > 50 && (node.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
+        if (validatorNode.blockCandidate.index > 50 && (validatorNode.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
             try {
-                await userSendToUser(node, accounts);
+                await userSendToUser(validatorNode, accounts);
                 txsTaskDoneThisBlock['userSendToUser'] = true;
             } catch (error) {
                 console.error(error);
@@ -234,9 +236,9 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // users Send To Next Users
-        if (node.blockCandidate.index > 100 && (node.blockCandidate.index - 1) % 5 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
+        if (validatorNode.blockCandidate.index > 100 && (validatorNode.blockCandidate.index - 1) % 5 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
             try {
-                await userSendToNextUser(node, accounts);
+                await userSendToNextUser(validatorNode, accounts);
                 txsTaskDoneThisBlock['userSendToNextUser'] = true;
             } catch (error) {
                 console.error(error);
@@ -244,15 +246,15 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // wss broadcast - mempool
-        if (node.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
+        if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
             wss.clients.forEach(function each(client) {
                 if (client.readyState === 1) {
-                    client.send( JSON.stringify({ memPool: node.memPool }) );
+                    client.send( JSON.stringify({ memPool: validatorNode.memPool }) );
                 }
             });
         }
 
-        await node.callStack.breathe();
+        await validatorNode.callStack.breathe();
     }
 
     console.log('[TEST] Node test completed. - stop mining');

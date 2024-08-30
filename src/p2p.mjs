@@ -20,7 +20,7 @@ class P2PNetwork extends EventEmitter {
             announceInterval: 60000,
             cleanupInterval: 300000,
             peerTimeout: 600000,
-            logLevel: 'debug', // 'info',
+            logLevel: 'info', // 'info',
             logging: true,
             listenAddress: '/ip4/0.0.0.0/tcp/0',
             ...options
