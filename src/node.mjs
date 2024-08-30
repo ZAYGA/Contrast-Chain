@@ -59,26 +59,22 @@ export class Node {
 
         return node;
     }
-
     async start() {
         await this.p2pNetwork.start();
         this.setupEventListeners();
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
     }
-
     async startMining() {
         if (this.role === 'miner') {
             this.miner.startWithWorker();
         }
     }
-
     async createBlockCandidateAndBroadcast() {
         if (this.role === 'validator') {
             this.blockCandidate = await this.createBlockCandidate();
             this.broadcastBlockProposal(this.blockCandidate);
         }
     }
-
     
     async stop() {
         await this.p2pNetwork.stop();
@@ -87,7 +83,6 @@ export class Node {
         }
         console.log(`Node ${this.id} (${this.role}) stopped`);
     }
-
     setupEventListeners() {
         this.p2pNetwork.on('peer:connect', (peerId) => {
             console.log(`Node ${this.id} connected to peer ${peerId}`);
@@ -101,7 +96,6 @@ export class Node {
         this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
         this.p2pNetwork.subscribe('new_block_pow', this.handleNewBlockFromMiners.bind(this));
     }
-
     async handleNewTransaction(message) {
         try {
             await this.addTransactionJSONToMemPool(message.transaction);
@@ -110,7 +104,6 @@ export class Node {
             console.error(`Node ${this.id} failed to process new transaction:`, error);
         }
     }
-
     async handleNewBlockFromValidator(message) {
         try {
             if (this.role === 'miner') {
@@ -121,7 +114,6 @@ export class Node {
             console.error(`Node ${this.id} failed to process new block proposal:`, error);
         }
     }
-
     async handleNewBlockFromMiners(message) {
         if (this.role === 'validator') {
             try {
