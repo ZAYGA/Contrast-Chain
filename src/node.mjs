@@ -171,8 +171,12 @@ export class Node {
         const startTime = Date.now();
         // verify the height
         if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
-        if (minerBlockCandidate.index < this.blockCandidate.index) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
-        if (minerBlockCandidate.index > this.blockCandidate.index) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
+        let index = 0; 
+
+        if (this.lastBlockData) { index = this.lastBlockData.index; }
+
+        if (minerBlockCandidate.index < index) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.blockCandidate.index}`); return false; }
+        if (minerBlockCandidate.index > index) { throw new Error(`minerBlock's index is higher than the current block candidate: ${minerBlockCandidate.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
 
         const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
         if (!hashConfInfo) { return false; }
@@ -181,6 +185,7 @@ export class Node {
 
         let newStakesOutputs;
         try {
+            console.log(`[NODE] Block Proposal accepted: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy}`);
             newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
         } catch (error) {
             console.warn(`[NODE] Block Proposal rejected: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy} | ${error.message}
@@ -257,7 +262,8 @@ export class Node {
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
         
         const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
-
+        let index = 0;
+        if (this.lastBlockData) { index = this.lastBlockData.index; }
         // Create the block candidate, genesis block if no lastBlockData
         let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, myLegitimacy, 'ContrastGenesisBlock', Txs, Date.now());
         if (this.lastBlockData) {
@@ -265,7 +271,7 @@ export class Node {
             const clone = Block.cloneBlockData(this.lastBlockData);
             const supply = clone.supply + clone.coinBase;
             const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(clone.index + 1, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
+            blockCandidate = BlockData(index, supply, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
         }
 
         // Add the PoS reward transaction
