@@ -1,67 +1,78 @@
-//import pkg from 'bloom-filters';
-//const { BloomFilter } = pkg;
-import { BloomFilter } from 'bloom-filters'; // working ?
-import { Node } from "./node.mjs";
-import { PubSubManager } from './pubsub-manager.mjs';
-import { BlockSerializer } from './serializers/block-serializer.mjs';
-import { TransactionSerializer } from './serializers/transaction-serializer.mjs';
-import { VSSShareSerializer } from './vrf/vss-share-serializer.mjs';
-import { AnnouncementSerializer } from './serializers/announcement-serializer.mjs';
-import { EventBus } from './event-bus.mjs';
-
-import {
-	BlockMessageHandler,
-	TransactionMessageHandler,
-	BlockCandidateMessageHandler,
-	MinedBlockMessageHandler,
-	VSSShareMessageHandler,
-	AnnouncementMessageHandler
-} from './messages-handlers.mjs';
+import { Node } from './node.mjs';
+import { Wallet } from './wallet.mjs';
 
 export class NodeFactory {
-    static async createNode(bootstrapNodes, nodeConfig) {
-        try {
-			const bloomFilter = new BloomFilter(1024, 4);
-			const pubSubManager = new PubSubManager(bloomFilter, {
-				logging: true,
-				logLevel: 'info'
-			});
-			const blockSerializer = new BlockSerializer(1);
-			const transactionSerializer = new TransactionSerializer(1);
-			const vssShareSerializer = new VSSShareSerializer(1);
-			const announcementSerializer = new AnnouncementSerializer(1);
+    constructor() {
+        this.nodes = new Map();
+        this.wallet = null;
+    }
 
-			let eventBus = new EventBus();
+    async initialize(mnemonicHex, nbOfAccounts = 100, addressType = 'W') {
+        const startTime = Date.now();
+        const timings = { walletRestore: 0, deriveAccounts: 0 };
 
-			// Register message handlers
-			pubSubManager.registerMessageType('blocks', new BlockMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('transactions', new TransactionMessageHandler(eventBus), transactionSerializer);
-			pubSubManager.registerMessageType('block_candidate', new BlockCandidateMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('mined_block', new MinedBlockMessageHandler(eventBus), blockSerializer);
-			pubSubManager.registerMessageType('vssShare', new VSSShareMessageHandler(eventBus), vssShareSerializer);
-			pubSubManager.registerMessageType('validator-announce', new AnnouncementMessageHandler(eventBus), announcementSerializer);
+        this.wallet = await Wallet.restore(mnemonicHex);
+        if (!this.wallet) {
+            throw new Error("Failed to restore wallet");
+        }
+        timings.walletRestore = Date.now() - startTime;
 
-			options.bootstrapNodes = bootstrapNodes;
+        this.wallet.loadAccounts();
+        const { derivedAccounts, avgIterations } = await this.wallet.deriveAccounts(nbOfAccounts, addressType);
+        if (!derivedAccounts) {
+            throw new Error("Failed to derive accounts");
+        }
+        timings.deriveAccounts = Date.now() - (startTime + timings.walletRestore);
 
-			const node = await Node.load(nodeConfig, pubSubManager, eventBus);
-			/*switch (options.role) {
-				case 'validator':
-					options.totalValidators = 2;
-					options.validatorIndex = 0;
-					node = new ValidatorNode(options, pubSubManager, blockManager, eventBus);
-					break;
-				case 'miner':
-					node = new MinerNode(options, pubSubManager, blockManager, eventBus);
-					break;
+        this.wallet.saveAccounts();
 
-				default:
-					node = new BlockchainNode(options, pubSubManager, blockManager, eventBus);
-			}*/
+        console.log(`
+__Timings -----------------------
+| -- walletRestore: ${timings.walletRestore}ms
+| -- deriveAccounts(${nbOfAccounts}): ${timings.deriveAccounts}ms
+| -- deriveAccountsAvg: ~${(timings.deriveAccounts / nbOfAccounts).toFixed(2)}ms
+| -- deriveAccountAvgIterations: ${avgIterations}
+| -- total: ${Date.now() - startTime}ms
+---------------------------------`);
 
-			return node;
-		} catch (error) {
-			console.error(`Error creating node ${nodeId}:`, error);
-			throw error;
-		}
+        return derivedAccounts;
+    }
+
+    async createNode(validatorAccount, p2pOptions = {}) {
+        const node = await Node.load(validatorAccount, p2pOptions);
+        const nodeId = validatorAccount.address;
+        this.nodes.set(nodeId, node);
+        return { node, nodeId };
+    }
+
+    async startNode(nodeId) {
+        const node = this.getNode(nodeId);
+        await node.start();
+    }
+
+    async stopNode(nodeId) {
+        const node = this.getNode(nodeId);
+        await node.stop();
+    }
+
+    getNode(nodeId) {
+        const node = this.nodes.get(nodeId);
+        if (!node) {
+            throw new Error(`Node with ID ${nodeId} not found`);
+        }
+        return node;
+    }
+
+    getAllNodes() {
+        return Array.from(this.nodes.values());
+    }
+
+    refreshAllBalances(accounts) {
+        for (const node of this.nodes.values()) {
+            for (const account of accounts) {
+                const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(account.address);
+                account.setBalanceAndUTXOs(balance, UTXOs);
+            }
+        }
     }
 }

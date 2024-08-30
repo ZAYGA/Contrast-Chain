@@ -7,6 +7,7 @@ import { UtxoCache } from './utxoCache.mjs';
 import { BlockData, Block } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { Miner } from './miner.mjs';
+import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
 
 /**
@@ -15,7 +16,7 @@ import utils from './utils.mjs';
 
 export class Node {
     /** @param {Account} validatorAccount */
-    constructor(validatorAccount) {
+    constructor(validatorAccount, p2pOptions = {}) {
         /** @type {string} */
         this.id = validatorAccount.address;
         /** @type {CallStack} */
@@ -35,12 +36,17 @@ export class Node {
         /** @type {Miner} */
         this.miner = new Miner(validatorAccount);
 
+        this.p2pNetwork = new P2PNetwork({
+            role: 'validator',
+            ...p2pOptions
+        });
+   
         this.devmode = false;
     }
 
     /** @param {Account} validatorAccount */
-    static async load(validatorAccount, saveBlocksInfo = false) {
-        const node = new Node(validatorAccount);
+    static async load(validatorAccount, minerAccount, p2pOptions = {}, saveBlocksInfo = false) {
+        const node = new Node(validatorAccount, minerAccount, p2pOptions);
 
         const lastBlockData = await localStorage_v1.loadBlockchainLocally(node, saveBlocksInfo);
         
@@ -54,10 +60,51 @@ export class Node {
 
         return node;
     }
+
+    async start() {
+        await this.p2pNetwork.start();
+        this.setupEventListeners();
+        console.log(`Node ${this.id} started`);
+    }
+
+    async stop() {
+        await this.p2pNetwork.stop();
+        console.log(`Node ${this.id} stopped`);
+    }
+
+    setupEventListeners() {
+        this.p2pNetwork.on('peer:connect', (peerId) => {
+            console.log(`Node ${this.id} connected to peer ${peerId}`);
+        });
+
+        this.p2pNetwork.on('peer:disconnect', (peerId) => {
+            console.log(`Node ${this.id} disconnected from peer ${peerId}`);
+        });
+
+        this.p2pNetwork.subscribe('new_transaction', async (message) => {
+            try {
+                await this.addTransactionJSONToMemPool(message.transaction);
+                console.log(`Node ${this.id} received new transaction`);
+            } catch (error) {
+                console.error(`Node ${this.id} failed to process new transaction:`, error);
+            }
+        });
+
+        this.p2pNetwork.subscribe('new_block_proposal', async (message) => {
+            try {
+                await this.submitPowProposal(message.blockProposal);
+                console.log(`Node ${this.id} received new block proposal`);
+            } catch (error) {
+                console.error(`Node ${this.id} failed to process new block proposal:`, error);
+            }
+        });
+    }
+
     /** @param {BlockData} minerBlockCandidate */
     submitPowProposal(minerBlockCandidate) {
         this.callStack.push(() => this.#blockProposal(minerBlockCandidate));
     }
+
     /** @param {BlockData} blockData */
     async #validateBlockProposal(blockData) {
         try {
@@ -137,6 +184,7 @@ export class Node {
 
         return true;
     }
+
     /** 
      * @param {string} signedTxJSON
      * @param {false | string} replaceExistingTxID
@@ -144,8 +192,8 @@ export class Node {
     async addTransactionJSONToMemPool(signedTxJSON, replaceExistingTxID = false) {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
-        const signedTansaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.callStack, this.utxoCache.UTXOsByPath, signedTansaction, replaceExistingTxID);
+        const signedTransaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
+        this.memPool.submitTransaction(this.callStack, this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
 
         // not working with the callstack //TODO: fix
         //this.callStack.push(() => { this.memPool.pushTransaction(this.utxoCache.UTXOsByPath, signedTansaction, replaceExistingTxID) });
@@ -183,5 +231,13 @@ export class Node {
             //console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         }
         return blockCandidate;
+    }
+
+    async broadcastTransaction(transaction) {
+        await this.p2pNetwork.broadcast('new_transaction', { transaction });
+    }
+
+    async broadcastBlockProposal(blockProposal) {
+        await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
     }
 }
