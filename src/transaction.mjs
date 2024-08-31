@@ -178,7 +178,7 @@ export class Transaction_Builder {
         
         return await this.newTransaction(UTXOs, outputs);
     }
-    /**
+    /** Create a transaction to stake new VSS - fee should be => amount to be staked
      * @param {Account} senderAccount
      * @param {string} stakingAddress
      * @param {number} amount

@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 10,
+    nbOfAccounts: 100,
     addressType: 'W',
 }
 
@@ -180,8 +180,6 @@ async function nodeSpecificTest(accounts, wss) {
     minerNode.miner.startWithWorker();
 
     await validatorNode.createBlockCandidateAndBroadcast();
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };

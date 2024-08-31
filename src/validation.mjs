@@ -29,7 +29,13 @@ export class Validation {
         }
 
         for (let i = 0; i < transaction.outputs.length; i++) {
-            Validation.isValidTransactionIO(transaction.outputs[i], 'output');
+            const output = transaction.outputs[i];
+            Validation.isValidTransactionIO(output, 'output');
+
+            if (output.rule === "sigOrSlash") {
+                if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
+                if (this.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
+            }
         }
     }
     /** Used by isConformTransaction()

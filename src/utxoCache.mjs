@@ -1,6 +1,7 @@
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData } from './block.mjs';
 import utils from './utils.mjs';
+import { Validation } from './validation.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockData} BlockData
@@ -84,7 +85,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         const TxID = transaction.id;
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
-            const { address, amount } = TxOutputs[i];
+            const output = TxOutputs[i];
+            const { address, amount } = output;
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
             // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
@@ -92,16 +94,17 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
             // output become ouput -> set UTXO's anchor
-            TxOutputs[i].anchor = anchor;
+            output.anchor = anchor;
 
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
-            this.addressesUTXOs[address].push(TxOutputs[i]);
-            this.utxosByAnchor[anchor] = TxOutputs[i];
+            this.addressesUTXOs[address].push(output);
+            this.utxosByAnchor[anchor] = output;
             this.#changeBalance(address, amount);
 
-            const rule = TxOutputs[i].rule;
-            if (rule === "sigOrSlash") {
-                newStakesOutputs.push(TxOutputs[i]); // for now we only create new range
+            if (output.rule === "sigOrSlash") {
+                if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
+                if (Validation.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
+                newStakesOutputs.push(output); // for now we only create new range
             }
         }
 
