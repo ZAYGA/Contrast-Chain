@@ -58,15 +58,15 @@ export class Miner {
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
 
-        const blockCandidateClone = Block.cloneBlockData(blockCandidate);
-        if (blockCandidateClone.index > this.highestBlockIndex) {
-            this.highestBlockIndex = blockCandidateClone.index;
+        if (blockCandidate.index > this.highestBlockIndex) {
+            this.highestBlockIndex = blockCandidate.index;
             this.cleanupCandidates();
         }
         //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
+        const blockCandidateClone = Block.cloneBlockData(blockCandidate);
         this.candidates.push(blockCandidateClone);
     }
-    cleanupCandidates(heightTolerance = 1) {
+    cleanupCandidates(heightTolerance = 6) {
         // remove candidates with height tolerance, to avoid memory leak
         this.candidates = this.candidates.filter(candidate => this.highestBlockIndex - candidate.index <= heightTolerance);
     }

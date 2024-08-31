@@ -87,13 +87,12 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
     const progressLogger = new utils.ProgressLogger(nbOfBlocksInStorage);
     
     /** @type {BlockData} */
-    let lastBlockData = undefined;
     let blockLoadedCount = 0;
     for (let i = 0; i < blocksFolders.length; i++) {
         const blocksFolder = blocksFolders[i];
         const chainFiles = getListOfFilesInBlocksDirectory(id, blocksFolder, 'bin');
         const chainPart = loadBlocksOfFolderLocally(id, chainFiles, 'bin');
-
+        
         const controlChainFiles = getListOfFilesInBlocksDirectory(id, blocksFolder, 'json');
         const controlChainPart = loadBlocksOfFolderLocally(id, controlChainFiles, 'json');
 
@@ -101,7 +100,8 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
 
         const newStakesOutputs = await node.utxoCache.digestConfirmedBlocks(chainPart);
         if (newStakesOutputs.length > 0) { node.vss.newStakes(newStakesOutputs); }
-        lastBlockData = chainPart[chainPart.length - 1];
+
+        node.lastBlockData = chainPart[chainPart.length - 1];
 
         blockLoadedCount += chainPart.length;
         progressLogger.logProgress(blockLoadedCount);
@@ -111,8 +111,6 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
             saveBlockchainInfoLocally(blocksInfo);
         }
     }
-
-    return lastBlockData;
 }
 function getListOfFoldersInBlocksDirectory(id) {
     if (!path) { return false; }
