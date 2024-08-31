@@ -174,6 +174,7 @@ export class Block {
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {
         const JSON = Block.dataAsJSON(blockData);
-        return Block.blockDataFromJSON(JSON);
+        const clone = Block.blockDataFromJSON(JSON);
+        return clone;
     }
 }

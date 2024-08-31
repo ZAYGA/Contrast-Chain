@@ -51,7 +51,7 @@ describe('P2PNetwork', function() {
 
     it('should have correct node status after startup', function() {
       nodes.forEach(node => {
-        const status = node.getNodeStatus();
+        const status = node.getStatus();
         expect(status).to.have.property('isSyncing', false);
         expect(status).to.have.property('blockHeight', 0);
         expect(status).to.have.property('version', '1.1.0');
@@ -110,7 +110,7 @@ describe('P2PNetwork', function() {
 
   describe('Node Status', function() {
     it('should get correct network status', function() {
-      const networkStatus = nodes[0].getNodeStatus();
+      const networkStatus = nodes[0].getStatus();
       console.log(networkStatus);
       expect(networkStatus).to.have.property('connectionCount').that.is.at.least(NUM_NODES - 1);
       expect(networkStatus).to.have.property('version').that.is.a('string');

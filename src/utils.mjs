@@ -817,28 +817,31 @@ const mining = {
      * @param {BlockData} blockData
      */
     verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
-        if (typeof HashBitsAsString !== 'string') { 
-            throw new Error('Invalid HashBitsAsString'); 
+        if (typeof HashBitsAsString !== 'string') {
+            throw new Error('Invalid HashBitsAsString');
         }
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = mining.getBlockFinalDifficulty(blockData);
         const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
+        const result = { conform: false, message: 'na', difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
+
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
-        if (!condition1) { throw new Error(`unlucky--(condition 1)=> hash does not start with ${zeros} zeros`); }
+        if (!condition1) { result.message = `unlucky--(condition 1)=> hash does not start with ${zeros} zeros` };
 
         const next5Bits = HashBitsAsString.substring(zeros, zeros + 5);
         const condition2 = conditionnals.binaryStringSupOrEqual(next5Bits, adjust);
-        if (!condition2) { throw new Error(`unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}`); }
+        if (!condition2) { result.message = `unlucky--(condition 2)=> hash does not meet the condition: ${next5Bits} >= ${adjust}` };
 
-        return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
+        if (result.message === 'na') { result.conform = true; result.message = 'lucky'; }
+        return result;
     }
 };
-const utxoPath = {
-    /** @param {string} utxoPath - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    isValidUtxoPath(utxoPath) {
-        if (typeof utxoPath !== 'string') { return false; }
+const anchor = {
+    /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    isValid(anchor) {
+        if (typeof anchor !== 'string') { return false; }
 
-        const splitted = utxoPath.split(':');
+        const splitted = anchor.split(':');
         if (splitted.length !== 3) { return false; }
 
         // height
@@ -858,9 +861,9 @@ const utxoPath = {
 
         return true;
     },
-    /** @param {string} utxoPath - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    to_Height_TxID_Vout(utxoPath) { // should be in utils (LOL !)
-        const splitted = utxoPath.split(':');
+    /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+    to_Height_TxID_Vout(anchor) { // should be in utils (LOL !)
+        const splitted = anchor.split(':');
 
         const utxoBlockHeight = splitted[0];
         const utxoTxID = splitted[1];
@@ -894,7 +897,7 @@ const utils = {
     compression,
     conditionnals,
     mining,
-    utxoPath,
+    anchor,
 };
 
 export default utils;

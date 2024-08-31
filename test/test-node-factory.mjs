@@ -45,12 +45,12 @@ describe('NodeFactory', function() {
             address: accounts[8].address,
             rule: 'sig_v1',
             version: 1,
-            utxoPath: '0:00000000:0'
+            anchor: '0:00000000:0'
         };
         accounts[8].UTXOs.push(utxo);
         
         // Add the UTXO to the node's UTXO cache
-        node.utxoCache.UTXOsByPath[utxo.utxoPath] = utxo;
+        node.utxoCache.utxosByAnchor[utxo.anchor] = utxo;
         node.utxoCache.addressesUTXOs[accounts[8].address] = [utxo];
         node.utxoCache.addressesBalances[accounts[8].address] = utxo.amount;
 

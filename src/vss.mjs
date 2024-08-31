@@ -4,18 +4,18 @@ import utils from "./utils.mjs";
 
 /**
  * @typedef {Object} StakeReference
- * @property {string} address
- * @property {string} utxoPath
+ * @property {string} address - Example: "WCHMD65Q7qR2uH9XF5dJ"
+ * @property {string} anchor - Example: "0:bdadb7ab:0"
  */
 /**
  * @param {string} address - Example: "WCHMD65Q7qR2uH9XF5dJ"
- * @param {string} utxoPath - Example: "0:bdadb7ab:0"
+ * @param {string} anchor - Example: "0:bdadb7ab:0"
  * @returns {VssRange}
  */
-const StakeReference = (address, utxoPath) => {
+const StakeReference = (address, anchor) => {
     return {
         address,
-        utxoPath,
+        anchor,
     };
 }
 
@@ -81,7 +81,7 @@ export class Vss {
     constructor() {
         /** Validator Selection Spectrum (VSS)
          * - Can search key with number, will be converted to string.
-         * @example { '100': { address: 'WCHMD65Q7qR2uH9XF5dJ', utxoPath: '0:bdadb7ab:0' } }
+         * @example { '100': { address: 'WCHMD65Q7qR2uH9XF5dJ', anchor: '0:bdadb7ab:0' } }
          * @type {Object<string, StakeReference | undefined>} */
         this.spectrum = {};
         /** @type {StakeReference[]} */
@@ -94,7 +94,7 @@ export class Vss {
      */
     newStake(UTXO, upperBound) {
         const address = UTXO.address;
-        const utxoPath = UTXO.utxoPath;
+        const anchor = UTXO.anchor;
         const amount = UTXO.amount;
         
         if (upperBound) {
@@ -103,7 +103,7 @@ export class Vss {
             const lastUpperBound = spectrumFunctions.getHighestUpperBound(this.spectrum);
             // TODO: manage this case even if it's impossible to reach
             if (lastUpperBound + amount >= utils.blockchainSettings.maxSupply) { throw new Error('VSS: Max supply reached.'); }
-            this.spectrum[lastUpperBound + amount] = StakeReference(address, utxoPath);
+            this.spectrum[lastUpperBound + amount] = StakeReference(address, anchor);
         }
     }
 
@@ -129,7 +129,7 @@ export class Vss {
             
             const winningNumber = await spectrumFunctions.hashToIntWithRejection(blockHash, i, maxRange);
             // can't be existing winner
-            if (roundLegitimacies.find(stake => stake.utxoPath === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).utxoPath)) { continue; }
+            if (roundLegitimacies.find(stake => stake.anchor === spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber).anchor)) { continue; }
 
             roundLegitimacies.push(spectrumFunctions.getStakeReferenceFromIndex(this.spectrum, winningNumber));
             

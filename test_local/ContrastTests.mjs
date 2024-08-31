@@ -159,11 +159,13 @@ async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
     const factory = new NodeFactory();
+
     const createdMinerNode = await factory.createNode(accounts[1], 'miner');
     const minerNode = createdMinerNode;
     //createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
     //createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
     await createdMinerNode.start();
+
     // Create validator node
     const createdNode = await factory.createNode(accounts[0], 'validator');
     const validatorNode = createdNode;
@@ -173,9 +175,8 @@ async function nodeSpecificTest(accounts, wss) {
     await validatorNode.start();
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
-    //minerNode.miner.pushCandidate(validatorNode.blockCandidate);
 
-    minerNode.startMining();
+    minerNode.miner.startWithWorker();
 
     await validatorNode.createBlockCandidateAndBroadcast();
 
@@ -185,6 +186,7 @@ async function nodeSpecificTest(accounts, wss) {
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };
     let txsTaskDoneThisBlock = {};
 
+    // Loop and spent different transactions
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
             //minerNode.miner.pushCandidate(validatorNode.blockCandidate);

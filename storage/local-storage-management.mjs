@@ -218,6 +218,8 @@ function saveBlockDataLocally(id, blockData, extension = 'json') {
 
     try {
         const blocksFolderName = `${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder}-${Math.floor(blockData.index / numberOfBlockFilesInFolder) * numberOfBlockFilesInFolder + numberOfBlockFilesInFolder - 1}`;
+        if (!fs.existsSync(targetPath)) { fs.mkdirSync(targetPath); }
+        
         const blocksFolderPath = path.join(targetPath, blocksFolderName);
         if (!fs.existsSync(blocksFolderPath)) { fs.mkdirSync(blocksFolderPath); }
 

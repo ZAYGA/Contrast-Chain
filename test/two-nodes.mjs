@@ -31,7 +31,7 @@ describe('Two-Node Mining Test', function () {
         // Wait for the P2P network to be ready
         await waitForP2PNetworkReady([validatorNode, minerNode]);
 
-        minerNode.startMining();
+        minerNode.miner.startWithWorker();
     });
 
     after(async function () {
@@ -64,8 +64,8 @@ describe('Two-Node Mining Test', function () {
         expect(submitPowSpy.calledOnce).to.be.true;
 
         // Verify that both nodes have reached consensus on the new block
-        expect(validatorNode.getNodeStatus().currentBlockHeight).to.equal(1);
-        expect(minerNode.getNodeStatus().currentBlockHeight).to.equal(1);
+        expect(validatorNode.getStatus().currentBlockHeight).to.equal(1);
+        expect(minerNode.getStatus().currentBlockHeight).to.equal(1);
 
         // Clean up spies
         broadcastSpy.restore();

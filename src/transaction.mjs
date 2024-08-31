@@ -18,23 +18,23 @@ export const uxtoRulesGlossary = {
  * @property {string | undefined} address - output only
  * @property {string} rule - the unlocking rule
  * @property {number} version - the transaction version
- * @property {string | undefined} utxoPath - input only - the path to the UTXO blockHeight:txID:vout
+ * @property {string | undefined} anchor - input only - the path to the UTXO blockHeight:txID:vout
  */
 /** Transaction Input/Output data structure
  * @param {number} amount - the amount of microConts
  * @param {string | undefined} address - output only
  * @param {string} rule - the unlocking rule
  * @param {number} version - the transaction version
- * @param {string | undefined} utxoPath - input only - the path to the UTXO blockHeight:txID:vout
+ * @param {string | undefined} anchor - input only - the path to the UTXO blockHeight:txID:vout
  * @returns {TransactionIO}
  **/
-export const TransactionIO = (amount, rule, version, address, utxoPath) => {
+export const TransactionIO = (amount, rule, version, address, anchor) => {
     return {
         amount,
         rule,
         version,
         address,
-        utxoPath
+        anchor
     };
 }
 export class TxIO_Builder {
@@ -52,8 +52,8 @@ export class TxIO_Builder {
         const ruleName = rule.split('_')[0];
         if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
 
-        const utxoPath = utils.utxoPath.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
-        const newTxIO = TransactionIO(amount, rule, version, address, utxoPath);
+        const anchor = utils.anchor.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
+        const newTxIO = TransactionIO(amount, rule, version, address, anchor);
         Validation.isValidTransactionIO(newTxIO, type);
 
         // delte all undefined properties
@@ -66,19 +66,19 @@ export class TxIO_Builder {
         return newTxIO;
     }
     /** @param {TransactionIO[]} TxIOs */
-    static checkMalformedUtxoPaths(TxIOs) {
+    static checkMalformedAnchors(TxIOs) {
         for (let i = 0; i < TxIOs.length; i++) {
-            if (!utils.utxoPath.isValidUtxoPath(TxIOs[i].utxoPath)) {
-                throw new Error(`UTXO utxoPath malformed in UTXO ${i}: ${TxIOs[i].utxoPath}`);
+            if (!utils.anchor.isValidAnchor(TxIOs[i].anchor)) {
+                throw new Error(`UTXO anchor malformed in UTXO ${i}: ${TxIOs[i].anchor}`);
             }
         }
     }
     /** @param {TransactionIO[]} TxIOs */
-    static checkDuplicateUtxoPaths(TxIOs) {
+    static checkDuplicateAnchors(TxIOs) {
         if (TxIOs.length === 0) { throw new Error('No UTXO to check'); }
 
-        const utxoPaths = TxIOs.map(TxIO => TxIO.utxoPath);
-        if (utils.conditionnals.arrayIncludeDuplicates(utxoPaths)) { throw new Error('Duplicate UTXO utxoPaths in UTXOs'); }
+        const anchors = TxIOs.map(TxIO => TxIO.anchor);
+        if (utils.conditionnals.arrayIncludeDuplicates(anchors)) { throw new Error('Duplicate UTXO anchors in UTXOs'); }
     }
     /**
      * @param {TransactionIO[]} TxIOs
@@ -161,8 +161,8 @@ export class Transaction_Builder {
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
         if (transfers.length === 0) { throw new Error('No transfer to make'); }
         
-        TxIO_Builder.checkMalformedUtxoPaths(UTXOs);
-        TxIO_Builder.checkDuplicateUtxoPaths(UTXOs);
+        TxIO_Builder.checkDuplicateAnchors(UTXOs);
+        TxIO_Builder.checkMalformedAnchors(UTXOs);
 
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig_v1', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);
@@ -189,8 +189,8 @@ export class Transaction_Builder {
         const UTXOs = senderAccount.UTXOs;
         if (UTXOs.length === 0) { throw new Error('No UTXO to spend'); }
 
-        TxIO_Builder.checkMalformedUtxoPaths(UTXOs);
-        TxIO_Builder.checkDuplicateUtxoPaths(UTXOs);
+        TxIO_Builder.checkMalformedAnchors(UTXOs);
+        TxIO_Builder.checkDuplicateAnchors(UTXOs);
 
         const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom([{recipientAddress: stakingAddress, amount}], 'sigOrSlash', 1);
         const estimatedWeight = Transaction_Builder.simulateTransactionToEstimateWeight(UTXOs, outputs);

@@ -164,11 +164,22 @@ class P2PNetwork extends EventEmitter {
         try {
             await this.node.services.pubsub.subscribe(topic);
             this.subscriptions.add(topic);
-            if (callback) this.on(topic, callback);
+            //if (callback) this.on(topic, callback);
+            if (callback) this.on(topic, (message) => callback(topic, message));
             this.logger.debug({ component: 'P2PNetwork', topic, subscriptions: Array.from(this.subscriptions) }, 'Subscribed to topic');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to subscribe to topic');
             throw error;
+        }
+    }
+    /**
+     * @param {string[]} topics 
+     * @param {Function} callback 
+     * @returns 
+     */
+    async subscribeMultipleTopics(topics, callback) {
+        for (const topic of topics) {
+            await this.subscribe(topic, callback);
         }
     }
 
@@ -215,7 +226,7 @@ class P2PNetwork extends EventEmitter {
         }
     }
 
-    getNodeStatus() {
+    getStatus() {
         return {
             isSyncing: false,
             blockHeight: 0,
@@ -231,7 +242,7 @@ class P2PNetwork extends EventEmitter {
             await this.subscribe(topic);
             await this.node.services.pubsub.publish(topic, Buffer.from(JSON.stringify({
                 peerId: this.node.peerId.toString(),
-                status: this.getNodeStatus(),
+                status: this.getStatus(),
             })));
             this.logger.debug({ component: 'P2PNetwork' }, 'Peer announced');
         } catch (error) {

@@ -48,7 +48,7 @@ export class Validation {
         if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
-        if (type === 'input' && !utils.utxoPath.isValidUtxoPath(TxIO.utxoPath)) { throw new Error('Invalid utxoPath'); }
+        if (type === 'input' && !utils.anchor.isValid(TxIO.anchor)) { throw new Error('Invalid anchor'); }
 
         if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
         if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
@@ -132,10 +132,10 @@ export class Validation {
     /** ==> Sixth validation, high computation cost.
      * 
      * - control the inputAddresses/witnessesPubKeys correspondence
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      */
-    static async addressOwnershipConfirmation(UTXOsByPath, transaction, useDevArgon2 = false) {
+    static async addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2 = false) {
         //const startTime = Date.now();
         const witnessesAddresses = [];
 
@@ -152,10 +152,10 @@ export class Validation {
 
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const utxoPath = transaction.inputs[i].utxoPath;
-            if (!utils.utxoPath.isValidUtxoPath(utxoPath)) { throw new Error('Invalid utxoPath'); }
+            const anchor = transaction.inputs[i].anchor;
+            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
 
-            const referencedUTXO = UTXOsByPath[utxoPath];
+            const referencedUTXO = utxosByAnchor[anchor];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
             if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
                 
@@ -170,28 +170,28 @@ export class Validation {
     }
 
     /** ==> Sequencially call the full set of validations
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      * @returns {number} - the fee
      */
-    static async fullTransactionValidation(UTXOsByPath, transaction, isCoinBase, useDevArgon2 = false) {
+    static async fullTransactionValidation(utxosByAnchor, transaction, isCoinBase, useDevArgon2 = false) {
         Validation.isConformTransaction(transaction, isCoinBase);
         const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
         await Validation.controlTransactionHash(transaction);
         await Validation.controlAllWitnessesSignatures(transaction);
         if (isCoinBase) { return { fee, success: true }; }
         
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, useDevArgon2);
+        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2);
 
         return { fee, success: true };
     }
 
     /**
-     * @param {Object<string, TransactionIO>} UTXOsByPath
+     * @param {Object<string, TransactionIO>} utxosByAnchor
      * @param {BlockData} blockData
      */
-    static isFinalizedBlockDoubleSpending(UTXOsByPath, blockData) {
+    static isFinalizedBlockDoubleSpending(utxosByAnchor, blockData) {
         const utxoSpent = {};
         for (let i = 0; i < blockData.Txs.length; i++) {
             if (i === 0 || i === 1) { continue; } // coinbase Tx / validator Tx
@@ -199,14 +199,14 @@ export class Validation {
             const Tx = blockData.Txs[i];
             const utxoSpentInTx = {};
             for (let j = 0; j < Tx.inputs.length; j++) {
-                const utxoPath = Tx.inputs[j].utxoPath;
+                const anchor = Tx.inputs[j].anchor;
 
-                if (utxoSpentInTx[utxoPath]) { continue; } // we can see the same utxoPath multiple times in the same Tx
-                utxoSpentInTx[utxoPath] = true;
+                if (utxoSpentInTx[anchor]) { continue; } // we can see the same anchor multiple times in the same Tx
+                utxoSpentInTx[anchor] = true;
 
-                if (utxoSpent[utxoPath]) { throw new Error('Double spending'); }
-                if (!UTXOsByPath[utxoPath]) { throw new Error('UTXO not found in utxoCache, already spent?'); }
-                utxoSpent[utxoPath] = true;
+                if (utxoSpent[anchor]) { throw new Error('Double spending'); }
+                if (!utxosByAnchor[anchor]) { throw new Error('UTXO not found in utxoCache, already spent?'); }
+                utxoSpent[anchor] = true;
             }
         }
     }

@@ -60,7 +60,7 @@
         };
 
 
-        function createAddressesUTXOLine(address, amount, utxoPath, rule, version) {
+        function createAddressesUTXOLine(address, amount, anchor, rule, version) {
             const line = document.createElement('li');
             line.classList.add('utxoLine');
             // add div for each element
@@ -74,10 +74,10 @@
             amountDiv.textContent = amount;
             line.appendChild(amountDiv);
 
-            const utxoPathDiv = document.createElement('div');
-            utxoPathDiv.style.width = '160px';
-            utxoPathDiv.textContent = utxoPath;
-            line.appendChild(utxoPathDiv);
+            const anchorDiv = document.createElement('div');
+            anchorDiv.style.width = '160px';
+            anchorDiv.textContent = anchor;
+            line.appendChild(anchorDiv);
 
             const ruleDiv = document.createElement('div');
             ruleDiv.textContent = rule;
@@ -110,10 +110,10 @@
 
                 const listElement = document.createElement('ul');
                 listElement.classList.add('utxoList');
-                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'utxoPath', 'Rule', 'Version'));
+                listElement.appendChild(createAddressesUTXOLine('Address', 'Amount', 'anchor', 'Rule', 'Version'));
 
                 utxos[address].forEach(utxo => {
-                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.utxoPath, utxo.rule, utxo.version));
+                    listElement.appendChild(createAddressesUTXOLine(utxo.address, utxo.amount, utxo.anchor, utxo.rule, utxo.version));
                 });
 
                 wrap.appendChild(listElement);

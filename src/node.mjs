@@ -24,6 +24,11 @@ export class Node {
         this.role = role; // 'miner' or 'validator'
         /** @type {CallStack} */
         this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
+        /** @type {P2PNetwork} */
+        this.p2pNetwork = new P2PNetwork({
+            role: this.role,
+            ...p2pOptions
+        });
 
         /** @type {Account} */
         this.account = account;
@@ -37,12 +42,7 @@ export class Node {
         /** @type {UtxoCache} */
         this.utxoCache = new UtxoCache();
         /** @type {Miner} */
-        this.miner = new Miner(account, this.validPowCallback.bind(this));
-
-        this.p2pNetwork = new P2PNetwork({
-            role: this.role,
-            ...p2pOptions
-        });
+        this.miner = new Miner(account, this.p2pNetwork);
 
         this.useDevArgon2 = false;
         this.considerDefinitiveAfter = 6; // in blocks
@@ -58,135 +58,93 @@ export class Node {
     }
     async start() {
         await this.p2pNetwork.start();
-        this.setupEventListeners();
+        // Set the event listeners
+        //this.p2pNetwork.subscribe('new_transaction', this.handleNewTransaction.bind(this));
+        //this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
+        //this.p2pNetwork.subscribe('new_block_pow', this.handleNewBlockFromMiners.bind(this));
+
+        const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow'];
+        await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
+
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
     }
-    async startMining() {
-        if (this.role === 'miner') {
-            this.miner.startWithWorker();
-        }
+    async stop() {
+        await this.p2pNetwork.stop();
+        if (this.miner) { this.miner.terminate(); }
+        console.log(`Node ${this.id} (${this.role}) => stopped`);
     }
     async createBlockCandidateAndBroadcast() {
         if (this.role === 'validator') {
             this.blockCandidate = await this.createBlockCandidate();
             this.broadcastBlockProposal(this.blockCandidate);
+            //this.p2pBroadcaster('new_block_proposal', { blockProposal: this.blockCandidate });
         }
     }
 
-    async stop() {
-        await this.p2pNetwork.stop();
-        if (this.role === 'miner') {
-            // Implement miner stopping logic if necessary
-        }
-        console.log(`Node ${this.id} (${this.role}) stopped`);
+    /** @param {BlockData} minerCandidate */
+    submitPowProposal(minerCandidate) {
+        this.callStack.push(() => this.#processPowBlock(minerCandidate));
     }
-    setupEventListeners() {
-
-        this.p2pNetwork.subscribe('new_transaction', this.handleNewTransaction.bind(this));
-        this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
-        this.p2pNetwork.subscribe('new_block_pow', this.handleNewBlockFromMiners.bind(this));
-    }
-    async handleNewTransaction(message) {
+    /** @param {BlockData} minerCandidate */
+    async #validateBlockProposal(minerCandidate) {
         try {
-            await this.addTransactionJSONToMemPool(message.transaction);
-            console.log(`Node ${this.id} received new transaction`);
-        } catch (error) {
-            console.error(`Node ${this.id} failed to process new transaction:`, error);
-        }
-    }
-    async handleNewBlockFromValidator(message) {
-        try {
-            console.log(`[MINER NODE] ${this.id} received new block proposal, height: ${message.blockProposal.index}`);
-            if (this.role === 'miner') {
-                this.miner.pushCandidate(message.blockProposal);
-            }
-        } catch (error) {
-            console.error(`[MINER NODE] ${this.id} failed to process new block proposal, height: ${message.blockProposal.index}:`, error);
-        }
-    }
-    async handleNewBlockFromMiners(message) {
-        if (this.role === 'validator') {
-            try {
-                await this.#processPowBlock(message.blockPow);
-            } catch (error) {
-                console.error(`Error processing PoW block:`, error);
-            }
-        }
-    }
+            // verify the height
+            const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1;
 
+            if (minerCandidate.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${minerCandidate.index} <= ${lastBlockIndex}`); return false; }
+            if (minerCandidate.index > lastBlockIndex + 1) { console.log(`Rejected block proposal, higher index: ${minerCandidate.index} > ${lastBlockIndex + 1}`); return false; }
 
-
-    /** @param {BlockData} minerBlockCandidate */
-    submitPowProposal(minerBlockCandidate) {
-        this.callStack.push(() => this.#processPowBlock(minerBlockCandidate));
-    }
-    /** @param {BlockData} minerBlockCandidate */
-    async #validateBlockProposal(blockData) {
-        try {
             // verify the hash
-            const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.useDevArgon2);
-            if (blockData.hash !== hex) { throw new Error('Invalid hash'); }
-            const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockData);
+            const { hex, bitsArrayAsString } = await Block.getMinerHash(minerCandidate, this.useDevArgon2);
+            if (minerCandidate.hash !== hex) { return 'Hash invalid!'; }
+            const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerCandidate);
+            if (!hashConfInfo.conform) { return 'Hash not conform!'; }
 
             // control coinBase Amount
-            const coinBaseAmount = blockData.Txs[0].outputs[0].amount;
-            const expectedCoinBase = Block.calculateNextCoinbaseReward(blockData);
-            if (coinBaseAmount !== expectedCoinBase) { throw new Error(`Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`); }
+            const coinBaseAmount = minerCandidate.Txs[0].outputs[0].amount;
+            const expectedCoinBase = Block.calculateNextCoinbaseReward(minerCandidate);
+            if (coinBaseAmount !== expectedCoinBase) { return `Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`; }
 
             // double spend control
-            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.UTXOsByPath, blockData);
+            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, minerCandidate);
 
             // verify the transactions
-            for (let i = 0; i < blockData.Txs.length; i++) {
-                const tx = blockData.Txs[i];
+            for (let i = 0; i < minerCandidate.Txs.length; i++) {
+                const tx = minerCandidate.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
-                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.UTXOsByPath, tx, isCoinBase, this.useDevArgon2);
+                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, tx, isCoinBase, this.useDevArgon2);
                 if (!txValidation.success) {
                     const error = txValidation;
-                    throw new Error(`Invalid transaction: ${tx.id} - ${error}`);
+                    return `Invalid transaction: ${tx.id} - ${error}`;
                 }
             }
-            this.lastBlockData = blockData;
+            // securely store cloned block data
+            this.lastBlockData = Block.cloneBlockData(minerCandidate);
             return hashConfInfo;
         } catch (error) {
+            console.error(error);
             return false;
         }
     }
-
-    /**
-     * should be used with the callstack
-     * @param {BlockData} minerBlockCandidate
-     */
-    async #processPowBlock(minerBlockCandidate) {
-
+    /** @param {BlockData} minerCandidate */
+    async #processPowBlock(minerCandidate) {
+        if (!minerCandidate) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
-        console.log(`[NODE] Processing PoW block: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
+        //console.log(`[NODE] Processing PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
         const startTime = Date.now();
-        // verify the height
-        if (!minerBlockCandidate) { throw new Error('Invalid block candidate'); }
-        let index = -1;
+        
+        const hashConfInfo = await this.#validateBlockProposal(minerCandidate);
+        if (!hashConfInfo.conform) { return false; }
 
-        if (this.lastBlockData) { index = this.lastBlockData.index; }
-        //const blockIsTooOld = index === 0 || this.lastBlockData === null ? false : minerBlockCandidate.index <= index;
-        //const blockIsAhead = index === 0 && this.lastBlockData === null ? false : minerBlockCandidate.index > index + 1;
-        const blockIsTooOld = minerBlockCandidate.index <= index;
-        const blockIsAhead = minerBlockCandidate.index > index + 1;
+        const blockDataCloneToDigest = Block.cloneBlockData(minerCandidate); // clone to avoid modification
 
-        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} <= ${this.lastBlockData.index}`); return false; }
-        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${this.lastBlockData.index} > ${this.blockCandidate.index + 1} -> NEED TO SYNC`); }
-
-        const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
-        if (!hashConfInfo) { return false; }
-
-        const blockDataCloneToDigest = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
-
-        let newStakesOutputs;
         try {
-
-            newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
+            const newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
+            console.log(`[NODE -- VALIDATOR] processPowBlock accepted: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}`);
+            if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
         } catch (error) {
-            console.warn(`[NODE -- VALIDATOR] processPowBlock rejected: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy} | ${error.message}
+            console.warn(`[NODE -- VALIDATOR] processPowBlock rejected: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy} | ${error.message}
 ----------------------
 -> Rollback UTXO cache
 ----------------------`);
@@ -194,44 +152,46 @@ export class Node {
             return false;
         }
 
-        console.log(`[NODE -- VALIDATOR] processPowBlock accepted: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy}`);
-        //if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
-        console.log(`[NODE] Block ${minerBlockCandidate.index} | ${minerBlockCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
-        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.UTXOsByPath);
+        //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
+        
+        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
-        console.log(`[NODE] MemPool size: ${Object.keys(this.memPool.transactionsByID).length}`);
-        this.#digestBlock(minerBlockCandidate); // will store the block in ram, and save older blocks if ahead enough
-        console.log(`[NODE] Block ${minerBlockCandidate.index} | ${minerBlockCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
+        //console.log(`[NODE] MemPool size: ${Object.keys(this.memPool.transactionsByID).length}`);
+        
+        this.#digestBlock(minerCandidate); // will store the block in ram, and save older blocks if ahead enough
+        //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
+        
         this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
         if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
 
-        // simple log for debug ----------------------
-        //const powMinerTx = minerBlockCandidate.Txs[0];
-        //const address = powMinerTx.outputs[0].address;
-        //const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
-        //console.log(`[NODE] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        /*simple log for debug ----------------------
+        const powMinerTx = minerCandidate.Txs[0];
+        const address = powMinerTx.outputs[0].address;
+        const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
+        console.log(`[NODE] Height: ${minerCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
+        */
+        const timeBetweenPosPow = ((minerCandidate.timestamp - minerCandidate.posTimestamp) / 1000).toFixed(2);
+        console.info(`[NODE] H:${minerCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
-        const timeBetweenPosPow = ((minerBlockCandidate.timestamp - minerBlockCandidate.posTimestamp) / 1000).toFixed(2);
-        console.warn(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        //console.log(`[NODE] Calculating new block candidate after PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
+        await this.vss.calculateRoundLegitimacies(minerCandidate.hash);
+        const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
+        if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
+
+        const newBlockCandidate = await this.createBlockCandidate();
+        this.blockCandidate = newBlockCandidate;
 
         this.callStack.push(async () => {
-            console.log(`[NODE] Calculating new block candidate after PoW block: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
-            await this.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
-            const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
-            if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
-
-            const newBlockCandidate = await this.createBlockCandidate();
-            this.blockCandidate = newBlockCandidate;
             //console.log(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
             this.broadcastBlockProposal(newBlockCandidate);
+            //this.p2pBroadcaster('new_block_proposal', { blockProposal: this.blockCandidate });
         }, true);
 
         return true;
     }
-
-    /** @param {BlockData} minerBlockCandidate */
-    #digestBlock(minerBlockCandidate) {
-        const blockDataCloneToStore = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
+    /** @param {BlockData} minerCandidate */
+    #digestBlock(minerCandidate) {
+        const blockDataCloneToStore = Block.cloneBlockData(minerCandidate); // clone to avoid modification
         this.confirmedBlocks.push(blockDataCloneToStore); // store the block in ram
 
         if (this.confirmedBlocks.length <= this.considerDefinitiveAfter) { return; }
@@ -251,10 +211,8 @@ export class Node {
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTransaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        //await this.memPool.pushTransaction(this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
-        this.memPool.submitTransaction(this.callStack, this.utxoCache.UTXOsByPath, signedTransaction, replaceExistingTxID);
+        this.memPool.submitTransaction(this.callStack, this.utxoCache.utxosByAnchor, signedTransaction, replaceExistingTxID);
     }
-
     /**
      * @param {BlockData | undefined} lastBlockData
      * @param {number} myLegitimacy
@@ -289,26 +247,62 @@ export class Node {
         this.blockCandidate = blockCandidate;
         return blockCandidate;
     }
-    /** @param {Transaction} */
+
+    /**
+     * @param {string} topic 
+     * @param {object} message 
+     */
+    async p2pHandler(topic, message) {
+        const data = message;
+        try {
+            switch (topic) {
+                case 'new_transaction':
+                    if (this.role !== 'validator') { break; }
+                    await this.addTransactionJSONToMemPool(data);
+                    break;
+                case 'new_block_proposal':
+                    if (this.role !== 'miner') { break; }
+                    this.miner.pushCandidate(data);
+                    break;
+                case 'new_block_pow':
+                    if (this.role !== 'validator') { break; }
+                    //await this.#processPowBlock(message.blockPow); NO !!
+                    this.submitPowProposal(data);
+                    break;
+                default:
+                    console.error(`[P2P-HANDLER] ${topic} -> Unknown topic`);
+            }
+        } catch (error) {
+            console.error(`[P2P-HANDLER] ${topic} -> Failed! `, error);
+        }
+    }
+
+    /**
+     * 
+     * @param {*} topic 
+     * @param {*} message 
+     */
+    async p2pBroadcaster(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
+        await this.p2pNetwork.broadcast(topic, message);
+    }
+
+    // I'll be happy if we replace that by one function with a switch case
     async broadcastTransaction(transaction) {
-        console.log(`[NODE] Broadcasting transaction: ${transaction.id}`);
-        await this.p2pNetwork.broadcast('new_transaction', { transaction });
+        //console.log(`[NODE] Broadcasting transaction: ${transaction.id}`);
+        //await this.p2pNetwork.broadcast('new_transaction', { transaction });
+        await this.p2pNetwork.broadcast('new_transaction', transaction);
     }
-
     async broadcastBlockProposal(blockProposal) {
-        await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
+        //await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
+        await this.p2pNetwork.broadcast('new_block_proposal', blockProposal);
     }
-
     async broadcastBlockPow(blockPow) {
-        console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
-        await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
+        //console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
+        //await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
+        await this.p2pNetwork.broadcast('new_block_pow', blockPow);
     }
 
-    validPowCallback(validBlockCandidate) {
-        this.broadcastBlockPow(validBlockCandidate);
-    }
-
-    getNodeStatus() {
+    getStatus() {
         return {
             id: this.id,
             role: this.role,

@@ -4,20 +4,21 @@ import utils from './utils.mjs';
 
 /**
  * @typedef {import("./account.mjs").Account} Account
+ * @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
  */
 
 export class Miner {
     /**
      * @param {Account} minerAccount
-     * @param {Function} validPowCallback
+     * @param {P2PNetwork} p2pNetwork
      */
-    constructor(minerAccount, validPowCallback) {
+    constructor(minerAccount, p2pNetwork) {
         /** @type {Account} */
         this.minerAccount = minerAccount;
         /** @type {BlockData[]} */
         this.candidates = [];
-        /** @type {Function} */
-        this.validPowCallback = validPowCallback;
+        /** @type {P2PNetwork} */
+        this.p2pNetwork = p2pNetwork;
 
         this.highestBlockIndex = 0;
         this.useDevArgon2 = false;
@@ -29,7 +30,8 @@ export class Miner {
     async minePow(blockCandidate) { // Will probably DEPRECATE
         await this.prepareBlockCandidateBeforeMining(blockCandidate);
         const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate, this.useDevArgon2);
-        utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate); // throw error if not conform
+        const { conform } = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate);
+        if (!conform) { throw new Error('Block hash does not conform to difficulty'); }
 
         blockCandidate.hash = hex;
         //console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
@@ -61,7 +63,7 @@ export class Miner {
             this.highestBlockIndex = blockCandidateClone.index;
             this.cleanupCandidates();
         }
-        console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
+        //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
         this.candidates.push(blockCandidateClone);
     }
     cleanupCandidates(heightTolerance = 1) {
@@ -69,34 +71,32 @@ export class Miner {
         this.candidates = this.candidates.filter(candidate => this.highestBlockIndex - candidate.index <= heightTolerance);
     }
     getMostLegitimateBlockCandidate() {
-        if (this.candidates.length === 0) {
-            return null;
-        }
+        if (this.candidates.length === 0) { return null; }
+
         const filteredCandidates = this.candidates.filter(candidate => candidate.index === this.highestBlockIndex);
         // the lower the legitimacy, the more legitimate the block is, 0 is the most legitimate
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
 
-    // logic is a bit complex, but it avoid stack overflow
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {
 
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
-                if (message.error) { throw new Error(message.error); }
                 try {
-                    utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
-                    this.validPowCallback(message.blockCandidate);
-                } catch (error) {
-                    console.error('prout');
+                    if (message.error) { throw new Error(message.error); }
+                    const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
+            
+                    if (conform) { 
+                        this.p2pNetwork.broadcast('new_block_pow', message.blockCandidate); }
+                    workersStatus[message.id] = 'free';
+                } catch (err) {
+                    console.error(err);
                 }
-                workersStatus[message.id] = 'free';
             });
-            worker.on('exit', (code) => {
-                console.log(`Worker stopped with exit code ${code}`);
-            });
+            worker.on('exit', (code) => { console.log(`Worker stopped with exit code ${code}`); });
 
             this.workers.push(worker);
             workersStatus.push('free');
@@ -110,10 +110,7 @@ export class Miner {
             if (id === -1) { continue; }
 
             const blockCandidate = this.getMostLegitimateBlockCandidate();
-            if (!blockCandidate) {
-                //console.warn('No block candidate to mine');
-                continue;
-            }
+            if (!blockCandidate) { continue; }
 
             workersStatus[id] = 'busy';
 

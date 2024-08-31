@@ -1,5 +1,5 @@
 import { Validation } from './validation.mjs';
-import { Transaction_Builder, Transaction } from './transaction.mjs';
+import { Transaction_Builder, Transaction, TransactionIO } from './transaction.mjs';
 import utils from './utils.mjs';
 /**
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
@@ -24,10 +24,10 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.transactionsByFeePerByte[feePerByte] = this.transactionsByFeePerByte[feePerByte] || [];
         this.transactionsByFeePerByte[feePerByte].push(transaction);
 
-        // sorted by utxoPath
+        // sorted by anchor
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const utxoPath = transaction.inputs[i].utxoPath;
-            this.transactionByPath[utxoPath] = transaction;
+            const anchor = transaction.inputs[i].anchor;
+            this.transactionByPath[anchor] = transaction;
         }
 
         // sorted by transaction ID
@@ -47,12 +47,12 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.transactionsByFeePerByte[txFeePerByte].splice(txIndex, 1);
         if (this.transactionsByFeePerByte[txFeePerByte].length === 0) { delete this.transactionsByFeePerByte[txFeePerByte]; }
 
-        // remove from: sorted by utxoPath
+        // remove from: sorted by anchor
         const collidingTx = this.#caughtTransactionsUTXOCollision(transaction);
         for (let i = 0; i < collidingTx.inputs.length; i++) {
-            const utxoPath = collidingTx.inputs[i].utxoPath;
-            if (!this.transactionByPath[utxoPath]) { throw new Error(`Transaction not found in mempool: ${utxoPath}`); }
-            delete this.transactionByPath[utxoPath];
+            const anchor = collidingTx.inputs[i].anchor;
+            if (!this.transactionByPath[anchor]) { throw new Error(`Transaction not found in mempool: ${anchor}`); }
+            delete this.transactionByPath[anchor];
         }
 
         // remove from: sorted by transaction ID
@@ -62,17 +62,17 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     }
     /** 
      * - Remove transactions that are using UTXOs that are already spent
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      */
-    clearTransactionsWhoUTXOsAreSpent(UTXOsByPath) {
-        const knownUtxoPaths = Object.keys(this.transactionByPath);
+    clearTransactionsWhoUTXOsAreSpent(utxosByAnchor) {
+        const knownAnchors = Object.keys(this.transactionByPath);
         
-        for (let i = 0; i < knownUtxoPaths.length; i++) {
-            const utxoPath = knownUtxoPaths[i];
-            if (!this.transactionByPath[utxoPath]) { continue; } // already removed
-            if (UTXOsByPath[utxoPath]) { continue; } // not spent
+        for (let i = 0; i < knownAnchors.length; i++) {
+            const anchor = knownAnchors[i];
+            if (!this.transactionByPath[anchor]) { continue; } // already removed
+            if (utxosByAnchor[anchor]) { continue; } // not spent
 
-            const transaction = this.transactionByPath[utxoPath];
+            const transaction = this.transactionByPath[anchor];
             this.#removeMempoolTransaction(transaction);
         }
     }
@@ -128,41 +128,41 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     /** @param {Transaction} transaction */
     #caughtTransactionsUTXOCollision(transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const utxoPath = transaction.inputs[i].utxoPath;
-            if (utxoPath === undefined) { throw new Error('Invalid UTXO'); }
-            if (!this.transactionByPath[utxoPath]) { continue; }
+            const anchor = transaction.inputs[i].anchor;
+            if (anchor === undefined) { throw new Error('Invalid UTXO'); }
+            if (!this.transactionByPath[anchor]) { continue; }
 
-            return this.transactionByPath[utxoPath];
+            return this.transactionByPath[anchor];
         }
 
         return false;
     }
     /** 
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      */
-    #transactionUTXOsAreNotSpent(UTXOsByPath, transaction) {
+    #transactionUTXOsAreNotSpent(utxosByAnchor, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            if (!utils.utxoPath.isValidUtxoPath(transaction.inputs[i].utxoPath)) { throw new Error('Invalid UTXO'); }
-            if (!UTXOsByPath[transaction.inputs[i].utxoPath]) { return false; }
+            if (!utils.anchor.isValidAnchor(transaction.inputs[i].anchor)) { throw new Error('Invalid UTXO'); }
+            if (!utxosByAnchor[transaction.inputs[i].anchor]) { return false; }
         }
 
         return true;
     }
     /**
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    submitTransaction(callStack, UTXOsByPath, transaction, replaceExistingTxID) { // DEPRECATED
-        callStack.push(() => this.pushTransaction(UTXOsByPath, transaction, replaceExistingTxID));
+    submitTransaction(callStack, utxosByAnchor, transaction, replaceExistingTxID) { // DEPRECATED
+        callStack.push(() => this.pushTransaction(utxosByAnchor, transaction, replaceExistingTxID));
     }
     /**
-     * @param {Object<string, TransactionIO>} UTXOsByPath - from utxoCache
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
-    async pushTransaction(UTXOsByPath, transaction, replaceExistingTxID) {
+    async pushTransaction(utxosByAnchor, transaction, replaceExistingTxID) {
         const isCoinBase = false;
 
         // First control format of : amount, address, rule, version, TxID
@@ -194,7 +194,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
             };
         }
 
-        if (!this.#transactionUTXOsAreNotSpent(UTXOsByPath, transaction)) {
+        if (!this.#transactionUTXOsAreNotSpent(utxosByAnchor, transaction)) {
             throw new Error('UTXOs(one at least) are spent'); }
 
         // Third validation: medium computation cost.
@@ -207,7 +207,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         await Validation.controlAllWitnessesSignatures(transaction);
 
         // Sixth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(UTXOsByPath, transaction, this.useDevArgon2);
+        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, this.useDevArgon2);
 
         txInclusionFunction();
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);

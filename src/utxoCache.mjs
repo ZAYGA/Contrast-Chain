@@ -7,14 +7,14 @@ import utils from './utils.mjs';
 */
 
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
-    constructor(addressesUTXOs = {}, addressesBalances = {}, UTXOsByPath = {}, blockMiningData = []) {
-        this.bypassValidation = true;
+    constructor(addressesUTXOs = {}, addressesBalances = {}, utxosByAnchor = {}, blockMiningData = []) {
+        this.bypassValidation = false;
         /** @type {Object<string, TransactionIO[]>} */
         this.addressesUTXOs = addressesUTXOs;
         /** @type {Object<string, number>} */
         this.addressesBalances = addressesBalances;
         /** @type {Object<string, TransactionIO>} */
-        this.UTXOsByPath = UTXOsByPath; // UTXO by utxoPath
+        this.utxosByAnchor = utxosByAnchor; // UTXO by anchor
 
         /** @type {BlockMiningData[]} */
         this.blockMiningData = blockMiningData; // .csv mining datas research
@@ -45,14 +45,14 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         if (Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock)) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
-        TxIO_Builder.checkMalformedUtxoPaths(TxInputs);
-        TxIO_Builder.checkDuplicateUtxoPaths(TxInputs);
+        TxIO_Builder.checkMalformedAnchors(TxInputs);
+        TxIO_Builder.checkDuplicateAnchors(TxInputs);
 
         for (let i = 0; i < TxInputs.length; i++) {
-            const utxoPath = TxInputs[i].utxoPath;
-            const { address, amount } = this.UTXOsByPath[utxoPath];
+            const anchor = TxInputs[i].anchor;
+            const { address, amount } = this.utxosByAnchor[anchor];
 
-            this.#removeUTXO(address, utxoPath);
+            this.#removeUTXO(address, anchor);
             this.#changeBalance(address, -amount);
         }
 
@@ -60,20 +60,19 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     }
     /**
      * @param {string} address
-     * @param {string} utxoPath
+     * @param {string} anchor
      */
-    #removeUTXO(address, utxoPath) {
+    #removeUTXO(address, anchor) {
         // remove from addressesUTXOs
         if (this.addressesUTXOs[address] === undefined) { throw new Error(`${address} has no UTXOs`); }
 
-        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray => utxoInArray.utxoPath === utxoPath);
-        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${utxoPath}`); }
+        const addressUtxoIndex = this.addressesUTXOs[address].findIndex(utxoInArray => utxoInArray.anchor === anchor);
+        if (addressUtxoIndex === -1) { throw new Error(`${address} isn't owning UTXO: ${anchor}`); }
 
         this.addressesUTXOs[address].splice(addressUtxoIndex, 1);
         if (this.addressesUTXOs[address].length === 0) { delete this.addressesUTXOs[address]; }
 
-        // remove from UTXOsByPath
-        delete this.UTXOsByPath[utxoPath];
+        delete this.utxosByAnchor[anchor];
         // console.log(`[utxoCache]=> UTXO removed: ${utxoBlockHeight} - ${utxoTxID} - ${vout} | owner: ${address}`);
     }
     /**
@@ -89,15 +88,15 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
             // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
-            const utxoPath = utils.utxoPath.from_TransactionInputReferences(blockIndex, TxID, i);
-            if (!utils.utxoPath.isValidUtxoPath(utxoPath)) { throw new Error(`Invalid UTXO utxoPath: ${utxoPath}`); }
+            const anchor = utils.anchor.from_TransactionInputReferences(blockIndex, TxID, i);
+            if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
-            // output become ouput -> set UTXO's utxoPath
-            TxOutputs[i].utxoPath = utxoPath;
+            // output become ouput -> set UTXO's anchor
+            TxOutputs[i].anchor = anchor;
 
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
             this.addressesUTXOs[address].push(TxOutputs[i]);
-            this.UTXOsByPath[utxoPath] = TxOutputs[i];
+            this.utxosByAnchor[anchor] = TxOutputs[i];
             this.#changeBalance(address, amount);
 
             const rule = TxOutputs[i].rule;
@@ -189,14 +188,14 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         return {
             addressesUTXOs: JSON.parse(JSON.stringify(this.addressesUTXOs)),
             addressesBalances: JSON.parse(JSON.stringify(this.addressesBalances)),
-            UTXOsByPath: JSON.parse(JSON.stringify(this.UTXOsByPath)),
+            utxosByAnchor: JSON.parse(JSON.stringify(this.utxosByAnchor)),
             blockMiningData: JSON.parse(JSON.stringify(this.blockMiningData))
         };
     }
     rollbackUtxoCacheSnapshot(snapshot) {
         this.addressesUTXOs = snapshot.addressesUTXOs;
         this.addressesBalances = snapshot.addressesBalances;
-        this.UTXOsByPath = snapshot.UTXOsByPath;
+        this.utxosByAnchor = snapshot.utxosByAnchor;
         this.blockMiningData = snapshot.blockMiningData;
     }
 

@@ -32,20 +32,20 @@ describe('Consensus Test', function () {
                 address: nodeInfo.account.address,
                 rule: 'sig_v1',
                 version: 1,
-                utxoPath: `0:${utils.convert.string.toHex(nodeInfo.account.address).slice(0, 8)}:0`
+                anchor: `0:${utils.convert.string.toHex(nodeInfo.account.address).slice(0, 8)}:0`
             };
             nodeInfo.account.setBalanceAndUTXOs(INITIAL_BALANCE, [utxo]);
 
 
             // start mining on all miners nodes
             if (nodeInfo.role === 'miner') {
-                await nodeInfo.startMining();
+                await nodeInfo.miner.startWithWorker();
             }
 
 
             // Add the UTXO to all nodes' UTXO caches
             for (const otherNodeInfo of nodes) {
-                otherNodeInfo.utxoCache.UTXOsByPath[utxo.utxoPath] = utxo;
+                otherNodeInfo.utxoCache.utxosByAnchor[utxo.anchor] = utxo;
                 if (!otherNodeInfo.utxoCache.addressesUTXOs[nodeInfo.account.address]) {
                     otherNodeInfo.utxoCache.addressesUTXOs[nodeInfo.account.address] = [];
                 }
@@ -103,7 +103,7 @@ describe('Consensus Test', function () {
         await new Promise(resolve => setTimeout(resolve, 300000000));
 
         // Check if all nodes have reached consensus
-        const heights = nodes.map(n => n.getNodeStatus().currentBlockHeight);
+        const heights = nodes.map(n => n.getStatus().currentBlockHeight);
         const consensusHeight = Math.max(...heights);
 
         console.log('Node heights:', heights);
@@ -111,7 +111,7 @@ describe('Consensus Test', function () {
 
         // Verify that all nodes have reached the consensus height
         for (const node of nodes) {
-            expect(node.getNodeStatus().currentBlockHeight).to.equal(consensusHeight);
+            expect(node.getStatus().currentBlockHeight).to.equal(consensusHeight);
         }
 
         // Verify that the transaction is included in the blockchain
