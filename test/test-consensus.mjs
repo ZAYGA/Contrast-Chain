@@ -11,7 +11,7 @@ describe('Consensus Test', function () {
     let nodes = [];
     const NUM_NODES = 5;
     const NUM_MINERS = 2;
-    const INITIAL_BALANCE = 1000000; // 1 million microConts
+    const INITIAL_BALANCE = 1000000; // 1 million
     const mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00";
 
     before(async function () {
@@ -39,7 +39,7 @@ describe('Consensus Test', function () {
 
             // start mining on all miners nodes
             if (nodeInfo.role === 'miner') {
-                await nodeInfo.miner.startWithWorker();
+                nodeInfo.miner.startWithWorker();
             }
 
 
