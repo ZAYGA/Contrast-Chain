@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 100,
+    nbOfAccounts: 200,
     addressType: 'W',
 }
 
@@ -55,14 +55,15 @@ async function userSendToNextUser(node, accounts) {
             console.log(error);
         }
     }
-    const timeToCreateAndSignAllTxs = Date.now() - startTime; startTime = Date.now();
+    const timeToCreateAndSignAllTxs = Date.now() - startTime;
+    startTime = Date.now();
 
     for (let i = 0; i < signedTxsJSON.length; i++) {
         node.addTransactionJSONToMemPool(signedTxsJSON[i]);
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;
 
-    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeToPush: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
+    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeSubmit: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
 }
 /** User send to all other accounts
 * @param {Node} node
