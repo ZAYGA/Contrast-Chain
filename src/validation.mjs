@@ -157,12 +157,10 @@ export class Validation {
 
             const referencedUTXO = utxosByAnchor[anchor];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-            if (witnessesAddresses.includes(referencedUTXO.address) === false) { 
-                
+            if (witnessesAddresses.includes(referencedUTXO.address) === false) {
                 console.log(`Witnesses: ${witnessesAddresses}`);
                 console.log(`UTXO address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
-                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`); 
-    
+                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
             }
         }
 

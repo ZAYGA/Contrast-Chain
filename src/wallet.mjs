@@ -37,11 +37,9 @@ export class Wallet {
 
         this.useDevArgon2 = useDevArgon2;
     }
-    static async restore(mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", useDevArgon2 = false) {
+    async restore(mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") {
         const argon2HashResult = await HashFunctions.Argon2(mnemonicHex, "Contrast's Salt Isnt Pepper But It Is Tasty", 27, 1024, 1, 2, 26);
-        if (!argon2HashResult) { return false; }
-
-        return new Wallet(argon2HashResult.hex, useDevArgon2);
+        return argon2HashResult;
     }
     saveAccounts() {
         const id = this.masterHex.slice(0, 6);

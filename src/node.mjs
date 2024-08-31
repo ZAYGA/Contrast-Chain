@@ -51,7 +51,12 @@ export class Node {
         this.lastBlockData = null;
     }
 
-    /** @param {Account} account */
+    /** 
+     * @param {Account} account
+     * @param {string} role
+     * @param {Object<string, any>} p2pOptions
+     * @param {boolean} saveBlocksInfo
+     */
     static async load(account, role, p2pOptions = {}, saveBlocksInfo = false) {
         const node = new Node(account, role, p2pOptions);
         return node;
@@ -83,7 +88,7 @@ export class Node {
 
     /** @param {BlockData} minerCandidate */
     submitPowProposal(minerCandidate) {
-        this.callStack.push(() => this.#processPowBlock(minerCandidate));
+        this.callStack.push(() => this.#digestPowProposal(minerCandidate));
     }
     /** @param {BlockData} minerCandidate */
     async #validateBlockProposal(minerCandidate) {
@@ -127,7 +132,7 @@ export class Node {
         }
     }
     /** @param {BlockData} minerCandidate */
-    async #processPowBlock(minerCandidate) {
+    async #digestPowProposal(minerCandidate) {
         if (!minerCandidate) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
@@ -141,10 +146,10 @@ export class Node {
 
         try {
             const newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
-            console.log(`[NODE -- VALIDATOR] processPowBlock accepted: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}`);
+            //console.log(`[NODE -- VALIDATOR] digestPowProposal accepted: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}`);
             if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
         } catch (error) {
-            console.warn(`[NODE -- VALIDATOR] processPowBlock rejected: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy} | ${error.message}
+            console.warn(`[NODE -- VALIDATOR] digestPowProposal rejected: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy} | ${error.message}
 ----------------------
 -> Rollback UTXO cache
 ----------------------`);
@@ -171,7 +176,7 @@ export class Node {
         console.log(`[NODE] Height: ${minerCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
         */
         const timeBetweenPosPow = ((minerCandidate.timestamp - minerCandidate.posTimestamp) / 1000).toFixed(2);
-        console.info(`[NODE] H:${minerCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         //console.log(`[NODE] Calculating new block candidate after PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
         await this.vss.calculateRoundLegitimacies(minerCandidate.hash);

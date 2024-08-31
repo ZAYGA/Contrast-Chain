@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 100,
+    nbOfAccounts: 10,
     addressType: 'W',
 }
 
@@ -159,19 +159,20 @@ async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
     const factory = new NodeFactory();
+    const useDevArgon2 = testParams.useDevArgon2;
 
     const createdMinerNode = await factory.createNode(accounts[1], 'miner');
     const minerNode = createdMinerNode;
-    //createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
-    //createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
+    minerNode.miner.useDevArgon2 = useDevArgon2;
+    minerNode.memPool.useDevArgon2 = useDevArgon2;
     await createdMinerNode.start();
 
     // Create validator node
     const createdNode = await factory.createNode(accounts[0], 'validator');
     const validatorNode = createdNode;
 
-    //validatorNode.useDevArgon2 = testParams.useDevArgon2;
-    //validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
+    validatorNode.useDevArgon2 = useDevArgon2;
+    validatorNode.memPool.useDevArgon2 = useDevArgon2;
     await validatorNode.start();
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
@@ -266,8 +267,9 @@ async function nodeSpecificTest(accounts, wss) {
 export async function test(wss) {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
-    const wallet = await contrast.Wallet.restore("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
-    if (!wallet) { console.error('Failed to restore wallet.'); return; }
+    const wallet = new contrast.Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
+    const restored = await wallet.restore();
+    if (!restored) { console.error('Failed to restore wallet.'); return; }
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 
     wallet.loadAccounts();
