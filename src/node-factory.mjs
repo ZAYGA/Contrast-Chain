@@ -6,44 +6,6 @@ export class NodeFactory {
     constructor() {
         /** @type {Map<string, Node>} */
         this.nodes = new Map();
-        this.wallet = null;
-    }
-
-    /**
-     * @param {string} mnemonicHex
-     * @param {number} nbOfAccounts
-     * @param {string} addressType
-     * @returns {Promise<Account[]>}
-     */
-    async initialize(mnemonicHex, nbOfAccounts = 100, addressType = 'W') {
-        const startTime = Date.now();
-        const timings = { walletRestore: 0, deriveAccounts: 0 };
-
-        this.wallet = await Wallet.restore(mnemonicHex);
-        if (!this.wallet) {
-            throw new Error("Failed to restore wallet");
-        }
-        timings.walletRestore = Date.now() - startTime;
-
-        this.wallet.loadAccounts();
-        const { derivedAccounts, avgIterations } = await this.wallet.deriveAccounts(nbOfAccounts, addressType);
-        if (!derivedAccounts) {
-            throw new Error("Failed to derive accounts");
-        }
-        timings.deriveAccounts = Date.now() - (startTime + timings.walletRestore);
-
-        this.wallet.saveAccounts();
-
-        console.log(`
-__Timings -----------------------
-| -- walletRestore: ${timings.walletRestore}ms
-| -- deriveAccounts(${nbOfAccounts}): ${timings.deriveAccounts}ms
-| -- deriveAccountsAvg: ~${(timings.deriveAccounts / nbOfAccounts).toFixed(2)}ms
-| -- deriveAccountAvgIterations: ${avgIterations}
-| -- total: ${Date.now() - startTime}ms
----------------------------------`);
-
-        return derivedAccounts;
     }
 
     /**
