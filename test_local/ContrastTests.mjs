@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 10,
+    nbOfAccounts: 200,
     addressType: 'W',
 }
 
@@ -60,6 +60,7 @@ async function userSendToNextUser(node, accounts) {
 
     for (let i = 0; i < signedTxsJSON.length; i++) {
         await node.broadcastTransaction(signedTxsJSON[i]);
+        await new Promise(resolve => setTimeout(resolve, 5)); // delay to avoid mempool collision
         //node.addTransactionJSONToMemPool(signedTxsJSON[i]);
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;

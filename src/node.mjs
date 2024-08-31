@@ -276,8 +276,8 @@ export class Node {
     }
     /** @param {BlockData} blockProposal */
     async broadcastCandidate(blockProposal) {
-        //await this.p2pNetwork.broadcast('new_block_proposal', { blockProposal });
-        await this.p2pNetwork.broadcast('new_block_proposal', blockProposal);
+        const clone = Block.cloneBlockData(blockProposal);
+        await this.p2pNetwork.broadcast('new_block_proposal', clone);
     }
     /** @param {BlockData} blockPow */
     async broadcastBlockPow(blockPow) {

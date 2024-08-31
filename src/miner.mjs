@@ -63,8 +63,8 @@ export class Miner {
             this.cleanupCandidates();
         }
         //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
-        const blockCandidateClone = Block.cloneBlockData(blockCandidate);
-        this.candidates.push(blockCandidateClone);
+        //const blockCandidateClone = Block.cloneBlockData(blockCandidate);
+        this.candidates.push(blockCandidate);
     }
     cleanupCandidates(heightTolerance = 6) {
         // remove candidates with height tolerance, to avoid memory leak
@@ -104,7 +104,7 @@ export class Miner {
         }
 
         while (true) {
-            await new Promise((resolve) => setTimeout(resolve, 1));
+            await new Promise((resolve) => setTimeout(resolve, 10));
             const id = workersStatus.indexOf('free');
 
             if (id === -1) { continue; }
