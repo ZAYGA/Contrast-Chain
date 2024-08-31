@@ -68,7 +68,7 @@ export class TxIO_Builder {
     /** @param {TransactionIO[]} TxIOs */
     static checkMalformedAnchors(TxIOs) {
         for (let i = 0; i < TxIOs.length; i++) {
-            if (!utils.anchor.isValidAnchor(TxIOs[i].anchor)) {
+            if (!utils.anchor.isValid(TxIOs[i].anchor)) {
                 throw new Error(`UTXO anchor malformed in UTXO ${i}: ${TxIOs[i].anchor}`);
             }
         }

@@ -143,7 +143,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
      */
     #transactionUTXOsAreNotSpent(utxosByAnchor, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
-            if (!utils.anchor.isValidAnchor(transaction.inputs[i].anchor)) { throw new Error('Invalid UTXO'); }
+            if (!utils.anchor.isValid(transaction.inputs[i].anchor)) { throw new Error('Invalid UTXO'); }
             if (!utxosByAnchor[transaction.inputs[i].anchor]) { return false; }
         }
 
