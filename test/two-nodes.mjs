@@ -4,7 +4,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 import { Transaction_Builder } from '../src/transaction.mjs';
 import utils from '../src/utils.mjs';
 
-describe('Two-Node Mining Test', function() {
+describe('Two-Node Mining Test', function () {
     this.timeout(60000); // Increase timeout for mining operations
 
     let factory;
@@ -12,21 +12,21 @@ describe('Two-Node Mining Test', function() {
     let minerNode;
     const mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00";
 
-    before(async function() {
+    before(async function () {
         factory = new NodeFactory();
         const accounts = await factory.initialize(mnemonicHex, 2, 'W');
 
         // Create validator node
-        const { node: vNode, nodeId: vNodeId } = await factory.createNode(accounts[0],  'validator' );
-        validatorNode = { node: vNode, nodeId: vNodeId, account: accounts[0] };
+        validatorNode = await factory.createNode(accounts[0], 'validator');
+
 
         // Create miner node
-        const { node: mNode, nodeId: mNodeId } = await factory.createNode(accounts[1], 'miner' );
-        minerNode = { node: mNode, nodeId: mNodeId, account: accounts[1] };
+        minerNode = await factory.createNode(accounts[1], 'miner');
+
 
         // Start both nodes
-        await factory.startNode(validatorNode.nodeId);
-        await factory.startNode(minerNode.nodeId);
+        await factory.startNode(validatorNode.id);
+        await factory.startNode(minerNode.id);
 
         // Wait for the P2P network to be ready
         await waitForP2PNetworkReady([validatorNode, minerNode]);
@@ -34,25 +34,25 @@ describe('Two-Node Mining Test', function() {
         minerNode.startMining();
     });
 
-    after(async function() {
+    after(async function () {
         // Stop both nodes
-        await factory.stopNode(validatorNode.nodeId);
-        await factory.stopNode(minerNode.nodeId);
+        await factory.stopNode(validatorNode.id);
+        await factory.stopNode(minerNode.id);
     });
 
-    it('should create a block candidate, mine it, and reach consensus', async function() {
+    it('should create a block candidate, mine it, and reach consensus', async function () {
         // Spy on the broadcastBlockProposal method of the validator node
-        const broadcastSpy = sinon.spy(validatorNode.node, 'broadcastBlockProposal');
+        const broadcastSpy = sinon.spy(validatorNode, 'broadcastBlockProposal');
 
         // Spy on the submitPowProposal method of the validator node
-        const submitPowSpy = sinon.spy(validatorNode.node, 'submitPowProposal');
+        const submitPowSpy = sinon.spy(validatorNode, 'submitPowProposal');
 
         // Create a block candidate in the validator node
-        const blockCandidate = await validatorNode.node.createBlockCandidate();
+        const blockCandidate = await validatorNode.createBlockCandidate();
         console.log('Block candidate created:', JSON.stringify(blockCandidate, null, 2));
 
         // Manually trigger the broadcast of the block candidate
-        await validatorNode.node.broadcastBlockProposal(blockCandidate);
+        await validatorNode.broadcastBlockProposal(blockCandidate);
 
         // Check if the broadcastBlockProposal method was called
         expect(broadcastSpy.calledOnce).to.be.true;
@@ -64,9 +64,9 @@ describe('Two-Node Mining Test', function() {
         expect(submitPowSpy.calledOnce).to.be.true;
 
         // Verify that both nodes have reached consensus on the new block
-        expect(validatorNode.node.getNodeStatus().currentBlockHeight).to.equal(1);
-        expect(minerNode.node.getNodeStatus().currentBlockHeight).to.equal(1);
- 
+        expect(validatorNode.getNodeStatus().currentBlockHeight).to.equal(1);
+        expect(minerNode.getNodeStatus().currentBlockHeight).to.equal(1);
+
         // Clean up spies
         broadcastSpy.restore();
         submitPowSpy.restore();
@@ -75,7 +75,7 @@ describe('Two-Node Mining Test', function() {
     async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const allNodesConnected = nodes.every(node => {
-                const peerCount = node.node.p2pNetwork.getConnectedPeers().length;
+                const peerCount = node.p2pNetwork.getConnectedPeers().length;
                 return peerCount >= 1; // We only need one connection in this test
             });
 
