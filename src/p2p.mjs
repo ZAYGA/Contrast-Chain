@@ -54,7 +54,7 @@ class P2PNetwork extends EventEmitter {
         try {
             this.node = await this.createLibp2pNode();
             await this.node.start();
-            this.logger.info({ component: 'P2PNetwork', peerId: this.node.peerId.toString() }, `${this.options.role} node started`);
+            this.logger.debug({ component: 'P2PNetwork', peerId: this.node.peerId.toString() }, `${this.options.role} node started`);
 
             await this.connectToBootstrapNodes();
             this.setupEventListeners();
@@ -120,13 +120,13 @@ class P2PNetwork extends EventEmitter {
     }
 
     handlePeerConnect = ({ detail: peerId }) => {
-        this.logger.info({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
+        this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
         this.updatePeer(peerId.toString(), { status: 'connected' });
         this.emit('peer:connect', peerId.toString());
     }
 
     handlePeerDisconnect = ({ detail: peerId }) => {
-        this.logger.info({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
+        this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
         this.peers.delete(peerId.toString());
         this.emit('peer:disconnect', peerId.toString());
     }

@@ -43,7 +43,7 @@ export class Node {
             role: this.role,
             ...p2pOptions
         });
-   
+
         this.useDevArgon2 = false;
         this.considerDefinitiveAfter = 6; // in blocks
         this.confirmedBlocks = [];
@@ -72,7 +72,7 @@ export class Node {
             this.broadcastBlockProposal(this.blockCandidate);
         }
     }
-    
+
     async stop() {
         await this.p2pNetwork.stop();
         if (this.role === 'miner') {
@@ -81,13 +81,6 @@ export class Node {
         console.log(`Node ${this.id} (${this.role}) stopped`);
     }
     setupEventListeners() {
-        this.p2pNetwork.on('peer:connect', (peerId) => {
-            console.log(`Node ${this.id} connected to peer ${peerId}`);
-        });
-
-        this.p2pNetwork.on('peer:disconnect', (peerId) => {
-            console.log(`Node ${this.id} disconnected from peer ${peerId}`);
-        });
 
         this.p2pNetwork.subscribe('new_transaction', this.handleNewTransaction.bind(this));
         this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
@@ -103,12 +96,12 @@ export class Node {
     }
     async handleNewBlockFromValidator(message) {
         try {
+            console.log(`[MINER NODE] ${this.id} received new block proposal, height: ${message.blockProposal.index}`);
             if (this.role === 'miner') {
                 this.miner.pushCandidate(message.blockProposal);
-            } 
-            console.log(`Node ${this.id} received new block proposal`);
+            }
         } catch (error) {
-            console.error(`Node ${this.id} failed to process new block proposal:`, error);
+            console.error(`[MINER NODE] ${this.id} failed to process new block proposal, height: ${message.blockProposal.index}:`, error);
         }
     }
     async handleNewBlockFromMiners(message) {
@@ -117,7 +110,7 @@ export class Node {
                 await this.#processPowBlock(message.blockPow);
             } catch (error) {
                 console.error(`Error processing PoW block:`, error);
-            } 
+            }
         }
     }
 
@@ -134,15 +127,15 @@ export class Node {
             const { hex, bitsArrayAsString } = await Block.getMinerHash(blockData, this.useDevArgon2);
             if (blockData.hash !== hex) { throw new Error('Invalid hash'); }
             const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockData);
-    
+
             // control coinBase Amount
             const coinBaseAmount = blockData.Txs[0].outputs[0].amount;
             const expectedCoinBase = Block.calculateNextCoinbaseReward(blockData);
             if (coinBaseAmount !== expectedCoinBase) { throw new Error(`Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`); }
-    
+
             // double spend control
             Validation.isFinalizedBlockDoubleSpending(this.utxoCache.UTXOsByPath, blockData);
-    
+
             // verify the transactions
             for (let i = 0; i < blockData.Txs.length; i++) {
                 const tx = blockData.Txs[i];
@@ -150,7 +143,8 @@ export class Node {
                 const txValidation = await Validation.fullTransactionValidation(this.utxoCache.UTXOsByPath, tx, isCoinBase, this.useDevArgon2);
                 if (!txValidation.success) {
                     const error = txValidation;
-                    throw new Error(`Invalid transaction: ${tx.id} - ${error}`); }
+                    throw new Error(`Invalid transaction: ${tx.id} - ${error}`);
+                }
             }
             this.lastBlockData = blockData;
             return hashConfInfo;
@@ -159,11 +153,14 @@ export class Node {
         }
     }
 
-    /** 
+    /**
      * should be used with the callstack
      * @param {BlockData} minerBlockCandidate
      */
     async #processPowBlock(minerBlockCandidate) {
+
+        if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
+
         console.log(`[NODE] Processing PoW block: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
         const startTime = Date.now();
         // verify the height
@@ -176,8 +173,8 @@ export class Node {
         const blockIsTooOld = minerBlockCandidate.index <= index;
         const blockIsAhead = minerBlockCandidate.index > index + 1;
 
-        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} < ${this.lastBlockData.index}`); return false; }
-        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${this.lastBlockData.index} > ${this.blockCandidate.index} -> NEED TO SYNC`); }
+        if (blockIsTooOld) { console.log(`Rejected block proposal, older index: ${minerBlockCandidate.index} <= ${this.lastBlockData.index}`); return false; }
+        if (blockIsAhead) { throw new Error(`minerBlock's index is higher than the current block candidate: ${this.lastBlockData.index} > ${this.blockCandidate.index + 1} -> NEED TO SYNC`); }
 
         const hashConfInfo = await this.#validateBlockProposal(minerBlockCandidate);
         if (!hashConfInfo) { return false; }
@@ -186,22 +183,25 @@ export class Node {
 
         let newStakesOutputs;
         try {
-            console.log(`[NODE] Block Proposal accepted: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy}`);
+
             newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
         } catch (error) {
-            console.warn(`[NODE] Block Proposal rejected: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy} | ${error.message}
+            console.warn(`[NODE -- VALIDATOR] processPowBlock rejected: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy} | ${error.message}
 ----------------------
 -> Rollback UTXO cache
 ----------------------`);
-            this.utxoCache.rollbackUtxoCacheSnapshot(this.utxoCacheSnapshots.pop());
+            //this.utxoCache.rollbackUtxoCacheSnapshot(this.utxoCacheSnapshots.pop());
             return false;
         }
-        if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }   
 
+        console.log(`[NODE -- VALIDATOR] processPowBlock accepted: blockIndex: ${minerBlockCandidate.index} | legitimacy: ${minerBlockCandidate.legitimacy}`);
+        //if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
+        console.log(`[NODE] Block ${minerBlockCandidate.index} | ${minerBlockCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.UTXOsByPath);
         this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
-
+        console.log(`[NODE] MemPool size: ${Object.keys(this.memPool.transactionsByID).length}`);
         this.#digestBlock(minerBlockCandidate); // will store the block in ram, and save older blocks if ahead enough
+        console.log(`[NODE] Block ${minerBlockCandidate.index} | ${minerBlockCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
         this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
         if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
 
@@ -212,9 +212,10 @@ export class Node {
         //console.log(`[NODE] Height: ${minerBlockCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
 
         const timeBetweenPosPow = ((minerBlockCandidate.timestamp - minerBlockCandidate.posTimestamp) / 1000).toFixed(2);
-        console.log(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        console.warn(`[NODE] H:${minerBlockCandidate.index} -> diff: ${hashConfInfo.difficulty} + timeDiffAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} = finalDiff: ${hashConfInfo.finalDifficulty} | zeros: ${hashConfInfo.zeros} | adjust: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | proposalTreat: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         this.callStack.push(async () => {
+            console.log(`[NODE] Calculating new block candidate after PoW block: ${minerBlockCandidate.index} | ${minerBlockCandidate.hash}`);
             await this.vss.calculateRoundLegitimacies(minerBlockCandidate.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
             if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
@@ -224,7 +225,7 @@ export class Node {
             //console.log(`[NODE] New block candidate created: ${newBlockCandidate.index} | ${newBlockCandidate.hash}`);
             this.broadcastBlockProposal(newBlockCandidate);
         }, true);
-        
+
         return true;
     }
 
@@ -232,7 +233,7 @@ export class Node {
     #digestBlock(minerBlockCandidate) {
         const blockDataCloneToStore = Block.cloneBlockData(minerBlockCandidate); // clone to avoid modification
         this.confirmedBlocks.push(blockDataCloneToStore); // store the block in ram
-        
+
         if (this.confirmedBlocks.length <= this.considerDefinitiveAfter) { return; }
 
         // save the block in local storage definitively
@@ -242,7 +243,7 @@ export class Node {
         if (!saveResult.success) { throw new Error(saveResult.message); }
     }
 
-    /** 
+    /**
      * @param {string} signedTxJSON
      * @param {false | string} replaceExistingTxID
      */
@@ -261,7 +262,7 @@ export class Node {
     async createBlockCandidate() {
         const startTime = Date.now();
         const Txs = this.memPool.getMostLucrativeTransactionsBatch();
-        
+
         const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
         let index = 0;
         if (this.lastBlockData) { index = this.lastBlockData.index; }

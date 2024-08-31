@@ -7,7 +7,7 @@ import utils from './utils.mjs';
  */
 
 export class Miner {
-    /** 
+    /**
      * @param {Account} minerAccount
      * @param {Function} validPowCallback
      */
@@ -42,10 +42,10 @@ export class Miner {
         const coinbaseNonce = utils.mining.generateRandomNonce().Hex;
         blockCandidate.nonce = headerNonce;
         blockCandidate.timestamp = Date.now();
-        
+
         const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, blockCandidate.coinBase);
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
-        
+
         const signatureHex = await Block.getBlockSignature(blockCandidate);
         const nonce = `${headerNonce}${coinbaseNonce}`;
 
@@ -55,21 +55,23 @@ export class Miner {
     pushCandidate(blockCandidate) {
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
-        
+
         const blockCandidateClone = Block.cloneBlockData(blockCandidate);
-        if (blockCandidateClone.index > this.highestBlockIndex) { 
+        if (blockCandidateClone.index > this.highestBlockIndex) {
             this.highestBlockIndex = blockCandidateClone.index;
-            //this.cleanupCandidates();
+            this.cleanupCandidates();
         }
+        console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
         this.candidates.push(blockCandidateClone);
     }
-    cleanupCandidates(heightTolerance = 3) {
+    cleanupCandidates(heightTolerance = 1) {
         // remove candidates with height tolerance, to avoid memory leak
         this.candidates = this.candidates.filter(candidate => this.highestBlockIndex - candidate.index <= heightTolerance);
     }
     getMostLegitimateBlockCandidate() {
-        if (this.candidates.length === 0) { 
-            return null; }
+        if (this.candidates.length === 0) {
+            return null;
+        }
         const filteredCandidates = this.candidates.filter(candidate => candidate.index === this.highestBlockIndex);
         // the lower the legitimacy, the more legitimate the block is, 0 is the most legitimate
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
@@ -80,7 +82,7 @@ export class Miner {
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {
-      
+
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
                 if (message.error) { throw new Error(message.error); }
@@ -104,15 +106,15 @@ export class Miner {
         while (true) {
             await new Promise((resolve) => setTimeout(resolve, 1));
             const id = workersStatus.indexOf('free');
-       
+
             if (id === -1) { continue; }
-            
+
             const blockCandidate = this.getMostLegitimateBlockCandidate();
-            if (!blockCandidate) { 
-                console.warn('No block candidate to mine');
-                continue; 
+            if (!blockCandidate) {
+                //console.warn('No block candidate to mine');
+                continue;
             }
-            
+
             workersStatus[id] = 'busy';
 
             const { signatureHex, nonce } = await this.prepareBlockCandidateBeforeMining(blockCandidate);

@@ -52,9 +52,9 @@ __Timings -----------------------
      */
     async createNode(account, p2pOptions = {}) {
         const node = await Node.load(account, p2pOptions);
-        const nodeId = account.address;
-        this.nodes.set(nodeId, node);
-        return { node, nodeId };
+        this.nodes.set(node.id, node);
+        console.log(`Node ${node.id} created`);
+        return node;
     }
     /** @param {string} nodeId */
     async startNode(nodeId) {
@@ -70,6 +70,10 @@ __Timings -----------------------
     getNode(nodeId) {
         const node = this.nodes.get(nodeId);
         if (!node) {
+            // log all nodes
+            console.log(`Nodes: ${Array.from(this.nodes.keys()).join(', ')}`);
+
+
             throw new Error(`Node with ID ${nodeId} not found`);
         }
         return node;

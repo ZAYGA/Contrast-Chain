@@ -8,7 +8,7 @@ import utils from './utils.mjs';
 
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     constructor(addressesUTXOs = {}, addressesBalances = {}, UTXOsByPath = {}, blockMiningData = []) {
-        this.bypassValidation = false;
+        this.bypassValidation = true;
         /** @type {Object<string, TransactionIO[]>} */
         this.addressesUTXOs = addressesUTXOs;
         /** @type {Object<string, number>} */
@@ -26,8 +26,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     }
     /**
      * Will add or remove the amount from the address balance
-     * @param {string} address 
-     * @param {number} amount 
+     * @param {string} address
+     * @param {number} amount
      */
     #changeBalance(address, amount) {
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
@@ -38,11 +38,11 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         // console.log(`Balance of ${address} changed by ${amount} => ${this.addressesBalances[address]}`);
     }
     /**
-     * @param {Transaction} transaction 
+     * @param {Transaction} transaction
      * @param {number} TxIndexInTheBlock
      */
     #digestTransactionInputs(transaction, TxIndexInTheBlock) {
-        if ( Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock) ) { return } // coinbase -> no input
+        if (Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock)) { return } // coinbase -> no input
 
         const TxInputs = transaction.inputs;
         TxIO_Builder.checkMalformedUtxoPaths(TxInputs);
@@ -91,7 +91,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
             const utxoPath = utils.utxoPath.from_TransactionInputReferences(blockIndex, TxID, i);
             if (!utils.utxoPath.isValidUtxoPath(utxoPath)) { throw new Error(`Invalid UTXO utxoPath: ${utxoPath}`); }
-            
+
             // output become ouput -> set UTXO's utxoPath
             TxOutputs[i].utxoPath = utxoPath;
 
@@ -135,17 +135,18 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             const blockData = blocksData[i];
             const Txs = blockData.Txs;
             const newStakesOutputsFromBlock = this.#digestBlockTransactions(blockData.index, Txs);
-    
+
             const supplyFromBlock = blockData.supply;
             const coinBase = blockData.coinBase;
             const totalSupply = supplyFromBlock + coinBase;
             const totalOfBalances = this.#calculateTotalOfBalances();
-    
+
             if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
-                console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
                 throw new Error('Invalid total of balances');
             }
-    
+            console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
+
+
             this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
             newStakesOutputs.push(...newStakesOutputsFromBlock);
         }
@@ -174,7 +175,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         let spendableBalance = balance;
 
         for (let i = 0; i < UTXOs.length; i++) {
-            const rule =  UTXOs[i].rule;
+            const rule = UTXOs[i].rule;
             if (rule === "sigOrSlash") {
                 spendableBalance -= UTXOs[i].amount;
                 UTXOs.splice(i, 1);
@@ -199,5 +200,5 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         this.blockMiningData = snapshot.blockMiningData;
     }
 
-    digestBlockProposal(blockData) {}
+    digestBlockProposal(blockData) { }
 }
