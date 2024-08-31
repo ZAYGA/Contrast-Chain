@@ -3,26 +3,37 @@ import sinon from 'sinon';
 import { NodeFactory } from '../src/node-factory.mjs';
 import { Transaction_Builder } from '../src/transaction.mjs';
 import utils from '../src/utils.mjs';
+import { Wallet } from '../src/wallet.mjs';
 
 describe('Two-Node Mining Test', function () {
-    this.timeout(60000); // Increase timeout for mining operations
+    this.timeout(120000); // Increase timeout for network operations
 
     let factory;
     let validatorNode;
     let minerNode;
-    const mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00";
+    const wallet = new Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", true);
+    const testParams = {
+        useDevArgon2: true,
+        nbOfAccounts: 2,
+        addressType: 'W',
+    }
 
     before(async function () {
+        console.log('wallet:', wallet);
         factory = new NodeFactory();
-        const accounts = await factory.initialize(mnemonicHex, 2, 'W');
+        wallet.restore();
+        wallet.loadAccounts();
+
+        const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
+        if (!derivedAccounts) { console.error('Failed to derive addresses.'); return; }
+        const accounts = derivedAccounts;
+        console.log('accounts:', accounts);
 
         // Create validator node
         validatorNode = await factory.createNode(accounts[0], 'validator');
 
-
         // Create miner node
         minerNode = await factory.createNode(accounts[1], 'miner');
-
 
         // Start both nodes
         await factory.startNode(validatorNode.id);

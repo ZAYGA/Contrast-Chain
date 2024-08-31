@@ -3,55 +3,39 @@ import sinon from 'sinon';
 import { NodeFactory } from '../src/node-factory.mjs';
 import { Transaction_Builder } from '../src/transaction.mjs';
 import utils from '../src/utils.mjs';
+import { Wallet } from '../src/wallet.mjs';
 
 describe('Consensus Test', function () {
-    this.timeout(120000); // Increase timeout for network operations
+    this.timeout(300000); // Increase timeout for network operations
 
     let factory;
     let nodes = [];
     const NUM_NODES = 5;
     const NUM_MINERS = 2;
-    const INITIAL_BALANCE = 1000000; // 1 million
-    const mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00";
+    const wallet = new Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", true);
+    const testParams = {
+        useDevArgon2: true,
+        nbOfAccounts: 10,
+        addressType: 'W',
+    }
 
     before(async function () {
+        console.log('wallet:', wallet);
         factory = new NodeFactory();
-        const accounts = await factory.initialize(mnemonicHex, NUM_NODES, 'W');
+        wallet.restore();
+        wallet.loadAccounts();
+
+        // const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
+        wallet.loadAccounts();
+        // if (!derivedAccounts) { console.error('Failed to derive addresses.'); return; }
+        const accounts = wallet.accountsGenerated.W;
+        console.log('accounts:', accounts);
 
         // Create nodes (mixture of validators and miners)
         for (let i = 0; i < NUM_NODES; i++) {
             const role = i < NUM_MINERS ? 'miner' : 'validator';
             const node = await factory.createNode(accounts[i], role);
             nodes.push(node);
-        }
-
-        // Create initial UTXOs for all accounts
-        for (const nodeInfo of nodes) {
-            const utxo = {
-                amount: INITIAL_BALANCE,
-                address: nodeInfo.account.address,
-                rule: 'sig_v1',
-                version: 1,
-                anchor: `0:${utils.convert.string.toHex(nodeInfo.account.address).slice(0, 8)}:0`
-            };
-            nodeInfo.account.setBalanceAndUTXOs(INITIAL_BALANCE, [utxo]);
-
-
-            // start mining on all miners nodes
-            if (nodeInfo.role === 'miner') {
-                nodeInfo.miner.startWithWorker();
-            }
-
-
-            // Add the UTXO to all nodes' UTXO caches
-            for (const otherNodeInfo of nodes) {
-                otherNodeInfo.utxoCache.utxosByAnchor[utxo.anchor] = utxo;
-                if (!otherNodeInfo.utxoCache.addressesUTXOs[nodeInfo.account.address]) {
-                    otherNodeInfo.utxoCache.addressesUTXOs[nodeInfo.account.address] = [];
-                }
-                otherNodeInfo.utxoCache.addressesUTXOs[nodeInfo.account.address].push(utxo);
-                otherNodeInfo.utxoCache.addressesBalances[nodeInfo.account.address] = INITIAL_BALANCE;
-            }
         }
 
         // Start all nodes
@@ -61,6 +45,15 @@ describe('Consensus Test', function () {
 
         // Wait for the P2P network to be ready
         await waitForP2PNetworkReady(nodes);
+
+        // Start mining on all miner nodes
+        for (const nodeInfo of nodes) {
+            if (nodeInfo.role === 'miner') {
+                nodeInfo.miner.startWithWorker();
+            }
+        }
+
+
     });
 
     after(async function () {
@@ -71,6 +64,19 @@ describe('Consensus Test', function () {
     });
 
     it('should reach consensus on a new block with a valid transaction', async function () {
+
+
+        // take the first validator node
+        // Get a random validator node
+        const validatorNode = nodes.find(node => node.role === 'validator');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('Validator node:', validatorNode);
+        validatorNode.createBlockCandidateAndBroadcast();
+
+        // Wait for the transaction to be included in a block and propagated
+        await new Promise(resolve => setTimeout(resolve, 6000));
+
+        //await waitForMinersToHaveBalance(nodes);
         const sender = nodes[0].account;
         const recipient = nodes[1].account;
         const amount = 10000; // 10,000 microConts
@@ -83,7 +89,7 @@ describe('Consensus Test', function () {
             [{ recipientAddress: recipient.address, amount }],
             1 // Set a fixed fee per byte for testing
         );
-        console.log('Transaction:', JSON.stringify(transaction, null, 2));
+        console.warn('Transaction:', JSON.stringify(transaction, null, 2));
 
         const signedTx = await sender.signTransaction(transaction);
         console.log('Signed transaction:', JSON.stringify(signedTx, null, 2));
@@ -94,13 +100,6 @@ describe('Consensus Test', function () {
         await nodes[0].broadcastTransaction(txJSON);
 
 
-        // get a random validator node
-        const validatorNode = nodes.find(node => node.role === 'validator');
-        console.log('Validator node broadcasting :', validatorNode.id);
-        validatorNode.createBlockCandidateAndBroadcast();
-
-        // Wait for the transaction to be included in a block and propagated
-        await new Promise(resolve => setTimeout(resolve, 300000000));
 
         // Check if all nodes have reached consensus
         const heights = nodes.map(n => n.getStatus().currentBlockHeight);
@@ -122,10 +121,10 @@ describe('Consensus Test', function () {
 
         // Verify the balance change
         const recipientBalance = lastNode.utxoCache.getBalanceAndUTXOs(recipient.address).balance;
-        expect(recipientBalance).to.equal(INITIAL_BALANCE + amount);
+        expect(recipientBalance).to.equal(amount);
 
         const senderBalance = lastNode.utxoCache.getBalanceAndUTXOs(sender.address).balance;
-        expect(senderBalance).to.be.lessThan(INITIAL_BALANCE - amount); // Less than because of fees
+        expect(senderBalance).to.be.lessThan(sender.balance - amount); // Less than because of fees
     });
 
     async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
@@ -144,5 +143,26 @@ describe('Consensus Test', function () {
         }
 
         throw new Error('P2P network failed to initialize within the expected time');
+    }
+
+    async function waitForMinersToHaveBalance(nodes, minBalance = 100000, maxAttempts = 60, interval = 5000) {
+        const miners = nodes.filter(node => node.role === 'miner');
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const allMinersHaveBalance = miners.every(miner => {
+                const balance = miner.utxoCache.getBalanceAndUTXOs(miner.account.address).balance;
+                return balance >= minBalance;
+            });
+
+            if (allMinersHaveBalance) {
+                console.log('All miners have accumulated sufficient balance');
+                return;
+            }
+
+            console.log(`Waiting for miners to accumulate balance. Attempt ${attempt + 1}/${maxAttempts}`);
+            await new Promise(resolve => setTimeout(resolve, interval));
+        }
+
+        throw new Error('Miners failed to accumulate sufficient balance within the expected time');
     }
 });
