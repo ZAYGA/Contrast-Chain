@@ -83,14 +83,15 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
         const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
         const signedTx = await senderAccount.signTransaction(transaction);
         const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx)
-    
+
         if (signedTxJSON) {
             //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
             //console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
             const fee = JSON.parse(signedTxJSON)
             if (fee <= 0) {
-                console.log('[TEST] Transaction fee is invalid.');};
-                
+                console.log('[TEST] Transaction fee is invalid.');
+            };
+
             node.addTransactionJSONToMemPool(signedTxJSON);
         } else {
             console.log(error);
@@ -109,7 +110,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
 async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToStake = 1_000_000) {
     const senderAccount = accounts[senderAccountIndex];
     const stakingAddress = accounts[senderAccountIndex].address;
-    
+
     const transaction = await contrast.Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
     const signedTx = await senderAccount.signTransaction(transaction);
     const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx);
@@ -150,7 +151,7 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
     throw new Error('P2P network failed to initialize within the expected time');
 }
 
-/** 
+/**
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
  */
@@ -158,14 +159,14 @@ async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
     const factory = new NodeFactory();
-    const createdMinerNode = await factory.createNode(accounts[1], 'miner' );
-    const minerNode = createdMinerNode.node;
+    const createdMinerNode = await factory.createNode(accounts[1], 'miner');
+    const minerNode = createdMinerNode;
     //createdMinerNode.node.miner.useDevArgon2 = testParams.useDevArgon2;
     //createdMinerNode.node.memPool.useDevArgon2 = testParams.useDevArgon2;
-    await createdMinerNode.node.start();
+    await createdMinerNode.start();
     // Create validator node
-    const createdNode = await factory.createNode(accounts[0],  'validator' );
-    const validatorNode = createdNode.node;
+    const createdNode = await factory.createNode(accounts[0], 'validator');
+    const validatorNode = createdNode;
 
     //validatorNode.useDevArgon2 = testParams.useDevArgon2;
     //validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
@@ -183,16 +184,16 @@ async function nodeSpecificTest(accounts, wss) {
     console.log('[TEST] Node & Miner => Initialized. - start mining');
     let lastBlockIndexAndTime = { index: 0, time: Date.now() };
     let txsTaskDoneThisBlock = {};
-    
+
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
             //minerNode.miner.pushCandidate(validatorNode.blockCandidate);
             lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
             txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
-            
+
             wss.clients.forEach(function each(client) { // wss broadcast - utxoCache
                 if (client.readyState === 1) {
-                    client.send( JSON.stringify({ utxoCache: validatorNode.utxoCache }) );
+                    client.send(JSON.stringify({ utxoCache: validatorNode.utxoCache }));
                 }
             });
 
@@ -203,7 +204,7 @@ async function nodeSpecificTest(accounts, wss) {
         await new Promise(resolve => setTimeout(resolve, 100));
 
         refreshAllBalances(validatorNode, accounts);
-        
+
         // user send to multiple users
         if (validatorNode.blockCandidate.index > 7 && (validatorNode.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
             try {
@@ -249,7 +250,7 @@ async function nodeSpecificTest(accounts, wss) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
             wss.clients.forEach(function each(client) {
                 if (client.readyState === 1) {
-                    client.send( JSON.stringify({ memPool: validatorNode.memPool }) );
+                    client.send(JSON.stringify({ memPool: validatorNode.memPool }));
                 }
             });
         }
@@ -268,17 +269,17 @@ export async function test(wss) {
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 
     wallet.loadAccounts();
-    
+
     const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
     if (!derivedAccounts) { console.error('Failed to derive addresses.'); return; }
     timings.deriveAccounts = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();
 
     wallet.saveAccounts();
-    
+
     console.log(`[TEST] account0 address: [ ${contrast.utils.addressUtils.formatAddress(derivedAccounts[0].address, ' ')} ]`);
-    
+
     console.log(
-`__Timings -----------------------
+        `__Timings -----------------------
 | -- walletRestore: ${timings.walletRestore}ms
 | -- deriveAccounts(${testParams.nbOfAccounts}): ${timings.deriveAccounts}ms
 | -- deriveAccountsAvg: ~${(timings.deriveAccounts / testParams.nbOfAccounts).toFixed(2)}ms

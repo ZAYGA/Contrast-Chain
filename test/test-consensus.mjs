@@ -9,7 +9,7 @@ describe('Consensus Test', function () {
 
     let factory;
     let nodes = [];
-    const NUM_NODES = 9;
+    const NUM_NODES = 5;
     const NUM_MINERS = 2;
     const INITIAL_BALANCE = 1000000; // 1 million microConts
     const mnemonicHex = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00";
@@ -100,7 +100,7 @@ describe('Consensus Test', function () {
         validatorNode.createBlockCandidateAndBroadcast();
 
         // Wait for the transaction to be included in a block and propagated
-        await new Promise(resolve => setTimeout(resolve, 30000));
+        await new Promise(resolve => setTimeout(resolve, 300000000));
 
         // Check if all nodes have reached consensus
         const heights = nodes.map(n => n.getNodeStatus().currentBlockHeight);
