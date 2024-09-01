@@ -52,6 +52,7 @@ export const argon2Hash = async (pass, salt, time = 1, mem = 2**20, parallelism 
 }
 const devArgon2Hash = async (pass, salt, time = 1, mem = 2**10, parallelism = 1, type = 2, hashLen = 32) => {
     const pauseBasis = utils.isNode ? 56 : 56 * 8; // ms - Ryzen 5900HX
+    //const pauseBasis = 1; // ms // -> fast mode
     const memBasis = 2**16; // KiB
     const effectivePause = Math.round(pauseBasis * (mem / memBasis));
     await new Promise(resolve => setTimeout(resolve, effectivePause)); // Simulate a slow hash

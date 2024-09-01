@@ -89,11 +89,10 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             const { address, amount } = output;
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
-            // UXTO would be used as input, then we set blockIndex, utxoTxID, and vout
+            // UXTO would be used as input, then we set (blockIndex, utxoTxID, and vout) => anchor
             const anchor = utils.anchor.from_TransactionInputReferences(blockIndex, TxID, i);
             if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
-            // output become ouput -> set UTXO's anchor
             output.anchor = anchor;
 
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
@@ -164,7 +163,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         if (this.addressesUTXOs[address]) {
             for (let i = 0; i < this.addressesUTXOs[address].length; i++) {
                 const clone = TxIO_Builder.cloneTxIO(this.addressesUTXOs[address][i]);
-                delete clone.address;
+                delete clone.address; // if you wanna keep the address, comment this line
                 UTXOs.push(clone);
             }
         }

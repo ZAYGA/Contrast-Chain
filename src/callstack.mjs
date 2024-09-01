@@ -16,8 +16,8 @@ export class CallStack {
     async #stackLoop(delayMS = 20) {
         while (true) {
             if (this.stack.length === 0) {
-                //if (this.emptyResolves) { ??
-                if (this.emptyResolves.length > 0) {
+                if (this.emptyResolves) { //??
+                //if (this.emptyResolves.length > 0) {
                     // resolve the promises
                     this.emptyResolves.forEach(resolve => resolve());
                     this.emptyResolves = []; // Reset the array

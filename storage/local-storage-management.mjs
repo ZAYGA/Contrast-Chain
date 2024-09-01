@@ -262,7 +262,7 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
  * @param {string} blocksFolderPath
  */
 function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
-    const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockData, blocksFolderPath);
+    const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockData);
 
     const blockDataPath = path.join(blocksFolderPath, `${blockData.index}.bin`);
     fs.writeFileSync(blockDataPath, compressed);

@@ -84,13 +84,15 @@ export class Miner {
         for (let i = 0; i < nbOfWorkers; i++) {
 
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
-            worker.on('message', (message) => {
+            worker.on('message', async (message) => {
                 try {
                     if (message.error) { throw new Error(message.error); }
                     const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
             
-                    if (conform) { 
-                        this.p2pNetwork.broadcast('new_block_pow', message.blockCandidate); }
+                    if (conform) {
+                        //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(message.blockCandidate);
+                        const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message.blockCandidate);
+                        await this.p2pNetwork.broadcast('new_block_pow', compressed); }
                     workersStatus[message.id] = 'free';
                 } catch (err) {
                     console.error(err);
@@ -104,7 +106,7 @@ export class Miner {
         }
 
         while (true) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 100));
             const id = workersStatus.indexOf('free');
 
             if (id === -1) { continue; }

@@ -213,6 +213,9 @@ const typeValidation = {
      * @returns {string|false}
      */
     hex(hex) {
+        if (!hex) { return false; }
+        if (!typeof hex === 'string') { return false; }
+        if (hex.length === 0) { return false; }
         if (hex.length % 2 !== 0) {
             return false;
         }
@@ -666,8 +669,8 @@ const compression = {
             /** @param {BlockData} blockData */
             toBinary_v1(blockData) {
                 blockData.prevHash = utils.typeValidation.hex(blockData.prevHash) ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
-                blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
-                blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
+                blockData.hash = blockData.hash ? utils.convert.hex.toUint8Array(blockData.hash) : blockData.hash;
+                blockData.nonce = blockData.nonce ? utils.convert.hex.toUint8Array(blockData.nonce) : blockData.nonce; // safe type: hex
                 
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
@@ -685,8 +688,8 @@ const compression = {
             
                 // recursively convert Uint8Array to stringHex
                 decoded.prevHash = utils.typeValidation.uint8Array(decoded.prevHash) ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
-                decoded.hash = utils.convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
-                decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
+                decoded.hash = decoded.hash ? utils.convert.uint8Array.toHex(decoded.hash) : decoded.hash;
+                decoded.nonce = decoded.nonce ? utils.convert.uint8Array.toHex(decoded.nonce) : decoded.nonce; // safe type: uint8 -> hex
             
                 for (let i = 0; i < decoded.Txs.length; i++) {
                     decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);

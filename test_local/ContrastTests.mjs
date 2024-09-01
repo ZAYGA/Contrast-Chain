@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 200,
+    nbOfAccounts: 100,
     addressType: 'W',
 }
 
@@ -37,7 +37,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
 * @param {Account[]} accounts
 * @param {number} nbOfUsers
  */
-async function userSendToNextUser(node, accounts) {
+async function userSendToNextUser(node, accounts, validatorNode = false) {
     let startTime = Date.now();
 
     const signedTxsJSON = [];
@@ -59,13 +59,16 @@ async function userSendToNextUser(node, accounts) {
     startTime = Date.now();
 
     for (let i = 0; i < signedTxsJSON.length; i++) {
+        /*if (validatorNode) { 
+            validatorNode.addTransactionJSONToMemPool(signedTxsJSON[i]);
+            continue;
+        }*/
         await node.broadcastTransaction(signedTxsJSON[i]);
-        await new Promise(resolve => setTimeout(resolve, 5)); // delay to avoid mempool collision
         //node.addTransactionJSONToMemPool(signedTxsJSON[i]);
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;
 
-    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeSubmit: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
+    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeToBroadcast: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
 }
 /** User send to all other accounts
 * @param {Node} node
@@ -192,7 +195,7 @@ async function nodeSpecificTest(accounts, wss) {
     // Loop and spent different transactions
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
-            //minerNode.miner.pushCandidate(validatorNode.blockCandidate);
+            minerNode.miner.pushCandidate(validatorNode.blockCandidate);
             lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
             txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
 
@@ -221,7 +224,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // user stakes in VSS
-        if (validatorNode.blockCandidate.index > 24 && validatorNode.blockCandidate.index < 35 && !txsTaskDoneThisBlock['userStakeInVSS']) {
+        if (validatorNode.blockCandidate.index > 14 && validatorNode.blockCandidate.index < 25 && !txsTaskDoneThisBlock['userStakeInVSS']) {
             try {
                 txsTaskDoneThisBlock['userStakeInVSS'] = true;
                 const senderAccountIndex = validatorNode.blockCandidate.index - 25;
@@ -232,7 +235,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // simple user to user transactions
-        if (validatorNode.blockCandidate.index > 50 && (validatorNode.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
+        if (validatorNode.blockCandidate.index > 1 && (validatorNode.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
             try {
                 txsTaskDoneThisBlock['userSendToUser'] = true;
                 await userSendToUser(minerNode, accounts);
@@ -242,10 +245,10 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // users Send To Next Users
-        if (validatorNode.blockCandidate.index > 100 && (validatorNode.blockCandidate.index - 1) % 5 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
+        if (validatorNode.blockCandidate.index > 40 && (validatorNode.blockCandidate.index - 1) % 6 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
             try {
                 txsTaskDoneThisBlock['userSendToNextUser'] = true;
-                await userSendToNextUser(minerNode, accounts);
+                await userSendToNextUser(minerNode, accounts, validatorNode);
             } catch (error) {
                 console.error(error);
             }
@@ -260,7 +263,7 @@ async function nodeSpecificTest(accounts, wss) {
             });
         }*/
 
-        //await validatorNode.callStack.breathe();
+        await validatorNode.callStack.breathe();
     }
 
     console.log('[TEST] Node test completed. - stop mining');
