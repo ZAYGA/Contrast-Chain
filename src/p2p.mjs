@@ -12,6 +12,7 @@ import { bootstrap } from '@libp2p/bootstrap';
 import { multiaddr } from 'multiaddr';
 
 class P2PNetwork extends EventEmitter {
+
     constructor(options = {}) {
         super();
         this.options = {
