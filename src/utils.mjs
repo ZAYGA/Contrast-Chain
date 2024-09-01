@@ -4,6 +4,7 @@ import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
 import Compressor from '../externalLibs/gzip.min.js';
 import Decompressor from '../externalLibs/gunzip.min.js';
 import msgpack from '../externalLibs/msgpack.min.js';
+import { util } from 'chai';
 
 /**
 * @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
@@ -590,7 +591,8 @@ const compression = {
             toBinary_v1(rawData) {
                 const encoded = msgpack.encode(rawData);
                 /** @type {Uint8Array} */
-                return new Compressor.Zlib.Gzip(encoded).compress();
+                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                return compressed;
             },
             /** @param {Uint8Array} binary */
             fromBinary_v1(binary) {
@@ -603,24 +605,26 @@ const compression = {
         transaction: {
             /** @param {Transaction} tx */
             toBinary_v1(tx) {
-                tx = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(tx);
-
-                const encoded = msgpack.encode(tx);
+                const prepared = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(tx);
+                const encoded = msgpack.encode(prepared);
                 /** @type {Uint8Array} */
-                return new Compressor.Zlib.Gzip(encoded).compress();
+                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                return compressed;
             },
             /** @param {Uint8Array} binary */
             fromBinary_v1(binary) {
                 const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
                 /** @type {Transaction} */
                 const decoded = msgpack.decode(decompressed);
-
-                return compression.prepareTransaction.fromBinary_v1(decoded);
+                const finalized = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded);
+                return finalized;
             }
         },
         prepareTransaction: {
             /** @param {Transaction} tx */
             toBinary_v1(tx) {
+                if (typeValidation.hex(tx.id) === false) { 
+                    throw new Error('Invalid tx.id'); }
                 tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
                 for (let i = 0; i < tx.witnesses.length; i++) {
                     const signature = tx.witnesses[i].split(':')[0];
@@ -665,12 +669,42 @@ const compression = {
                 return tx;
             }
         },
-        blockData: {
+        proposalBlock: {
             /** @param {BlockData} blockData */
             toBinary_v1(blockData) {
-                blockData.prevHash = utils.typeValidation.hex(blockData.prevHash) ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
-                blockData.hash = blockData.hash ? utils.convert.hex.toUint8Array(blockData.hash) : blockData.hash;
-                blockData.nonce = blockData.nonce ? utils.convert.hex.toUint8Array(blockData.nonce) : blockData.nonce; // safe type: hex
+                // first block prevHash isn't Hex
+                blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
+                for (let i = 0; i < blockData.Txs.length; i++) {
+                    blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
+                };
+                
+                const encoded = msgpack.encode(blockData);
+                /** @type {Uint8Array} */
+                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                return compressed;
+            },
+            /** @param {Uint8Array} binary */
+            fromBinary_v1(binary) {
+                const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
+                /** @type {BlockData} */
+                const decoded = msgpack.decode(decompressed);
+
+                // first block prevHash isn't Hex
+                decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
+                for (let i = 0; i < decoded.Txs.length; i++) {
+                    decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
+                };
+
+                return decoded;
+            }
+        },
+        finalizedBlock: {
+            /** @param {BlockData} blockData */
+            toBinary_v1(blockData) {
+                // first block prevHash isn't Hex
+                blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
+                blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
+                blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
                 
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
@@ -678,18 +712,19 @@ const compression = {
                 
                 const encoded = msgpack.encode(blockData);
                 /** @type {Uint8Array} */
-                return new Compressor.Zlib.Gzip(encoded).compress();
+                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                return compressed;
             },
             /** @param {Uint8Array} binary */
             fromBinary_v1(binary) {
                 const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
                 /** @type {BlockData} */
                 const decoded = msgpack.decode(decompressed);
-            
-                // recursively convert Uint8Array to stringHex
-                decoded.prevHash = utils.typeValidation.uint8Array(decoded.prevHash) ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
-                decoded.hash = decoded.hash ? utils.convert.uint8Array.toHex(decoded.hash) : decoded.hash;
-                decoded.nonce = decoded.nonce ? utils.convert.uint8Array.toHex(decoded.nonce) : decoded.nonce; // safe type: uint8 -> hex
+
+                // first block prevHash isn't Hex
+                decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
+                decoded.hash = utils.convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
+                decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
             
                 for (let i = 0; i < decoded.Txs.length; i++) {
                     decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);

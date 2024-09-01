@@ -313,7 +313,7 @@ export class Transaction_Builder {
         return typeof transaction.outputs[0] === 'string';
     }
     /** @param {Transaction} transaction */
-    static getTransactionJSON(transaction) {
+    static getTransactionJSON(transaction) { // DEPRECATED
         return JSON.stringify(transaction)
     }
     /** @param {string} transactionJSON */
@@ -331,11 +331,11 @@ export class Transaction_Builder {
         return Transaction(inputs, outputs, transaction.id, witnesses);
     }
 
+    // Faster methods
     /**
      * @param {Account} senderAccount
      * @param {number} amount
      * @param {string} recipientAddress
-     * @returns promise {{signedTxJSON: string | false, error: false | string}}
      */
     static async createAndSignTransferTransaction(senderAccount, amount, recipientAddress) {
         try {
@@ -343,11 +343,11 @@ export class Transaction_Builder {
             const transaction = await Transaction_Builder.createTransferTransaction(senderAccount, [transfer]);
             const signedTx = await senderAccount.signTransaction(transaction);
     
-            return { signedTxJSON: Transaction_Builder.getTransactionJSON(signedTx), error: false };
+            return { signedTx, error: false };
         } catch (error) {
             /** @type {string} */
             const errorMessage = error.stack;
-            return { signedTxJSON: false, error: errorMessage };
+            return { signedTx: false, error: errorMessage };
         }
     }
 }

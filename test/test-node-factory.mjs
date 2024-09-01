@@ -56,17 +56,17 @@ describe('NodeFactory', function() {
 
         const transaction = await Transaction_Builder.createTransferTransaction(accounts[8], [{ recipientAddress: accounts[9].address, amount: 1000 }]);
         const signedTx = await accounts[8].signTransaction(transaction);
-        const txJSON = Transaction_Builder.getTransactionJSON(signedTx);
+        //const txJSON = Transaction_Builder.getTransactionJSON(signedTx);
         
         // Mock the broadcast method to check if it's called
-        let broadcastCalled = false;
+        /*let broadcastCalled = false; // TODO: Look here, we now send raw Tx
         node.p2pNetwork.broadcast = async (topic, message) => {
             expect(topic).to.equal('new_transaction');
             expect(message).to.have.property('transaction', txJSON);
             broadcastCalled = true;
-        };
+        };*/
         
-        await node.broadcastTransaction(txJSON);
+        await node.broadcastTransaction(signedTx);
         expect(broadcastCalled).to.be.true;
         await factory.stopNode(nodeId);
     });

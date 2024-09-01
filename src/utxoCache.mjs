@@ -113,7 +113,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     * @param {number} blockIndex
     * @param {Transaction[]} Txs
     */
-    #digestBlockTransactions(blockIndex, Txs) {
+    #digestFinalizedBlockTransactions(blockIndex, Txs) {
         if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
         //console.log(`Digesting block ${blockIndex} with ${Txs.length} transactions`);
         const newStakesOutputs = [];
@@ -130,12 +130,12 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
     // Public methods
     /** @param {BlockData[]} blocksData */
-    async digestConfirmedBlocks(blocksData) {
+    async digestFinalizedBlocks(blocksData) {
         const newStakesOutputs = [];
         for (let i = 0; i < blocksData.length; i++) {
             const blockData = blocksData[i];
             const Txs = blockData.Txs;
-            const newStakesOutputsFromBlock = this.#digestBlockTransactions(blockData.index, Txs);
+            const newStakesOutputsFromBlock = this.#digestFinalizedBlockTransactions(blockData.index, Txs);
 
             const supplyFromBlock = blockData.supply;
             const coinBase = blockData.coinBase;

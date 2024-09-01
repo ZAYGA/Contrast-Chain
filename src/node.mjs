@@ -64,10 +64,6 @@ export class Node {
     async start() {
         await this.p2pNetwork.start();
         // Set the event listeners
-        //this.p2pNetwork.subscribe('new_transaction', this.handleNewTransaction.bind(this));
-        //this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
-        //this.p2pNetwork.subscribe('new_block_pow', this.handleNewBlockFromMiners.bind(this));
-
         const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow', 'test'];
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
 
@@ -138,7 +134,7 @@ export class Node {
 
         const blockDataCloneToDigest = Block.cloneBlockData(minerCandidate); // clone to avoid modification
         try {
-            const newStakesOutputs = await this.utxoCache.digestConfirmedBlocks([blockDataCloneToDigest]);
+            const newStakesOutputs = await this.utxoCache.digestFinalizedBlocks([blockDataCloneToDigest]);
             //console.log(`[NODE -- VALIDATOR] digestPowProposal accepted: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}`);
             if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
         } catch (error) {
@@ -154,7 +150,7 @@ export class Node {
         //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
         
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
-        this.memPool.digestBlockTransactions(blockDataCloneToDigest.Txs);
+        this.memPool.digestFinalizedBlockTransactions(blockDataCloneToDigest.Txs);
         
         this.#digestConfirmedBlock(minerCandidate); // will store the block in ram, and save older blocks if ahead enough
         //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
@@ -226,16 +222,16 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.rawData.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    //this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     break;
                 case 'new_block_proposal':
                     if (this.role !== 'miner') { break; }
-                    this.miner.pushCandidate( utils.compression.msgpack_Zlib.rawData.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.miner.pushCandidate( utils.compression.msgpack_Zlib.proposalBlock.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    //await this.#processPowBlock(message.blockPow); NO !!
-                    this.submitPowProposal( utils.compression.msgpack_Zlib.rawData.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.submitPowProposal( utils.compression.msgpack_Zlib.finalizedBlock.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     break;
                 case 'test':
                     console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);
@@ -251,10 +247,17 @@ export class Node {
      * @param {string} signedTxJSON
      * @param {false | string} replaceExistingTxID
      */
-    addTransactionJSONToMemPool(signedTxJSON, replaceExistingTxID = false) {
+    addTransactionJSONToMemPool(signedTxJSON, replaceExistingTxID = false) { // DEPRECATED
         if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
 
         const signedTransaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
+        this.memPool.submitTransaction(this.callStack, this.utxoCache.utxosByAnchor, signedTransaction, replaceExistingTxID);
+    }
+    /**
+     * @param {Transaction} signedTransaction
+     * @param {false | string} replaceExistingTxID
+     */
+    addTransactionToMemPool(signedTransaction, replaceExistingTxID = false) {
         this.memPool.submitTransaction(this.callStack, this.utxoCache.utxosByAnchor, signedTransaction, replaceExistingTxID);
     }
     /** @param {BlockData} minerCandidate */
@@ -264,7 +267,7 @@ export class Node {
 
     /**
      * @param {string} topic 
-     * @param {*} message 
+     * @param {Uint8Array} message 
      */
     async p2pBroadcaster(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
         await this.p2pNetwork.broadcast(topic, message);
@@ -273,19 +276,14 @@ export class Node {
     // I'll be happy if we replace that by one function with a switch case
     /** @param {Transaction} transaction */
     async broadcastTransaction(transaction) {
-        //console.log(`[NODE] Broadcasting transaction: ${transaction.id}`);
-        //await this.p2pNetwork.broadcast('new_transaction', { transaction });
-        const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(transaction);
+        const compressed = utils.compression.msgpack_Zlib.transaction.toBinary_v1(transaction);
         await this.p2pNetwork.broadcast('new_transaction', compressed);
-        //await new Promise((resolve) => setTimeout(resolve, 1));
     }
     /** @param {BlockData} blockProposal */
-    async broadcastCandidate(blockProposal) { // TODO Cleanup
+    async broadcastCandidate(blockProposal) {
         try {
-            //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockProposal);
-            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockProposal);
+            const compressed = utils.compression.msgpack_Zlib.proposalBlock.toBinary_v1(blockProposal);
             await this.p2pNetwork.broadcast('new_block_proposal', compressed);
-            //await new Promise((resolve) => setTimeout(resolve, 1));
         } catch (error) {
             console.error(`[NODE] Failed to broadcast block proposal: ${error.message}`);
         }
@@ -293,16 +291,13 @@ export class Node {
     /** @param {BlockData} blockPow */
     async broadcastBlockPow(blockPow) {
         try {
-            //console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
-            //await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
-            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockPow);
+            const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockPow);
             await this.p2pNetwork.broadcast('new_block_pow', compressed);
-            //await new Promise((resolve) => setTimeout(resolve, 1));
         } catch (error) {
             console.error(`[NODE] Failed to broadcast block PoW: ${error.message}`);
         }
     }
-
+    /** @param {Uint8Array} data */
     async broadcastTest(data) {
         await this.p2pNetwork.broadcast('test', data);
     }

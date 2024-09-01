@@ -98,7 +98,7 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
 
         controlChainIntegrity(chainPart, controlChainPart);
 
-        const newStakesOutputs = await node.utxoCache.digestConfirmedBlocks(chainPart);
+        const newStakesOutputs = await node.utxoCache.digestFinalizedBlocks(chainPart);
         if (newStakesOutputs.length > 0) { node.vss.newStakes(newStakesOutputs); }
 
         node.lastBlockData = chainPart[chainPart.length - 1];
@@ -199,7 +199,7 @@ function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
 function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
     const blockDataPath = path.join(blocksFolderPath, `${blockIndexStr}.bin`);
     const compressed = fs.readFileSync(blockDataPath);
-    const decompressed = utils.compression.msgpack_Zlib.blockData.fromBinary_v1(compressed);
+    const decompressed = utils.compression.msgpack_Zlib.finalizedBlock.fromBinary_v1(compressed);
     
     return decompressed;
 }
@@ -262,7 +262,7 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
  * @param {string} blocksFolderPath
  */
 function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
-    const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockData);
+    const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockData);
 
     const blockDataPath = path.join(blocksFolderPath, `${blockData.index}.bin`);
     fs.writeFileSync(blockDataPath, compressed);

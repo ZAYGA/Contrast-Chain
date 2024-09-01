@@ -109,7 +109,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
      * - Remove the transactions included in the block from the mempool
      * @param {Transaction[]} Txs
      */
-    digestBlockTransactions(Txs) {
+    digestFinalizedBlockTransactions(Txs) {
         if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
 
         // remove the transactions included in the block that collide with the mempool

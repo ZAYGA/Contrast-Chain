@@ -10,6 +10,7 @@ import { kadDHT } from '@libp2p/kad-dht';
 import { mdns } from '@libp2p/mdns';
 import { bootstrap } from '@libp2p/bootstrap';
 import { multiaddr } from 'multiaddr';
+import utils from './utils.mjs';
 
 class P2PNetwork extends EventEmitter {
 
@@ -56,7 +57,6 @@ class P2PNetwork extends EventEmitter {
             }
         });
     }
-
     async start() {
         try {
             this.node = await this.createLibp2pNode();
@@ -71,7 +71,23 @@ class P2PNetwork extends EventEmitter {
             throw error;
         }
     }
+    async stop() {
+        if (this.node) {
+            // Clear periodic tasks
+            if (this.announceIntervalId) {
+                clearInterval(this.announceIntervalId);
+                this.announceIntervalId = null;
+            }
+            if (this.cleanupIntervalId) {
+                clearInterval(this.cleanupIntervalId);
+                this.cleanupIntervalId = null;
+            }
 
+            // Stop the libp2p node
+            await this.node.stop();
+            this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
+        }
+    }
     async createLibp2pNode() {
         const peerDiscovery = [mdns()];
         if (this.options.bootstrapNodes.length > 0) {
@@ -98,7 +114,6 @@ class P2PNetwork extends EventEmitter {
             },
         });
     }
-
     async connectToBootstrapNodes() {
         for (const addr of this.options.bootstrapNodes) {
             try {
@@ -110,13 +125,11 @@ class P2PNetwork extends EventEmitter {
             }
         }
     }
-
     setupEventListeners() {
         this.node.addEventListener('peer:connect', this.handlePeerConnect.bind(this));
         this.node.addEventListener('peer:disconnect', this.handlePeerDisconnect.bind(this));
         this.node.services.pubsub.addEventListener('message', this.handlePubsubMessage.bind(this));
     }
-
     startPeriodicTasks() {
         this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
         this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
@@ -127,44 +140,44 @@ class P2PNetwork extends EventEmitter {
         this.updatePeer(peerId.toString(), { status: 'connected' });
         this.emit('peer:connect', peerId.toString());
     }
-
     handlePeerDisconnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
         this.peers.delete(peerId.toString());
         this.emit('peer:disconnect', peerId.toString());
     }
-
+     
+    /**
+     * @param {Object} detail
+     * @param {string} detail.topic
+     * @param {Uint8Array} detail.data
+     * @param {PeerId} detail.from
+     */
     handlePubsubMessage = async ({ detail: { topic, data, from } }) => {
         try {
-            //const message = JSON.parse(data.toString());
-            //this.emit(topic, message, from);
-            const isUint8Array = Object.prototype.toString.call(data) === '[object Uint8Array]';
-            const uint8Array = isUint8Array ? data : Buffer.from(JSON.stringify(data));
-            this.emit(topic, uint8Array, from);
+            this.emit(topic, data, from);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
     }
-
-
-    async stop() {
-        if (this.node) {
-            // Clear periodic tasks
-            if (this.announceIntervalId) {
-                clearInterval(this.announceIntervalId);
-                this.announceIntervalId = null;
-            }
-            if (this.cleanupIntervalId) {
-                clearInterval(this.cleanupIntervalId);
-                this.cleanupIntervalId = null;
-            }
-
-            // Stop the libp2p node
-            await this.node.stop();
-            this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
+    /**
+     * @param {string} topic 
+     * @param {Uint8Array} message 
+     */
+    async broadcast(topic, message) {
+        this.logger.debug({ component: 'P2PNetwork', topic, message }, 'Broadcasting message');
+        try {
+            await this.node.services.pubsub.publish(topic, message);
+            this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
+        } catch (error) {
+            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
+            throw error;
         }
     }
 
+    /**
+     * @param {string} topic 
+     * @param {Function} callback 
+     */
     async subscribe(topic, callback) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Subscribing to topic');
         try {
@@ -188,7 +201,6 @@ class P2PNetwork extends EventEmitter {
             await this.subscribe(topic, callback);
         }
     }
-
     async unsubscribe(topic) {
         if (!this.subscriptions.has(topic)) {
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Attempting to unsubscribe from a topic that was not subscribed to');
@@ -205,28 +217,11 @@ class P2PNetwork extends EventEmitter {
         }
     }
 
-    async broadcast(topic, message) {
-        this.logger.debug({ component: 'P2PNetwork', topic, message }, 'Broadcasting message');
-        try {
-            // if uint8array, send as is
-            //if (message instanceof Uint8Array) {
-            const isUint8Array = Object.prototype.toString.call(message) === '[object Uint8Array]';
-            //const buffer = isUint8Array ? Buffer.from(message) : Buffer.from(JSON.stringify(message));
-            const uint8Array = isUint8Array ? message : Buffer.from(JSON.stringify(message));
-            await this.node.services.pubsub.publish(topic, uint8Array);
-            this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
-        } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
-            throw error;
-        }
-    }
-
     updatePeer(peerId, data) {
         this.peers.set(peerId, { ...data, lastSeen: Date.now(), address: data.address || null });
         this.logger.debug({ component: 'P2PNetwork', peerId, data }, 'Peer updated');
         this.emit('peer:updated', peerId, data);
     }
-
     cleanupPeers() {
         const now = Date.now();
         for (const [peerId, peerData] of this.peers.entries()) {
@@ -236,7 +231,6 @@ class P2PNetwork extends EventEmitter {
             }
         }
     }
-
     getStatus() {
         return {
             isSyncing: false,
@@ -246,21 +240,22 @@ class P2PNetwork extends EventEmitter {
             peerId: this.node.peerId.toString(),
         };
     }
-
     async announcePeer() {
         try {
             const topic = 'peer:announce';
             await this.subscribe(topic);
-            await this.node.services.pubsub.publish(topic, Buffer.from(JSON.stringify({
+            const data = { peerId: this.node.peerId.toString(), status: this.getStatus() };
+            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(data);
+            await this.node.services.pubsub.publish(topic, compressed);
+            /*await this.node.services.pubsub.publish(topic, Buffer.from(JSON.stringify({
                 peerId: this.node.peerId.toString(),
                 status: this.getStatus(),
-            })));
+            })));*/ // TODO: remove - DEPRECATED
             this.logger.debug({ component: 'P2PNetwork' }, 'Peer announced');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to announce peer');
         }
     }
-
     async findPeer(peerId) {
         try {
             return await this.node.peerRouting.findPeer(peerId);
@@ -269,19 +264,15 @@ class P2PNetwork extends EventEmitter {
             return null;
         }
     }
-
     getConnectedPeers() {
         return Array.from(this.peers.keys());
     }
-
     getSubscribedTopics() {
         return Array.from(this.subscriptions);
     }
-
     isStarted() {
         return this.node && this.node.status === 'started';
     }
-
 }
 
 export default P2PNetwork;

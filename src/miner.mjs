@@ -90,8 +90,7 @@ export class Miner {
                     const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
             
                     if (conform) {
-                        //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(message.blockCandidate);
-                        const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message.blockCandidate);
+                        const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(message.blockCandidate);
                         await this.p2pNetwork.broadcast('new_block_pow', compressed);
                     }
                     workersStatus[message.id] = 'free';
