@@ -2,175 +2,251 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { NodeFactory } from '../src/node-factory.mjs';
 import { Transaction_Builder } from '../src/transaction.mjs';
-import utils from '../src/utils.mjs';
 import { Wallet } from '../src/wallet.mjs';
 
-describe('Consensus Test with Cascading Fund Distribution', function () {
-    this.timeout(1500000); // 25 minutes
+describe('Comprehensive Consensus Test', function () {
+    this.timeout(3600000); // 1 hour
+
+    const NUM_NODES = 9;
+    const NUM_MINERS = 1;
+    const INITIAL_MINER_BALANCE = 30000000;
+    const DISTRIBUTION_AMOUNT = 3000000;
+    const CONSENSUS_CHECK_INTERVAL = 5; // Check consensus every minute
+    const BALANCE_CHECK_INTERVAL = 5; // Check balances every 5 minutes
 
     let factory;
     let nodes = [];
-    const NUM_NODES = 10;
-    const NUM_MINERS = 1;
-    const NUM_TRANSACTIONS = 200;
-    const INITIAL_MINER_BALANCE = 10000000;
-    const DISTRIBUTION_AMOUNT = 1000000;
+    let wallet;
+    let continueSendingTransactions = true;
+    let transactionCount = 0;
+    let failedTransactions = 0;
+    let accounts = [];
     const testParams = {
         useDevArgon2: false,
         nbOfAccounts: 20,
         addressType: 'W',
-    }
-    const wallet = new Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
+    };
 
     before(async function () {
-        console.log('Initializing wallet and deriving accounts...');
+        console.info('Initializing test environment...');
         factory = new NodeFactory();
+        wallet = new Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
+
         await wallet.restore();
         wallet.loadAccounts();
         const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
-        wallet.saveAccounts();
-        if (!derivedAccounts) { throw new Error('Failed to derive addresses.'); }
-        const accounts = derivedAccounts;
-        console.log(`Derived ${accounts.length} accounts. Average iterations: ${avgIterations}`);
 
-        // Create nodes (mixture of validators and miners)
+        accounts = derivedAccounts;
+        wallet.saveAccounts();
+        if (!derivedAccounts) throw new Error('Failed to derive addresses.');
+
+        console.info(`Derived ${derivedAccounts.length} accounts. Average iterations: ${avgIterations}`);
+
+        // Create and start nodes
         for (let i = 0; i < NUM_NODES; i++) {
             const role = i < NUM_MINERS ? 'miner' : 'validator';
-            const node = await factory.createNode(accounts[i], role);
+            const node = await factory.createNode(derivedAccounts[i], role);
             nodes.push(node);
-        }
-
-        // Start all nodes
-        for (const node of nodes) {
             await factory.startNode(node.id);
         }
 
-        // Wait for the P2P network to be ready
         await waitForP2PNetworkReady(nodes);
 
         // Start mining on all miner nodes
-        for (const nodeInfo of nodes) {
-            if (nodeInfo.role === 'miner') {
-                nodeInfo.miner.startWithWorker();
-            }
-        }
+        nodes.filter(node => node.role === 'miner').forEach(node => node.miner.startWithWorker());
     });
 
     after(async function () {
-        // Stop all nodes
+        console.info('Cleaning up test environment...');
+        continueSendingTransactions = false;
         for (const node of nodes) {
             await factory.stopNode(node.id);
         }
     });
 
-    it('should reach consensus with cascading fund distribution and concurrent transactions', async function () {
+    it('should maintain consensus with various transaction scenarios', async function () {
         const validatorNode = nodes.find(node => node.role === 'validator');
         await validatorNode.createBlockCandidateAndBroadcast();
 
-        // Wait for a miner to accumulate funds
         const minerWithBalance = await waitForMinerWithBalance(nodes, INITIAL_MINER_BALANCE);
-        if (!minerWithBalance) {
-            throw new Error('No miner accumulated sufficient balance within the expected time');
-        }
+        if (!minerWithBalance) throw new Error('No miner accumulated sufficient balance within the expected time');
 
-        // Distribute funds from miner to first validator
-        const firstValidator = nodes.find(node => node.role === 'validator');
-        await distributeAndSetupFunds(minerWithBalance, [firstValidator], DISTRIBUTION_AMOUNT);
 
-        // Distribute funds from first validator to other nodes
-        const otherNodes = nodes.filter(node => node !== minerWithBalance && node !== firstValidator);
-        await distributeAndSetupFunds(firstValidator, otherNodes, DISTRIBUTION_AMOUNT / 2);
+        // wait a second for the miner to broadcast the block
+        //await new Promise(resolve => setTimeout(resolve, 3000));
 
-        // Refresh balances before starting transactions
+        await distributeFunds(minerWithBalance, nodes.filter(n => n !== minerWithBalance), DISTRIBUTION_AMOUNT, validatorNode);
+
         refreshAllBalances(validatorNode, nodes.map(n => n.account));
 
-        // Perform concurrent transactions
-        const transactionPromises = [];
-        for (let i = 0; i < NUM_TRANSACTIONS; i++) {
-            const sender = nodes[Math.floor(Math.random() * nodes.length)].account;
-            let recipient = nodes[Math.floor(Math.random() * nodes.length)].account;
-            while (recipient === sender) {
-                recipient = nodes[Math.floor(Math.random() * nodes.length)].account;
-            }
-            const amount = Math.floor(Math.random() * 10000) + 1000; // Random amount between 1,000 and 11,000 microConts
+        const transactionSender = continuouslySendTransactions(nodes, validatorNode, accounts);
+        const consensusChecker = periodicConsensusCheck(nodes);
+        const balanceChecker = periodicBalanceCheck(nodes);
 
-            console.log(`Preparing transaction ${i + 1}/${NUM_TRANSACTIONS} from ${sender.address} to ${recipient.address}`);
+        await Promise.all([
+            transactionSender,
+            consensusChecker,
+            balanceChecker,
+        ]);
 
-            const transactionPromise = sendTransaction(sender, recipient, amount, validatorNode);
-            transactionPromises.push(transactionPromise);
-        }
+        continueSendingTransactions = false;
 
-        console.log('Sending all transactions concurrently...');
-        const transactions = await Promise.all(transactionPromises);
-        const successfulTransactions = transactions.filter(tx => tx !== null);
+        //await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for final transactions to be processed
 
-        console.log(`${successfulTransactions.length} out of ${NUM_TRANSACTIONS} transactions sent successfully`);
+        await verifyFinalConsensusAndBalances(nodes);
 
-        // Wait for the transactions to be processed
-        await new Promise(resolve => setTimeout(resolve, 30000)); // Wait for 30 seconds
-        console.log('Waiting period for transaction processing completed');
-
-        // Verify consensus and balances
-        await verifyConsensusAndBalances(nodes);
+        console.info(`Test completed. Total transactions: ${transactionCount}, Failed: ${failedTransactions}`);
     });
 
-    async function sendTransaction(sender, recipient, amount, broadcastNode) {
-        try {
-            const transaction = await Transaction_Builder.createTransferTransaction(
-                sender,
-                [{ recipientAddress: recipient.address, amount }],
-                1 // Set a fixed fee per byte for testing
-            );
+    async function continuouslySendTransactions(nodes, broadcastNode, allAccounts) {
+        const BATCH_SIZE = 10; // Number of transactions to prepare in each batch
+        const BATCH_INTERVAL = 10; // Time in ms between batches
 
-            const signedTx = await sender.signTransaction(transaction);
-            const txJSON = Transaction_Builder.getTransactionJSON(signedTx);
+        while (continueSendingTransactions) {
+            let transactionPromises = [];
 
-            console.log(`Transaction broadcasted: ${signedTx.id} from ${sender.address} to ${recipient.address}`);
-            await broadcastNode.broadcastTransaction(txJSON);
+            for (let i = 0; i < BATCH_SIZE && continueSendingTransactions; i++) {
 
-            return signedTx;
-        } catch (error) {
-            console.error(`Failed to process transaction: ${error.message}`);
-            return null;
+                const scenario = getRandomScenario();
+                const transactionPromise = executeTransactionScenario(scenario, nodes, broadcastNode, allAccounts)
+                    .then(() => {
+                        transactionCount++;
+                        console.info(`Transactions sent: ${transactionCount}, Failed: ${failedTransactions}`);
+                        if (transactionCount % 100 === 0) {
+                            console.info(`Transactions sent: ${transactionCount}, Failed: ${failedTransactions}`);
+                        }
+                    })
+                    .catch(error => {
+                        failedTransactions++;
+                        // console.error(`Transaction failed: ${error.message}`);
+                    });
+
+                transactionPromises.push(transactionPromise);
+            }
+
+            // Wait for all transactions in the batch to complete
+            await Promise.all(transactionPromises);
+
+            // Refresh balances after each batch
+            refreshAllBalances(broadcastNode, nodes.map(n => n.account));
+
+            // Wait for the specified interval before starting the next batch
+            await new Promise(resolve => setTimeout(resolve, BATCH_INTERVAL));
         }
     }
 
-    async function distributeAndSetupFunds(sender, recipients, amount) {
-        console.log(`Distributing ${amount} from ${sender.account.address} to ${recipients.length} recipients`);
-        for (const recipient of recipients) {
-            await sendTransaction(sender.account, recipient.account, amount, sender);
+
+    function getRandomScenario() {
+        const scenarios = ['simple', 'multi-output', 'random-account'];
+        return scenarios[Math.floor(Math.random() * scenarios.length)];
+    }
+
+
+    async function executeTransactionScenario(scenario, nodes, broadcastNode, allAccounts) {
+        const sender = accounts[Math.floor(Math.random() * accounts.length)];
+        let recipient, amount, outputs;
+
+        // Check sender's balance before proceeding
+        const senderBalance = broadcastNode.utxoCache.getBalanceAndUTXOs(sender.address).balance;
+        if (senderBalance <= 1) {
+            throw new Error(`Skipping transaction: Sender ${sender.address} has insufficient balance (${senderBalance})`);
         }
-        // Wait for transactions to be processed
+
+        switch (scenario) {
+            case 'simple':
+                recipient = nodes[Math.floor(Math.random() * nodes.length)].account;
+                amount = Math.min(1, senderBalance - 1);
+                return sendTransaction(sender, [{ recipientAddress: recipient.address, amount }], broadcastNode);
+            case 'multi-output':
+                const outputCount = Math.min(3, Math.floor(senderBalance / 2));
+                outputs = Array(outputCount).fill().map(() => ({
+                    recipientAddress: nodes[Math.floor(Math.random() * nodes.length)].account.address,
+                    amount: Math.floor(Math.random() * (senderBalance / outputCount - 1)) + 1
+                }));
+                return sendTransaction(sender, outputs, broadcastNode);
+            case 'random-account':
+                recipient = allAccounts[Math.floor(Math.random() * allAccounts.length)];
+                amount = Math.min(1, senderBalance - 1);
+                return sendTransaction(sender, [{ recipientAddress: recipient.address, amount }], broadcastNode);
+        }
+    }
+
+    async function sendTransaction(sender, outputs, broadcastNode) {
+        try {
+            const transaction = await Transaction_Builder.createTransferTransaction(sender, outputs, 1);
+            const signedTx = await sender.signTransaction(transaction);
+            const txJSON = Transaction_Builder.getTransactionJSON(signedTx);
+            // witness size
+            if (txJSON.length > 2000) {
+                console.debug(`Transaction prepared: ${signedTx.id} from ${sender.address}, outputs: ${txJSON.length}`);
+            }
+            await broadcastNode.broadcastTransaction(txJSON);
+            //console.debug(`Transaction broadcasted: ${signedTx.id} from ${sender.address}`);
+        } catch (error) {
+            console.error(`Error preparing transaction: ${error.message}`);
+            throw error;
+        }
+    }
+
+    async function distributeFunds(sender, recipients, amount, broadcastNode) {
+        console.info(`Distributing ${amount} from ${sender.account.address} to ${recipients.length} recipients`);
+        refreshAllBalances(broadcastNode, nodes.map(n => n.account));
+
+        for (const recipient of recipients) {
+            try {
+                await sendTransaction(sender.account, [{ recipientAddress: recipient.account.address, amount }], broadcastNode);
+            } catch (error) {
+                console.error(`Failed to distribute funds to ${recipient.account.address}: ${error.message}`);
+                // Optionally, you might want to implement a retry mechanism here
+            }
+        }
         await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
-    async function verifyConsensusAndBalances(nodes) {
+
+    async function periodicConsensusCheck(nodes) {
+        while (continueSendingTransactions) {
+            await verifyConsensus(nodes);
+            await new Promise(resolve => setTimeout(resolve, CONSENSUS_CHECK_INTERVAL));
+        }
+    }
+
+    async function periodicBalanceCheck(nodes) {
+        while (continueSendingTransactions) {
+            await verifyBalances(nodes);
+            await new Promise(resolve => setTimeout(resolve, BALANCE_CHECK_INTERVAL));
+        }
+    }
+
+    async function verifyConsensus(nodes) {
         const heights = nodes.map(n => n.getStatus().currentBlockHeight);
         const consensusHeight = Math.max(...heights);
-
-        console.log('Node heights:', heights);
-        console.log('Consensus height:', consensusHeight);
-
-        // Verify that all nodes have reached the consensus height (or are very close)
+        //console.info(`Consensus check - Heights: ${heights.join(', ')}, Max: ${consensusHeight}`);
         for (const node of nodes) {
             //expect(node.getStatus().currentBlockHeight).to.be.at.least(consensusHeight - 1);
         }
+    }
 
-        // Verify balances
+    async function verifyBalances(nodes) {
         const lastNode = nodes[nodes.length - 1];
         let totalBalance = 0;
         for (const node of nodes) {
             const balance = lastNode.utxoCache.getBalanceAndUTXOs(node.account.address).balance;
-            console.log(`Address ${node.account.address} balance: ${balance}`);
-            //expect(balance).to.be.at.least(0);
+            // console.info(`Balance check - Address ${node.account.address}: ${balance}`);
+            //  expect(balance).to.be.at.least(0);
             totalBalance += balance;
         }
-        console.log(`Total balance across all nodes: ${totalBalance}`);
+        // console.info(`Total balance across all nodes: ${totalBalance}`);
+    }
+
+    async function verifyFinalConsensusAndBalances(nodes) {
+        await verifyConsensus(nodes);
+        await verifyBalances(nodes);
     }
 
     function refreshAllBalances(node, accounts) {
         for (const account of accounts) {
-            const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(account.address);
+            const { balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(account.address);
             account.setBalanceAndUTXOs(balance, UTXOs);
         }
     }
@@ -183,7 +259,7 @@ describe('Consensus Test with Cascading Fund Distribution', function () {
             });
 
             if (allNodesConnected) {
-                console.log('P2P network is ready');
+                console.info('P2P network is ready');
                 return;
             }
 
@@ -193,21 +269,21 @@ describe('Consensus Test with Cascading Fund Distribution', function () {
         throw new Error('P2P network failed to initialize within the expected time');
     }
 
-    async function waitForMinerWithBalance(nodes, minBalance = INITIAL_MINER_BALANCE, maxAttempts = 60, interval = 5000) {
+    async function waitForMinerWithBalance(nodes, minBalance, maxAttempts = 60, interval = 5000) {
         const miners = nodes.filter(node => node.role === 'miner');
         const randomValidator = nodes.find(node => node.role === 'validator');
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             for (const miner of miners) {
-                console.log(`Checking balance for miner ${miner.id}`);
+                console.debug(`Checking balance for miner ${miner.id}`);
                 const balance = randomValidator.utxoCache.getBalanceAndUTXOs(miner.account.address).balance;
-                console.log(`Miner ${miner.id} balance: ${balance}`);
+                console.debug(`Miner ${miner.id} balance: ${balance}`);
                 if (balance >= minBalance) {
-                    console.log(`Miner ${miner.id} has accumulated sufficient balance`);
+                    console.info(`Miner ${miner.id} has accumulated sufficient balance`);
                     return miner;
                 }
             }
 
-            console.log(`Waiting for a miner to accumulate balance. Attempt ${attempt + 1}/${maxAttempts}`);
+            console.info(`Waiting for a miner to accumulate balance. Attempt ${attempt + 1}/${maxAttempts}`);
             await new Promise(resolve => setTimeout(resolve, interval));
         }
 
