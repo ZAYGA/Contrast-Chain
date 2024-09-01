@@ -12,6 +12,7 @@ import { bootstrap } from '@libp2p/bootstrap';
 import { multiaddr } from 'multiaddr';
 
 class P2PNetwork extends EventEmitter {
+
     constructor(options = {}) {
         super();
         this.options = {
@@ -29,15 +30,21 @@ class P2PNetwork extends EventEmitter {
         this.node = null;
         this.peers = new Map();
         this.subscriptions = new Set();
-        this.logger = this.initLogger();
+
         this.announceIntervalId = null;
         this.cleanupIntervalId = null;
+
+        if (!P2PNetwork.logger) {
+            P2PNetwork.logger = P2PNetwork.initLogger(this.options);
+        }
+        this.logger = P2PNetwork.logger;
+        this.logger.setMaxListeners(10000);
     }
 
-    initLogger() {
+    static initLogger(options) {
         return pino({
-            level: this.options.logLevel,
-            enabled: this.options.logging,
+            level: options.logLevel,
+            enabled: options.logging,
             transport: {
                 target: 'pino-pretty',
                 options: {
@@ -70,7 +77,6 @@ class P2PNetwork extends EventEmitter {
         if (this.options.bootstrapNodes.length > 0) {
             peerDiscovery.push(bootstrap({ list: this.options.bootstrapNodes }));
         }
-
         return createLibp2p({
             addresses: { listen: [this.options.listenAddress] },
             transports: [tcp()],
@@ -85,13 +91,10 @@ class P2PNetwork extends EventEmitter {
                     floodPublish: true,
                     allowPublishToZeroPeers: true,
                 }),
-                dht: kadDHT(),
             },
             peerDiscovery,
             connectionManager: {
                 autoDial: true,
-                maxConnections: this.options.maxPeers,
-                minConnections: Math.floor(this.options.maxPeers / 2),
             },
         });
     }
@@ -173,9 +176,9 @@ class P2PNetwork extends EventEmitter {
         }
     }
     /**
-     * @param {string[]} topics 
-     * @param {Function} callback 
-     * @returns 
+     * @param {string[]} topics
+     * @param {Function} callback
+     * @returns
      */
     async subscribeMultipleTopics(topics, callback) {
         for (const topic of topics) {
