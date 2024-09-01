@@ -183,7 +183,7 @@ async function nodeSpecificTest(accounts, wss) {
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
 
-    minerNode.miner.startWithWorker(); // TODO : dont forget this one
+    //minerNode.miner.startWithWorker(); // TODO : dont forget this one
 
     await validatorNode.createBlockCandidateAndBroadcast();
 
@@ -192,20 +192,18 @@ async function nodeSpecificTest(accounts, wss) {
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    /*let msgWeight = 1_000;
-    for (let i = 0; i < msgWeight; i++) {
-        const heavyMessageUint8 = new Uint8Array(msgWeight);
-        heavyMessageUint8[i] = Math.floor(Math.random() * 256);
-        console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length}`);
-        minerNode.broadcastTest(heavyMessageUint8);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        msgWeight += 1_000;
-    }
-
+    let msgWeight = 10_000;
+    
     while(true) {
+        const heavyMessageUint8 = new Uint8Array(msgWeight);
+        for (let i = 0; i < msgWeight; i++) {
+            heavyMessageUint8[i] = Math.floor(Math.random() * 256);
+        }
+        minerNode.broadcastTest(heavyMessageUint8);
+        console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length}`);
+        msgWeight += 10_000;
         await new Promise(resolve => setTimeout(resolve, 100));
-    }*/
+    }
     // Loop and spent different transactions
     const lastBlockIndexAndTime = { index: 0, time: Date.now() };
     let txsTaskDoneThisBlock = {};
