@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: true,
-    nbOfAccounts: 100,
+    nbOfAccounts: 400,
     addressType: 'W',
 }
 
@@ -183,19 +183,35 @@ async function nodeSpecificTest(accounts, wss) {
 
     await waitForP2PNetworkReady([validatorNode, minerNode]);
 
-    minerNode.miner.startWithWorker();
+    minerNode.miner.startWithWorker(); // TODO : dont forget this one
 
     await validatorNode.createBlockCandidateAndBroadcast();
 
     console.log('[TEST] Node & Miner => Initialized. - start mining');
-    const lastBlockIndexAndTime = { index: 0, time: Date.now() };
-    let txsTaskDoneThisBlock = {};
     //#endregion
 
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    /*let msgWeight = 1_000;
+    for (let i = 0; i < msgWeight; i++) {
+        const heavyMessageUint8 = new Uint8Array(msgWeight);
+        heavyMessageUint8[i] = Math.floor(Math.random() * 256);
+        console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length}`);
+        minerNode.broadcastTest(heavyMessageUint8);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        msgWeight += 1_000;
+    }
+
+    while(true) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }*/
     // Loop and spent different transactions
+    const lastBlockIndexAndTime = { index: 0, time: Date.now() };
+    let txsTaskDoneThisBlock = {};
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
-            minerNode.miner.pushCandidate(validatorNode.blockCandidate);
+            //inerNode.miner.pushCandidate(validatorNode.blockCandidate); // debug only
             lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
             txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
 

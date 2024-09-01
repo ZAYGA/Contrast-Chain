@@ -68,7 +68,7 @@ export class Node {
         //this.p2pNetwork.subscribe('new_block_proposal', this.handleNewBlockFromValidator.bind(this));
         //this.p2pNetwork.subscribe('new_block_pow', this.handleNewBlockFromMiners.bind(this));
 
-        const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow'];
+        const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow', 'test'];
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
 
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
@@ -237,6 +237,9 @@ export class Node {
                     //await this.#processPowBlock(message.blockPow); NO !!
                     this.submitPowProposal( utils.compression.msgpack_Zlib.rawData.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     break;
+                case 'test':
+                    console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);
+                    break;
                 default:
                     console.error(`[P2P-HANDLER] ${topic} -> Unknown topic`);
             }
@@ -274,22 +277,34 @@ export class Node {
         //await this.p2pNetwork.broadcast('new_transaction', { transaction });
         const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(transaction);
         await this.p2pNetwork.broadcast('new_transaction', compressed);
-        await new Promise((resolve) => setTimeout(resolve, 1));
+        //await new Promise((resolve) => setTimeout(resolve, 1));
     }
     /** @param {BlockData} blockProposal */
-    async broadcastCandidate(blockProposal) {
-        //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockProposal);
-        const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockProposal);
-        await this.p2pNetwork.broadcast('new_block_proposal', compressed);
-        await new Promise((resolve) => setTimeout(resolve, 1));
+    async broadcastCandidate(blockProposal) { // TODO Cleanup
+        try {
+            //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(blockProposal);
+            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockProposal);
+            await this.p2pNetwork.broadcast('new_block_proposal', compressed);
+            //await new Promise((resolve) => setTimeout(resolve, 1));
+        } catch (error) {
+            console.error(`[NODE] Failed to broadcast block proposal: ${error.message}`);
+        }
     }
     /** @param {BlockData} blockPow */
     async broadcastBlockPow(blockPow) {
-        //console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
-        //await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
-        const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockPow);
-        await this.p2pNetwork.broadcast('new_block_pow', compressed);
-        await new Promise((resolve) => setTimeout(resolve, 1));
+        try {
+            //console.log(`[NODE] Broadcasting block PoW: ${blockPow.index} | ${blockPow.hash}`);
+            //await this.p2pNetwork.broadcast('new_block_pow', { blockPow });
+            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(blockPow);
+            await this.p2pNetwork.broadcast('new_block_pow', compressed);
+            //await new Promise((resolve) => setTimeout(resolve, 1));
+        } catch (error) {
+            console.error(`[NODE] Failed to broadcast block PoW: ${error.message}`);
+        }
+    }
+
+    async broadcastTest(data) {
+        await this.p2pNetwork.broadcast('test', data);
     }
 
     getStatus() {

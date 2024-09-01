@@ -92,7 +92,8 @@ export class Miner {
                     if (conform) {
                         //const compressed = utils.compression.msgpack_Zlib.blockData.toBinary_v1(message.blockCandidate);
                         const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message.blockCandidate);
-                        await this.p2pNetwork.broadcast('new_block_pow', compressed); }
+                        await this.p2pNetwork.broadcast('new_block_pow', compressed);
+                    }
                     workersStatus[message.id] = 'free';
                 } catch (err) {
                     console.error(err);

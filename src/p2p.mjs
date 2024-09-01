@@ -136,8 +136,11 @@ class P2PNetwork extends EventEmitter {
 
     handlePubsubMessage = async ({ detail: { topic, data, from } }) => {
         try {
-            const message = JSON.parse(data.toString());
-            this.emit(topic, message, from);
+            //const message = JSON.parse(data.toString());
+            //this.emit(topic, message, from);
+            const isUint8Array = Object.prototype.toString.call(data) === '[object Uint8Array]';
+            const uint8Array = isUint8Array ? data : Buffer.from(JSON.stringify(data));
+            this.emit(topic, uint8Array, from);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
@@ -205,7 +208,12 @@ class P2PNetwork extends EventEmitter {
     async broadcast(topic, message) {
         this.logger.debug({ component: 'P2PNetwork', topic, message }, 'Broadcasting message');
         try {
-            await this.node.services.pubsub.publish(topic, Buffer.from(JSON.stringify(message)));
+            // if uint8array, send as is
+            //if (message instanceof Uint8Array) {
+            const isUint8Array = Object.prototype.toString.call(message) === '[object Uint8Array]';
+            //const buffer = isUint8Array ? Buffer.from(message) : Buffer.from(JSON.stringify(message));
+            const uint8Array = isUint8Array ? message : Buffer.from(JSON.stringify(message));
+            await this.node.services.pubsub.publish(topic, uint8Array);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
