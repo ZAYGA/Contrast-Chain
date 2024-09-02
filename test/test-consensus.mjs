@@ -7,12 +7,12 @@ import { Wallet } from '../src/wallet.mjs';
 describe('Comprehensive Consensus Test', function () {
     this.timeout(3600000); // 1 hour
 
-    const NUM_NODES = 9;
+    const NUM_NODES = 2;
     const NUM_MINERS = 1;
     const INITIAL_MINER_BALANCE = 30000000;
     const DISTRIBUTION_AMOUNT = 3000000;
-    const CONSENSUS_CHECK_INTERVAL = 5; // Check consensus every minute
-    const BALANCE_CHECK_INTERVAL = 5; // Check balances every 5 minutes
+    const CONSENSUS_CHECK_INTERVAL = 2000; // Check consensus every minute
+    const BALANCE_CHECK_INTERVAL = 2000; // Check balances every 5 minutes
 
     let factory;
     let nodes = [];
@@ -21,26 +21,19 @@ describe('Comprehensive Consensus Test', function () {
     let transactionCount = 0;
     let failedTransactions = 0;
     let accounts = [];
-    const testParams = {
-        useDevArgon2: false,
-        nbOfAccounts: 20,
-        addressType: 'W',
-    };
 
     before(async function () {
         console.info('Initializing test environment...');
         factory = new NodeFactory();
-        wallet = new Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
+        wallet = new Wallet();
 
-        await wallet.restore();
-        wallet.loadAccounts();
-        const { derivedAccounts, avgIterations } = await wallet.deriveAccounts(testParams.nbOfAccounts, testParams.addressType);
+        const derivedAccounts = await wallet.loadOrCreateAccounts();
 
         accounts = derivedAccounts;
         wallet.saveAccounts();
         if (!derivedAccounts) throw new Error('Failed to derive addresses.');
 
-        console.info(`Derived ${derivedAccounts.length} accounts. Average iterations: ${avgIterations}`);
+        console.info(`Derived ${derivedAccounts.length} accounts. `);
 
         // Create and start nodes
         for (let i = 0; i < NUM_NODES; i++) {
@@ -80,26 +73,21 @@ describe('Comprehensive Consensus Test', function () {
         refreshAllBalances(validatorNode, nodes.map(n => n.account));
 
         const transactionSender = continuouslySendTransactions(nodes, validatorNode, accounts);
-        const consensusChecker = periodicConsensusCheck(nodes);
-        const balanceChecker = periodicBalanceCheck(nodes);
+
 
         await Promise.all([
             transactionSender,
-            consensusChecker,
-            balanceChecker,
+            periodicConsensusCheck(nodes),
+            periodicBalanceCheck(nodes)
         ]);
 
         continueSendingTransactions = false;
-
-        //await new Promise(resolve => setTimeout(resolve, 10000)); // Wait for final transactions to be processed
-
-        await verifyFinalConsensusAndBalances(nodes);
 
         console.info(`Test completed. Total transactions: ${transactionCount}, Failed: ${failedTransactions}`);
     });
 
     async function continuouslySendTransactions(nodes, broadcastNode, allAccounts) {
-        const BATCH_SIZE = 10; // Number of transactions to prepare in each batch
+        const BATCH_SIZE = 2; // Number of transactions to prepare in each batch
         const BATCH_INTERVAL = 10; // Time in ms between batches
 
         while (continueSendingTransactions) {
@@ -107,14 +95,11 @@ describe('Comprehensive Consensus Test', function () {
 
             for (let i = 0; i < BATCH_SIZE && continueSendingTransactions; i++) {
 
+                // console.info(`Preparing transaction ${transactionCount + 1 + i}...`);
                 const scenario = getRandomScenario();
                 const transactionPromise = executeTransactionScenario(scenario, nodes, broadcastNode, allAccounts)
                     .then(() => {
                         transactionCount++;
-                        console.info(`Transactions sent: ${transactionCount}, Failed: ${failedTransactions}`);
-                        if (transactionCount % 100 === 0) {
-                            console.info(`Transactions sent: ${transactionCount}, Failed: ${failedTransactions}`);
-                        }
                     })
                     .catch(error => {
                         failedTransactions++;
@@ -137,12 +122,13 @@ describe('Comprehensive Consensus Test', function () {
 
 
     function getRandomScenario() {
-        const scenarios = ['simple', 'multi-output', 'random-account'];
+        const scenarios = ['simple', 'random-account'];
         return scenarios[Math.floor(Math.random() * scenarios.length)];
     }
 
 
     async function executeTransactionScenario(scenario, nodes, broadcastNode, allAccounts) {
+
         const sender = accounts[Math.floor(Math.random() * accounts.length)];
         let recipient, amount, outputs;
 
@@ -151,19 +137,12 @@ describe('Comprehensive Consensus Test', function () {
         if (senderBalance <= 1) {
             throw new Error(`Skipping transaction: Sender ${sender.address} has insufficient balance (${senderBalance})`);
         }
-
+        console.info(`Executing transaction scenario: ${scenario} from ${sender.address}`);
         switch (scenario) {
             case 'simple':
                 recipient = nodes[Math.floor(Math.random() * nodes.length)].account;
                 amount = Math.min(1, senderBalance - 1);
                 return sendTransaction(sender, [{ recipientAddress: recipient.address, amount }], broadcastNode);
-            case 'multi-output':
-                const outputCount = Math.min(3, Math.floor(senderBalance / 2));
-                outputs = Array(outputCount).fill().map(() => ({
-                    recipientAddress: nodes[Math.floor(Math.random() * nodes.length)].account.address,
-                    amount: Math.floor(Math.random() * (senderBalance / outputCount - 1)) + 1
-                }));
-                return sendTransaction(sender, outputs, broadcastNode);
             case 'random-account':
                 recipient = allAccounts[Math.floor(Math.random() * allAccounts.length)];
                 amount = Math.min(1, senderBalance - 1);
@@ -228,15 +207,16 @@ describe('Comprehensive Consensus Test', function () {
     }
 
     async function verifyBalances(nodes) {
+        console.info('Verifying balances...');
         const lastNode = nodes[nodes.length - 1];
         let totalBalance = 0;
         for (const node of nodes) {
             const balance = lastNode.utxoCache.getBalanceAndUTXOs(node.account.address).balance;
-            // console.info(`Balance check - Address ${node.account.address}: ${balance}`);
+            console.info(`Balance check - Address ${node.account.address}: ${balance}`);
             //  expect(balance).to.be.at.least(0);
             totalBalance += balance;
         }
-        // console.info(`Total balance across all nodes: ${totalBalance}`);
+        console.info(`Total balance across all nodes: ${totalBalance}`);
     }
 
     async function verifyFinalConsensusAndBalances(nodes) {

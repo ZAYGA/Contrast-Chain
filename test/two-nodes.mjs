@@ -53,7 +53,7 @@ describe('Two-Node Mining Test', function () {
 
     it('should create a block candidate, mine it, and reach consensus', async function () {
         // Spy on the broadcastBlockProposal method of the validator node
-        const broadcastSpy = sinon.spy(validatorNode, 'broadcastBlockProposal');
+        const broadcastSpy = sinon.spy(validatorNode, 'broadcast');
 
         // Spy on the submitPowProposal method of the validator node
         const submitPowSpy = sinon.spy(validatorNode, 'submitPowProposal');
