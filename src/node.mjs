@@ -222,7 +222,6 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    //this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     break;
                 case 'new_block_proposal':
@@ -242,16 +241,6 @@ export class Node {
         } catch (error) {
             console.error(`[P2P-HANDLER] ${topic} -> Failed! `, error);
         }
-    }
-    /**
-     * @param {string} signedTxJSON
-     * @param {false | string} replaceExistingTxID
-     */
-    addTransactionJSONToMemPool(signedTxJSON, replaceExistingTxID = false) { // DEPRECATED
-        if (typeof signedTxJSON !== 'string') { throw new Error('Invalid transaction'); }
-
-        const signedTransaction = Transaction_Builder.transactionFromJSON(signedTxJSON);
-        this.memPool.submitTransaction(this.callStack, this.utxoCache.utxosByAnchor, signedTransaction, replaceExistingTxID);
     }
     /**
      * @param {Transaction} signedTransaction

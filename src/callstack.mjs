@@ -1,4 +1,4 @@
-export class CallStack {
+export class CallStack { // DEPRECATED
     /** @type {function[]} */
     stack = [];
     /** @type {string[]} */
@@ -79,5 +79,34 @@ export class CallStack {
                 resolve();
             }, timeout);
         });
+    }
+}
+
+// Now we stack task instead of functions
+// we also use multithreading when we can group uncolisionning tasks
+export class TaskStack {
+    tasks = [];
+
+    /** @param {number} delayMS */
+    async #stackLoop(delayMS = 20) {
+        while (true) {
+            if (this.tasks.length === 0) {
+                await new Promise(resolve => setTimeout(resolve, delayMS)); 
+                continue;
+            }
+
+            await new Promise(resolve => setImmediate(resolve));
+            await this.#executeNextTask();
+        }
+    }
+
+    async #executeNextTask() {
+        const task = this.tasks.shift();
+        if (!task) { return; }
+        try {
+            await task();
+        } catch (error) {
+            console.error(error.stack);
+        }
     }
 }

@@ -9,7 +9,7 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: false, // true => 100txs processProposal: ~7sec | false => 100txs processProposal: ~5.8sec
-    nbOfAccounts: 100,
+    nbOfAccounts: 200,
     addressType: 'W',
 
     txsSeqs: {
