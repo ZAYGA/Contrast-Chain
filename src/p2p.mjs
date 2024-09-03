@@ -107,6 +107,7 @@ class P2PNetwork extends EventEmitter {
                     floodPublish: true,
                     allowPublishToZeroPeers: true,
                 }),
+                dht: kadDHT(),
             },
             peerDiscovery,
             connectionManager: {
@@ -131,8 +132,8 @@ class P2PNetwork extends EventEmitter {
         this.node.services.pubsub.addEventListener('message', this.handlePubsubMessage.bind(this));
     }
     startPeriodicTasks() {
-        this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
-        this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
+        //this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
+        //this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
     }
 
     handlePeerConnect = ({ detail: peerId }) => {
@@ -145,7 +146,7 @@ class P2PNetwork extends EventEmitter {
         this.peers.delete(peerId.toString());
         this.emit('peer:disconnect', peerId.toString());
     }
-     
+
     /**
      * @param {Object} detail
      * @param {string} detail.topic
@@ -154,19 +155,21 @@ class P2PNetwork extends EventEmitter {
      */
     handlePubsubMessage = async ({ detail: { topic, data, from } }) => {
         try {
-            this.emit(topic, data, from);
+            const parsedMessage = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(data);
+            this.emit(topic, parsedMessage, from);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
     }
     /**
-     * @param {string} topic 
-     * @param {Uint8Array} message 
+     * @param {string} topic
+     * @param {any} message - Can be any JavaScript object
      */
     async broadcast(topic, message) {
-        this.logger.debug({ component: 'P2PNetwork', topic, message }, 'Broadcasting message');
+        this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcasting message');
         try {
-            await this.node.services.pubsub.publish(topic, message);
+            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+            await this.node.services.pubsub.publish(topic, serialize);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
@@ -175,8 +178,8 @@ class P2PNetwork extends EventEmitter {
     }
 
     /**
-     * @param {string} topic 
-     * @param {Function} callback 
+     * @param {string} topic
+     * @param {Function} callback
      */
     async subscribe(topic, callback) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Subscribing to topic');
@@ -245,12 +248,7 @@ class P2PNetwork extends EventEmitter {
             const topic = 'peer:announce';
             await this.subscribe(topic);
             const data = { peerId: this.node.peerId.toString(), status: this.getStatus() };
-            const compressed = utils.compression.msgpack_Zlib.rawData.toBinary_v1(data);
-            await this.node.services.pubsub.publish(topic, compressed);
-            /*await this.node.services.pubsub.publish(topic, Buffer.from(JSON.stringify({
-                peerId: this.node.peerId.toString(),
-                status: this.getStatus(),
-            })));*/ // TODO: remove - DEPRECATED
+            //  await this.broadcast(topic, data);
             this.logger.debug({ component: 'P2PNetwork' }, 'Peer announced');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to announce peer');

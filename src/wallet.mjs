@@ -76,7 +76,7 @@ export class Wallet {
             iterationsPerAccount.push(iterations);
             this.accounts[addressPrefix].push(account);
         }
-        
+
         const derivedAccounts = this.accounts[addressPrefix].slice(nbOfExistingAccounts);
         if (derivedAccounts.length !== nbOfAccounts) { console.error('Failed to derive all accounts'); return {}; }
         return { derivedAccounts, avgIterations: (iterationsPerAccount.reduce((a, b) => a + b, 0) / nbOfAccounts).toFixed(2) };
@@ -92,17 +92,17 @@ export class Wallet {
         for (let i = 0; i < maxIterations; i++) {
             const seedModifier = seedModifierStart + i;
             const seedModifierHex = seedModifier.toString(16).padStart(12, '0'); // padStart(12, '0') => 48 bits (6 bytes), maxValue = 281 474 976 710 655
-            
+
             try {
                 const keyPair = await this.#deriveKeyPair(seedModifierHex);
                 const account = await this.#deriveAccount(keyPair, desiredPrefix);
                 if (account) {
                     this.accountsGenerated[desiredPrefix].push({ address: account.address, seedModifierHex });
-                    return { account, iterations: i }; 
+                    return { account, iterations: i };
                 }
             } catch (error) {
                 const errorSkippingLog = ['Address does not meet the security level'];
-                if (!errorSkippingLog.includes(error.message.slice(0,40))) { console.error(error.stack); }
+                if (!errorSkippingLog.includes(error.message.slice(0, 40))) { console.error(error.stack); }
             }
         }
 
@@ -122,10 +122,33 @@ export class Wallet {
         if (!addressBase58) { throw new Error('Failed to derive address'); }
 
         if (addressBase58.substring(0, 1) !== desiredPrefix) { return false; }
-        
+
         utils.addressUtils.conformityCheck(addressBase58);
         await utils.addressUtils.securityCheck(addressBase58, keyPair.pubKeyHex);
 
         return new Account(keyPair.pubKeyHex, keyPair.privKeyHex, addressBase58);
+    }
+
+    async loadOrCreateAccounts(params) {
+        if (params === undefined) {
+            console.warn('No params provided, using default dev params to derive accounts');
+            params = utils.devParams;
+        }
+        // derive accounts
+        this.masterHex = params.masterHex;
+        this.useDevArgon2 = params.useDevArgon2;
+        await this.restore(params.masterHex);
+        // try to load accounts
+        const loaded = await this.loadAccounts();
+        if (loaded) {
+            const derivedAccounts = this.accounts[params.addressPrefix].slice(0, params.nbOfAccounts);
+            if (derivedAccounts.length === params.nbOfAccounts) { return derivedAccounts; }
+        }
+
+        const { derivedAccounts } = await this.deriveAccounts(params.nbOfAccounts, params.addressPrefix);
+        if (derivedAccounts.length !== params.nbOfAccounts) { console.error('Failed to derive all accounts'); return {}; }
+
+        await this.saveAccounts();
+        return derivedAccounts;
     }
 }

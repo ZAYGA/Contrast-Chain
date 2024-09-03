@@ -51,7 +51,7 @@ export class Node {
         this.lastBlockData = null;
     }
 
-    /** 
+    /**
      * @param {Account} account
      * @param {string} role
      * @param {Object<string, any>} p2pOptions
@@ -121,6 +121,7 @@ export class Node {
             return false;
         }
     }
+
     /** @param {BlockData} minerCandidate */
     async #digestPowProposal(minerCandidate) {
         if (!minerCandidate) { throw new Error('Invalid block candidate'); }
@@ -128,7 +129,7 @@ export class Node {
 
         //console.log(`[NODE] Processing PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
         const startTime = Date.now();
-        
+
         const hashConfInfo = await this.#validateBlockProposal(minerCandidate);
         if (!hashConfInfo.conform) { return false; }
 
@@ -147,26 +148,16 @@ export class Node {
             return false;
         }
 
-        //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
-        
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlockTransactions(blockDataCloneToDigest.Txs);
-        
-        this.#digestConfirmedBlock(minerCandidate); // will store the block in ram, and save older blocks if ahead enough
-        //console.log(`[NODE] Block ${minerCandidate.index} | ${minerCandidate.hash} processed in ${(Date.now() - startTime) / 1000}s`);
-        
+
+        this.#digestConfirmedBlock(minerCandidate);
+
         this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
         if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
 
-        /*simple log for debug ----------------------
-        const powMinerTx = minerCandidate.Txs[0];
-        const address = powMinerTx.outputs[0].address;
-        const { balance, UTXOs } = this.utxoCache.getBalanceAndUTXOs(address);
-        console.log(`[NODE] Height: ${minerCandidate.index} -> remaining UTXOs for [ ${utils.addressUtils.formatAddress(address, ' ')} ] ${UTXOs.length} utxos - balance: ${utils.convert.number.formatNumberAsCurrency(balance)}`);
-        */
         const timeBetweenPosPow = ((minerCandidate.timestamp - minerCandidate.posTimestamp) / 1000).toFixed(2);
         console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
-        //console.log(`[NODE] Calculating new block candidate after PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
 
         this.blockCandidate = await this.#createBlockCandidate();
         this.broadcastCandidate(this.blockCandidate);
@@ -213,8 +204,8 @@ export class Node {
     }
 
     /**
-     * @param {string} topic 
-     * @param {object} message 
+     * @param {string} topic
+     * @param {object} message
      */
     async p2pHandler(topic, message) {
         const data = message;
@@ -223,15 +214,15 @@ export class Node {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
                     //this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
-                    this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.addTransactionToMemPool(data);
                     break;
                 case 'new_block_proposal':
                     if (this.role !== 'miner') { break; }
-                    this.miner.pushCandidate( utils.compression.msgpack_Zlib.proposalBlock.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.miner.pushCandidate(data);
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    this.submitPowProposal( utils.compression.msgpack_Zlib.finalizedBlock.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.submitPowProposal(data);
                     break;
                 case 'test':
                     console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);
@@ -266,8 +257,8 @@ export class Node {
     }
 
     /**
-     * @param {string} topic 
-     * @param {Uint8Array} message 
+     * @param {string} topic
+     * @param {Uint8Array} message
      */
     async p2pBroadcaster(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
         await this.p2pNetwork.broadcast(topic, message);
@@ -276,14 +267,12 @@ export class Node {
     // I'll be happy if we replace that by one function with a switch case
     /** @param {Transaction} transaction */
     async broadcastTransaction(transaction) {
-        const compressed = utils.compression.msgpack_Zlib.transaction.toBinary_v1(transaction);
-        await this.p2pNetwork.broadcast('new_transaction', compressed);
+        await this.p2pNetwork.broadcast('new_transaction', transaction);
     }
     /** @param {BlockData} blockProposal */
     async broadcastCandidate(blockProposal) {
         try {
-            const compressed = utils.compression.msgpack_Zlib.proposalBlock.toBinary_v1(blockProposal);
-            await this.p2pNetwork.broadcast('new_block_proposal', compressed);
+            await this.p2pNetwork.broadcast('new_block_proposal', blockProposal);
         } catch (error) {
             console.error(`[NODE] Failed to broadcast block proposal: ${error.message}`);
         }
@@ -291,8 +280,7 @@ export class Node {
     /** @param {BlockData} blockPow */
     async broadcastBlockPow(blockPow) {
         try {
-            const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockPow);
-            await this.p2pNetwork.broadcast('new_block_pow', compressed);
+            await this.p2pNetwork.broadcast('new_block_pow', blockPow);
         } catch (error) {
             console.error(`[NODE] Failed to broadcast block PoW: ${error.message}`);
         }
@@ -311,4 +299,6 @@ export class Node {
             peerCount: this.p2pNetwork.getConnectedPeers().length,
         };
     }
+
+
 }
