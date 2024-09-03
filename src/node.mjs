@@ -1,6 +1,6 @@
 import localStorage_v1 from '../storage/local-storage-management.mjs';
 import { Validation } from './validation.mjs';
-import { CallStack } from './callstack.mjs';
+import { TaskStack } from './taskstack.mjs';
 import { Vss } from './vss.mjs';
 import { MemPool } from './memPool.mjs';
 import { UtxoCache } from './utxoCache.mjs';
@@ -22,8 +22,8 @@ export class Node {
         this.id = account.address;
         /** @type {string} */
         this.role = role; // 'miner' or 'validator'
-        /** @type {CallStack} */
-        this.callStack = CallStack.buildNewStack(['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
+        /** @type {TaskStack} */
+        this.taskStack = TaskStack.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
         /** @type {P2PNetwork} */
         this.p2pNetwork = new P2PNetwork({
             role: this.role,
@@ -108,7 +108,7 @@ export class Node {
             for (let i = 0; i < minerCandidate.Txs.length; i++) {
                 const tx = minerCandidate.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
-                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, tx, isCoinBase, this.useDevArgon2);
+                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
                 if (!txValidation.success) {
                     const error = txValidation;
                     return `Invalid transaction: ${tx.id} - ${error}`;
@@ -123,7 +123,7 @@ export class Node {
     }
 
     /** @param {BlockData} minerCandidate */
-    async #digestPowProposal(minerCandidate) {
+    async digestPowProposal(minerCandidate) {
         if (!minerCandidate) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
@@ -234,16 +234,17 @@ export class Node {
             console.error(`[P2P-HANDLER] ${topic} -> Failed! `, error);
         }
     }
-    /**
-     * @param {Transaction} signedTransaction
-     * @param {false | string} replaceExistingTxID
-     */
-    addTransactionToMemPool(signedTransaction, replaceExistingTxID = false) {
-        this.memPool.submitTransaction(this.callStack, this.utxoCache.utxosByAnchor, signedTransaction, replaceExistingTxID);
+    /** @param {Transaction} signedTransaction */
+    addTransactionToMemPool(signedTransaction) {
+        const taskData = {
+            utxosByAnchor: this.utxoCache.utxosByAnchor,
+            transaction: signedTransaction
+        }
+        this.taskStack.push('pushTransaction', taskData);
     }
     /** @param {BlockData} minerCandidate */
     submitPowProposal(minerCandidate) {
-        this.callStack.push(() => this.#digestPowProposal(minerCandidate));
+        this.taskStack.push('digestPowProposal', minerCandidate);
     }
 
     /**

@@ -140,20 +140,33 @@ export class Validation {
      * - control the inputAddresses/witnessesPubKeys correspondence
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
+     * @param {Object<string, string>} witnessesPubKeysAddress - will be filled
+     * @param {boolean} useDevArgon2
      */
-    static async addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2 = false) {
+    static async addressOwnershipConfirmation(utxosByAnchor, transaction, witnessesPubKeysAddress = {}, useDevArgon2 = false) {
         //const startTime = Date.now();
-        const witnessesAddresses = [];
+        const transactionWitnessesPubKey = [];
+        const transactionWitnessesAddresses = [];
 
         // derive witnesses addresses
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const witnessParts = transaction.witnesses[i].split(':');
             const pubKeyHex = witnessParts[1];
+            
+            if (transactionWitnessesPubKey.includes(pubKeyHex)) { throw new Error('Duplicate witness'); }
+            transactionWitnessesPubKey.push(pubKeyHex);
+
+            if (witnessesPubKeysAddress[pubKeyHex]) { // If the address is already derived, use it and skip the derivation
+                transactionWitnessesAddresses.push(witnessesPubKeysAddress[pubKeyHex]);
+                continue;
+            }
+
             const argon2Fnc = useDevArgon2 ? HashFunctions.devArgon2 : HashFunctions.Argon2;
             const derivedAddressBase58 = await utils.addressUtils.deriveAddress(argon2Fnc, pubKeyHex);
-            if (witnessesAddresses.includes(derivedAddressBase58)) { throw new Error('Duplicate witness'); }
-
-            witnessesAddresses.push(derivedAddressBase58);
+            if (!derivedAddressBase58) { throw new Error('Invalid derived address'); }
+            
+            transactionWitnessesAddresses.push(derivedAddressBase58);
+            witnessesPubKeysAddress[pubKeyHex] = derivedAddressBase58; // store the derived address for future use
         }
 
         // control the input's(UTXOs) addresses presence in the witnesses
@@ -163,8 +176,8 @@ export class Validation {
 
             const referencedUTXO = utxosByAnchor[anchor];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
-            if (witnessesAddresses.includes(referencedUTXO.address) === false) {
-                console.log(`Witnesses: ${witnessesAddresses}`);
+
+            if (!transactionWitnessesAddresses.includes(referencedUTXO.address)) {
                 console.log(`UTXO address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
                 throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
             }
@@ -175,18 +188,19 @@ export class Validation {
 
     /** ==> Sequencially call the full set of validations
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
+     * @param {Object<string, string>} knownPubKeysAddresses - will be filled
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      * @returns {number} - the fee
      */
-    static async fullTransactionValidation(utxosByAnchor, transaction, isCoinBase, useDevArgon2 = false) {
+    static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, isCoinBase, useDevArgon2 = false) {
         Validation.isConformTransaction(transaction, isCoinBase);
         const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
         await Validation.controlTransactionHash(transaction);
         await Validation.controlAllWitnessesSignatures(transaction);
         if (isCoinBase) { return { fee, success: true }; }
         
-        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2);
+        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, knownPubKeysAddresses, useDevArgon2);
 
         return { fee, success: true };
     }
