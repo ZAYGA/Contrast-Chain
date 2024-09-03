@@ -153,7 +153,7 @@ class P2PNetwork extends EventEmitter {
      * @param {Uint8Array} detail.data
      * @param {PeerId} detail.from
      */
-    handlePubsubMessage = async ({ detail: { topic, data, from } }) => {
+    handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
         try {
             const parsedMessage = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(data);
             this.emit(topic, parsedMessage, from);

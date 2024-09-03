@@ -207,14 +207,15 @@ export class Node {
      * @param {string} topic
      * @param {object} message
      */
-    async p2pHandler(topic, message) {
+    async p2pHandler(topic, message) { // TODO: optimize this by using specific compression serialization
         const data = message;
         try {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
                     //this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
-                    this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    //this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
+                    this.addTransactionToMemPool(data);
                     break;
                 case 'new_block_proposal':
                     if (this.role !== 'miner') { break; }

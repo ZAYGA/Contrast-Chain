@@ -9,8 +9,15 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: false, // true => 100txs processProposal: ~7sec | false => 100txs processProposal: ~5.8sec
-    nbOfAccounts: 100,
+    nbOfAccounts: 200,
     addressType: 'W',
+
+    txsSeqs: {
+        userSendToAllOthers: { start: 5, end: 100000, interval: 4},
+        stakeVss: { start: 15, end: 25, interval: 1 },
+        simpleUserToUser: { start: 2, end: 100000, interval: 2 },
+        userSendToNextUser: { start: 40, end: 100000, interval: 6 }
+    }
 }
 
 /** Simple user to user transaction
@@ -24,10 +31,10 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
     const receiverAddress = accounts[receiverAccountIndex].address;
 
     const amountToSend = 1_000_000;
-    const { signedTxJSON, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
-    if (signedTxJSON) {
-        //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${JSON.parse(signedTxJSON).id}`);
-        node.broadcastTransaction(signedTxJSON);
+    const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
+    if (signedTx) {
+        //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${signedTx.id}`);
+        node.broadcastTransaction(signedTx);
     } else {
         console.log(error);
     }
@@ -46,11 +53,11 @@ async function userSendToNextUser(node, accounts, validatorNode = false) {
         const receiverAccount = i === accounts.length - 1 ? accounts[0] : accounts[i + 1];
 
         const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
-        const { signedTxJSON, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
-        if (signedTxJSON) {
-            signedTxsJSON.push(signedTxJSON);
+        const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
+        if (signedTx) {
+            signedTxsJSON.push(signedTx);
             //console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
-            //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
+            //console.log(`[TEST] Pushing transaction: ${signedTx.id} to mempool.`);
         } else {
             console.log(error);
         }
@@ -59,12 +66,7 @@ async function userSendToNextUser(node, accounts, validatorNode = false) {
     startTime = Date.now();
 
     for (let i = 0; i < signedTxsJSON.length; i++) {
-        /*if (validatorNode) {
-            validatorNode.addTransactionJSONToMemPool(signedTxsJSON[i]);
-            continue;
-        }*/
         await node.broadcastTransaction(signedTxsJSON[i]);
-        //node.addTransactionJSONToMemPool(signedTxsJSON[i]);
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;
 
@@ -88,17 +90,11 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
         }
         const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
         const signedTx = await senderAccount.signTransaction(transaction);
-        const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx)
 
-        if (signedTxJSON) {
+        if (signedTx) {
             //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
-            //console.log(`[TEST] Submit transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
-            const fee = JSON.parse(signedTxJSON)
-            if (fee <= 0) {
-                console.log('[TEST] Transaction fee is invalid.');
-            };
-
-            node.broadcastTransaction(signedTxJSON);
+            //console.log(`[TEST] Submit transaction: ${signedTx.id} to mempool.`);
+            node.broadcastTransaction(signedTx);
         } else {
             console.log(error);
         }
@@ -115,15 +111,14 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
  */
 async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToStake = 1_000_000) {
     const senderAccount = accounts[senderAccountIndex];
-    const stakingAddress = accounts[senderAccountIndex].address;
+    const stakingAddress = senderAccount.address;
 
     const transaction = await contrast.Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
     const signedTx = await senderAccount.signTransaction(transaction);
-    const signedTxJSON = contrast.Transaction_Builder.getTransactionJSON(signedTx);
-    if (signedTxJSON) {
+    if (signedTx) {
         //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
-        //console.log(`[TEST] Pushing transaction: ${JSON.parse(signedTxJSON).id} to mempool.`);
-        node.broadcastTransaction(signedTxJSON);
+        //console.log(`[TEST] Pushing transaction: ${signedTx.id} to mempool.`);
+        node.broadcastTransaction(signedTx);
     } else {
         console.log(error);
     }
@@ -192,28 +187,35 @@ async function nodeSpecificTest(accounts, wss) {
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    
     /*let msgWeight = 1_000;
-    for (let i = 0; i < msgWeight; i++) {
-        const heavyMessageUint8 = new Uint8Array(msgWeight);
-        heavyMessageUint8[i] = Math.floor(Math.random() * 256);
-        console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length}`);
-        minerNode.broadcastTest(heavyMessageUint8);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        msgWeight += 1_000;
-    }
-
     while(true) {
+        const aBigObject = {}
+        //const heavyMessageUint8 = new Uint8Array(msgWeight);
+        for (let i = 0; i < msgWeight; i++) {
+            aBigObject[i] = Math.floor(Math.random() * 256);
+            //heavyMessageUint8[i] = Math.floor(Math.random() * 256);
+        }
+        const msgPackStartTimestamp = Date.now();
+        const heavyMessageUint8 = contrast.utils.compression.msgpack_Zlib.rawData.toBinary_v1(aBigObject);
+        console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length} - compressed in: ${Date.now() - msgPackStartTimestamp}ms`);
+        minerNode.broadcastTest(heavyMessageUint8);
+        msgWeight += 10;
         await new Promise(resolve => setTimeout(resolve, 100));
     }*/
+
     // Loop and spent different transactions
     const lastBlockIndexAndTime = { index: 0, time: Date.now() };
     let txsTaskDoneThisBlock = {};
     for (let i = 0; i < 1_000_000; i++) {
         if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
-            //inerNode.miner.pushCandidate(validatorNode.blockCandidate); // debug only
             lastBlockIndexAndTime.index = validatorNode.blockCandidate.index;
-            txsTaskDoneThisBlock = {}; // reset txsTaskDoneThisBlock
+            // delete txsTaskDoneThisBlock if the operation is done(value=true)
+            for (let key in txsTaskDoneThisBlock) {
+                if (txsTaskDoneThisBlock.hasOwnProperty(key) && txsTaskDoneThisBlock[key] === true) {
+                    delete txsTaskDoneThisBlock[key];
+                }
+            }
 
             wss.clients.forEach(function each(client) { // wss broadcast - utxoCache
                 if (client.readyState === 1) {
@@ -229,21 +231,23 @@ async function nodeSpecificTest(accounts, wss) {
 
         refreshAllBalances(validatorNode, accounts);
 
-        // user send to multiple users
-        if (validatorNode.blockCandidate.index > 7 && (validatorNode.blockCandidate.index - 1) % 7 === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
+        // user send to all others
+        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToAllOthers.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToAllOthers.interval === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
             try {
-                txsTaskDoneThisBlock['userSendToAllOthers'] = true;
+                txsTaskDoneThisBlock['userSendToAllOthers'] = false;
                 await userSendToAllOthers(minerNode, accounts);
+                txsTaskDoneThisBlock['userSendToAllOthers'] = true;
             } catch (error) {
                 console.error(error);
             }
         }
 
         // user stakes in VSS
-        if (validatorNode.blockCandidate.index > 14 && validatorNode.blockCandidate.index < 25 && !txsTaskDoneThisBlock['userStakeInVSS']) {
+        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.stakeVss.start && validatorNode.blockCandidate.index < testParams.txsSeqs.stakeVss.end && !txsTaskDoneThisBlock['userStakeInVSS']) {
             try {
+                txsTaskDoneThisBlock['userStakeInVSS'] = false;
+                const senderAccountIndex = validatorNode.blockCandidate.index - testParams.txsSeqs.stakeVss.start;
                 txsTaskDoneThisBlock['userStakeInVSS'] = true;
-                const senderAccountIndex = validatorNode.blockCandidate.index - 25;
                 await userStakeInVSS(minerNode, accounts, senderAccountIndex);
             } catch (error) {
                 console.error(error);
@@ -251,20 +255,22 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // simple user to user transactions
-        if (validatorNode.blockCandidate.index > 1 && (validatorNode.blockCandidate.index - 1) % 8 === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
+        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.simpleUserToUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.simpleUserToUser.interval === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
             try {
-                txsTaskDoneThisBlock['userSendToUser'] = true;
+                txsTaskDoneThisBlock['userSendToUser'] = false;
                 await userSendToUser(minerNode, accounts);
+                txsTaskDoneThisBlock['userSendToUser'] = true;
             } catch (error) {
                 console.error(error);
             }
         }
 
         // users Send To Next Users
-        if (validatorNode.blockCandidate.index > 40 && (validatorNode.blockCandidate.index - 1) % 6 === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
+        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToNextUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToNextUser.interval === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
             try {
-                txsTaskDoneThisBlock['userSendToNextUser'] = true;
+                txsTaskDoneThisBlock['userSendToNextUser'] = false;
                 await userSendToNextUser(minerNode, accounts, validatorNode);
+                txsTaskDoneThisBlock['userSendToNextUser'] = true;
             } catch (error) {
                 console.error(error);
             }
@@ -279,7 +285,7 @@ async function nodeSpecificTest(accounts, wss) {
             });
         }*/
 
-        await validatorNode.callStack.breathe();
+        //await validatorNode.callStack.breathe();
     }
 
     console.log('[TEST] Node test completed. - stop mining');
