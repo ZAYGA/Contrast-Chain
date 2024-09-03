@@ -30,6 +30,7 @@ class BlockTree {
 
     addBlock(block) {
 
+        console.log('BlockTree.addBlock', block);
         if (block.hash === block.prevHash) {
             console.warn(`Rejected self-referencing block: ${block.hash}`);
             return false;

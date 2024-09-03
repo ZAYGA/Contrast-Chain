@@ -28,7 +28,7 @@ async function getArgon2Lib() {
 
     try {
         if (argon2) { return argon2; }
-    } catch (error) {}
+    } catch (error) { }
 
     const argon2Import = await import('../externalLibs/argon2-ES6.min.mjs');
     window.argon2 = argon2Import.default;
@@ -94,7 +94,7 @@ class AddressTypeInfo {
 }
 const addressUtils = {
     params: {
-        argon2DerivationMemory: 2**16, // 2**16 should be great
+        argon2DerivationMemory: 2 ** 16, // 2**16 should be great
         addressDerivationBytes: 16, // the hex return will be double this value
         addressBase58Length: 20,
     },
@@ -121,16 +121,16 @@ const addressUtils = {
             console.error('Failed to hash the SHA-512 pubKeyHex');
             return false;
         }
-        
+
         const hex = argon2hash.hex;
         const addressBase58 = utils.convert.hex.toBase58(hex).substring(0, 20);
-        
+
         return addressBase58;
     },
 
     /** ==> First verification, low computation cost.
-     * 
-     * - Control the length of the address and its first char 
+     *
+     * - Control the length of the address and its first char
      * @param {string} addressBase58 - Address to validate
      */
     conformityCheck: (addressBase58) => {
@@ -145,7 +145,7 @@ const addressUtils = {
         return 'Address conforms to the standard';
     },
     /** ==> Second verification, low computation cost.
-     * 
+     *
      * ( ALWAYS use conformity check first )
      * @param {string} addressBase58 - Address to validate
      * @param {string} pubKeyHex - Public key to derive the address from
@@ -161,7 +161,7 @@ const addressUtils = {
         const arrayBuffer = await utils.cryptoLib.subtle.digest('SHA-256', concatedUint8);
         const uint8Array = new Uint8Array(arrayBuffer);
         const addressPubKeyHashHex = utils.convert.uint8Array.toHex(uint8Array);
-        
+
         const bitsArray = convert.hex.toBits(addressPubKeyHashHex);
         if (!bitsArray) { throw new Error('Failed to convert the public key to bits'); }
 
@@ -171,9 +171,9 @@ const addressUtils = {
         return 'Address meets the security level requirements';
     },
     /** ==> Third verification, higher computation cost.
-     * 
+     *
      * ( ALWAYS use conformity check first )
-     * 
+     *
      * - This function uses an Argon2 hash function to perform a hashing operation.
      * @param {HashFunctions} argon2HashFunction
      * @param {string} addressBase58 - Address to validate
@@ -201,14 +201,14 @@ const typeValidation = {
      * @returns {string|false}
      */
     base58(base58) {
-		for (let i = 0; i < base58.length; i++) {
-			const char = base58[i];
-			if (base58Alphabet.indexOf(char) === -1) {
-				return false;
-			}
-		}
-		return base58;
-	},
+        for (let i = 0; i < base58.length; i++) {
+            const char = base58[i];
+            if (base58Alphabet.indexOf(char) === -1) {
+                return false;
+            }
+        }
+        return base58;
+    },
     /**
      * @param {string} hex - Hex string to validate
      * @returns {string|false}
@@ -260,17 +260,17 @@ const convert = {
         toBigInt: (base58) => {
             let num = BigInt(0);
             const base = BigInt(58);
-        
+
             for (let i = 0; i < base58.length; i++) {
                 const char = base58[i];
                 const index = base58Alphabet.indexOf(char);
                 if (index === -1) {
                     throw new Error(`Invalid character: ${char}`);
                 }
-        
+
                 num = num * base + BigInt(index);
             }
-        
+
             return num;
         },
         /** @param {string} base58 - Base58 string to convert to hex */
@@ -281,7 +281,7 @@ const convert = {
         /** @param {string} base58 - Base58 string to convert to Uint8Array */
         toUint8Array: (base58) => {
             if (typeValidation.base58(base58) === false) { return false; }
-        
+
             const hex = convert.base58.toHex(base58);
             return convert.hex.toUint8Array(hex);
         },
@@ -289,17 +289,17 @@ const convert = {
         toHex: (base58) => {
             let num = BigInt(0);
             const base = BigInt(58);
-        
+
             for (let i = 0; i < base58.length; i++) {
                 const char = base58[i];
                 const index = base58Alphabet.indexOf(char);
                 if (index === -1) {
                     throw new Error(`Invalid character: ${char}`);
                 }
-        
+
                 num = num * base + BigInt(index);
             }
-        
+
             return convert.bigInt.toHex(num);
         }
     },
@@ -326,7 +326,7 @@ const convert = {
                 const bytes = Buffer.from(base64, 'base64');
                 return bytes;
             }
-        
+
             const binaryString = atob(base64);
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
@@ -351,13 +351,13 @@ const convert = {
                 base58 = base58Alphabet.charAt(Number(remainder)) + base58;
                 n = n / BigInt(base58Alphabet.length);
             }
-        
+
             const bytes = isNode ? Buffer.from(base58) : new TextEncoder().encode(base58);
-        
+
             for (let i = 0; i < bytes.length && bytes[i] === 0; i++) {
                 base58 = '1' + base58;
             }
-        
+
             return base58;
         },
         /** @param {BigInt} num - BigInt to convert to base64 */
@@ -441,7 +441,7 @@ const convert = {
             if (isNode) {
                 return uint8Array.toString('base64');
             }
-        
+
             const binaryString = String.fromCharCode.apply(null, uint8Array);
             return btoa(binaryString);
         },
@@ -452,7 +452,7 @@ const convert = {
         },
         /** @param {Uint8Array} uint8Array - Uint8Array to convert to hex */
         toHex: (uint8Array) => {
-            return Array.from(uint8Array, function(byte) {
+            return Array.from(uint8Array, function (byte) {
                 return ('0' + (byte & 0xFF).toString(16)).slice(-2);
             }).join('');
         },
@@ -463,7 +463,7 @@ const convert = {
                 const bits = uint8Array[i].toString(2).padStart(8, '0');
                 bitsArray.push(...bits.split('').map(bit => parseInt(bit, 10)));
             }
-        
+
             return bitsArray;
         }
     },
@@ -481,7 +481,7 @@ const convert = {
         /** @param {string} hex - Hex string to convert to BigInt */
         toBigInt: (hex) => {
             if (hex.length === 0) { console.error('Hex string is empty'); return false; }
-    
+
             return BigInt('0x' + hex);
         },
         /** @param {string} hex - Hex string to convert to Uint8Array */
@@ -489,27 +489,27 @@ const convert = {
             if (hex.length % 2 !== 0) {
                 throw new Error("The length of the input is not a multiple of 2.");
             }
-    
+
             const length = hex.length / 2;
             const uint8Array = new Uint8Array(length);
-            
+
             for (let i = 0, j = 0; i < length; ++i, j += 2) {
                 uint8Array[i] = parseInt(hex.substring(j, j + 2), 16);
             }
-    
+
             return uint8Array;
         },
         /** @param {string} hex - Hex string to convert to bits */
         toBits: (hex = '') => {
             const expectedLength = hex.length / 2 * 8;
             if (hex.length % 2 !== 0) { console.info('The length of the input is not a multiple of 2.'); return false }
-    
+
             let bitsArray = [];
             for (let i = 0; i < hex.length; i++) {
                 const bits = parseInt(hex[i], 16).toString(2).padStart(4, '0');
                 bitsArray = bitsArray.concat(bits.split(''));
             }
-    
+
             const bitsArrayAsNumbers = bitsArray.map(bit => parseInt(bit, 10));
             if (bitsArrayAsNumbers.length !== expectedLength) {
                 console.info('Expected length:', expectedLength, 'Actual length:', bitsArrayAsNumbers.length);
@@ -517,7 +517,7 @@ const convert = {
                 console.info('Bits:', bitsArrayAsNumbers);
                 return false;
             }
-    
+
             return bitsArrayAsNumbers;
         },
     },
@@ -551,7 +551,7 @@ const convert = {
 const conditionnals = {
     /**
      * Check if the string starts with a certain amount of zeros
-     * @param {string} string 
+     * @param {string} string
      * @param {number} zeros
      */
     binaryStringStartsWithZeros: (string, zeros) => {
@@ -565,8 +565,8 @@ const conditionnals = {
 
     /**
      * Check if the string as binary is superior or equal to the target
-     * @param {string} string 
-     * @param {number} minValue 
+     * @param {string} string
+     * @param {number} minValue
      */
     binaryStringSupOrEqual: (string = '', minValue = 0) => {
         if (typeof string !== 'string') { return false; }
@@ -623,8 +623,9 @@ const compression = {
         prepareTransaction: {
             /** @param {Transaction} tx */
             toBinary_v1(tx) {
-                if (typeValidation.hex(tx.id) === false) { 
-                    throw new Error('Invalid tx.id'); }
+                if (typeValidation.hex(tx.id) === false) {
+                    throw new Error('Invalid tx.id');
+                }
                 tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
                 for (let i = 0; i < tx.witnesses.length; i++) {
                     const signature = tx.witnesses[i].split(':')[0];
@@ -644,7 +645,7 @@ const compression = {
                     const output = tx.outputs[j];
                     for (const key in output) { if (output[key] === undefined) { delete tx.outputs[j][key]; } }
                 };
-                
+
                 return tx;
             },
             /** @param {Transaction} decodedTx */
@@ -659,7 +660,8 @@ const compression = {
                 for (let j = 0; j < tx.inputs.length; j++) {
                     const input = tx.inputs[j];
                     if (typeof input === 'string') {
-                        continue; }
+                        continue;
+                    }
                     if (utils.typeValidation.uint8Array(input)) {
                         tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                         continue;
@@ -677,7 +679,7 @@ const compression = {
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
                 };
-                
+
                 const encoded = msgpack.encode(blockData);
                 /** @type {Uint8Array} */
                 const compressed = new Compressor.Zlib.Gzip(encoded).compress();
@@ -705,11 +707,11 @@ const compression = {
                 blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
                 blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
                 blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
-                
+
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
                 };
-                
+
                 const encoded = msgpack.encode(blockData);
                 /** @type {Uint8Array} */
                 const compressed = new Compressor.Zlib.Gzip(encoded).compress();
@@ -725,7 +727,7 @@ const compression = {
                 decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
                 decoded.hash = utils.convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
                 decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
-            
+
                 for (let i = 0; i < decoded.Txs.length; i++) {
                     decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
                 };
@@ -741,7 +743,7 @@ const miningParams = {
     // an increment of 1 means 3.125% more difficult to find a valid hash
     argon2: {
         time: 1,
-        mem: 2**18,
+        mem: 2 ** 18,
         parallelism: 1,
         type: 2,
         hashLen: 32,
@@ -801,16 +803,16 @@ const mining = {
     generateRandomNonce: (length = miningParams.nonceLength) => {
         const Uint8 = new Uint8Array(length);
         crypto.getRandomValues(Uint8);
-    
+
         const Hex = Array.from(Uint8).map(b => b.toString(16).padStart(2, '0')).join('');
-    
+
         return { Uint8, Hex };
     },
     /**
      * This function uses an Argon2 hash function to perform a hashing operation.
      * The Argon2 hash function must follow the following signature:
      * - argon2HashFunction(pass, salt, time, mem, parallelism, type, hashLen)
-     * 
+     *
      *@param {function(string, string, number=, number=, number=, number=, number=): Promise<false | { encoded: string, hash: Uint8Array, hex: string, bitsArray: number[] }>} argon2HashFunction
      *@param {string} blockSignature - Block signature to hash
      *@param {string} nonce - Nonce to hash
@@ -819,7 +821,7 @@ const mining = {
         const { time, mem, parallelism, type, hashLen } = miningParams.argon2;
         const newBlockHash = await argon2HashFunction(blockSignature, nonce, time, mem, parallelism, type, hashLen);
         if (!newBlockHash) { return false; }
-        
+
         return newBlockHash;
     },
     /**
@@ -918,7 +920,17 @@ const anchor = {
         if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { return undefined; }
         return `${utxoBlockHeight}:${utxoTxID}:${vout}`;
     }
+
+
+
 }
+
+const devParams = {
+    useDevArgon2: false,
+    nbOfAccounts: 20,
+    addressPrefix: 'W',
+    masterHex: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00"
+};
 
 const utils = {
     ed25519,
@@ -936,6 +948,7 @@ const utils = {
     conditionnals,
     mining,
     anchor,
+    devParams
 };
 
 export default utils;
