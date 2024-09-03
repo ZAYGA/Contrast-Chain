@@ -588,15 +588,15 @@ const conditionnals = {
 const compression = {
     msgpack_Zlib: {
         rawData: {
-            toBinary_v1(rawData) {
+            toBinary_v1(rawData, compress = false) {
                 const encoded = msgpack.encode(rawData);
                 /** @type {Uint8Array} */
-                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                const compressed = compress ? new Compressor.Zlib.Gzip(encoded).compress() : encoded;
                 return compressed;
             },
             /** @param {Uint8Array} binary */
-            fromBinary_v1(binary) {
-                const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
+            fromBinary_v1(binary, compressed = false) {
+                const decompressed = compressed ? new Decompressor.Zlib.Gunzip(binary).decompress() : binary;
                 const decoded = msgpack.decode(decompressed);
 
                 return decoded;

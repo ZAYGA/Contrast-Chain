@@ -213,7 +213,6 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    //this.addTransactionJSONToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     //this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
                     this.addTransactionToMemPool(data);
                     break;

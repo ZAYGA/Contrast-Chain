@@ -33,6 +33,7 @@ export class CallStack { // DEPRECATED
     async #executeNextFunction() {
         const functionToCall = this.stack.shift();
         if (!functionToCall) { return; }
+
         try {
             await functionToCall();
         } catch (error) {

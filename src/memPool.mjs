@@ -17,8 +17,13 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.useDevArgon2 = false;
     }
 
-    /** @param {Transaction} transaction */
-    #addMempoolTransaction(transaction) {
+    /** 
+     * @param {Transaction} transaction
+     * @param {Transaction} collidingTx
+     */
+    #addMempoolTransaction(transaction, collidingTx = false) {
+        if (collidingTx) { this.#removeMempoolTransaction(collidingTx); }
+
         // sorted by feePerByte
         const feePerByte = transaction.feePerByte;
         this.transactionsByFeePerByte[feePerByte] = this.transactionsByFeePerByte[feePerByte] || [];
@@ -141,7 +146,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      */
-    #transactionUTXOsAreNotSpent(utxosByAnchor, transaction) {
+    static transactionUTXOsAreNotSpent(utxosByAnchor, transaction) {
         for (let i = 0; i < transaction.inputs.length; i++) {
             if (!utils.anchor.isValid(transaction.inputs[i].anchor)) { throw new Error('Invalid UTXO'); }
             if (!utxosByAnchor[transaction.inputs[i].anchor]) { return false; }
@@ -159,10 +164,18 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     }
     /**
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
+     * @param {Transaction[]} transactions
+     * @param {false[] | string[]} replaceExistingTxID
+     */
+    async pushTransactions(utxosByAnchor, transactions, replaceExistingTxID) {
+    }
+    /**
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {false | string} replaceExistingTxID
      */
     async pushTransaction(utxosByAnchor, transaction, replaceExistingTxID) {
+        const timings = { start: Date.now(), first: 0, second: 0 };
         const isCoinBase = false;
 
         // First control format of : amount, address, rule, version, TxID
@@ -175,27 +188,17 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         transaction.byteWeight = Transaction_Builder.getWeightOfTransaction(transaction);
         transaction.feePerByte = (fee / transaction.byteWeight).toFixed(6);
 
-        // Manage the mempool inclusion and collision
-        let txInclusionFunction = () => {
-            this.#addMempoolTransaction(transaction);
-        };
-
         const identicalIDTransaction = this.transactionsByID[transaction.id];
         const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
-        if (collidingTx) {
+        if (collidingTx) { // reject the transaction if it collides with the mempool and "replaceExistingTxID" is not set
             //TODO: active in production
             if (!replaceExistingTxID) { throw new Error(`Conflicting UTXOs with: ${collidingTx.id}`); }
             if (replaceExistingTxID !== collidingTx.id) { throw new Error('Invalid replaceExistingTxID'); }
             if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
-
-            txInclusionFunction = () => {
-                this.#removeMempoolTransaction(collidingTx);
-                this.#addMempoolTransaction(transaction);
-            };
         }
 
-        if (!this.#transactionUTXOsAreNotSpent(utxosByAnchor, transaction)) {
-            throw new Error('UTXOs(one at least) are spent'); }
+        if (!MemPool.transactionUTXOsAreNotSpent(utxosByAnchor, transaction)) { throw new Error('UTXOs(one at least) are spent'); }
+        timings.first = Date.now() - timings.start;
 
         // Third validation: medium computation cost.
         await Validation.controlTransactionHash(transaction);
@@ -205,11 +208,13 @@ export class MemPool { // Store transactions that are not yet included in a bloc
 
         // Fifth validation: medium computation cost.
         await Validation.controlAllWitnessesSignatures(transaction);
-
+        
         // Sixth validation: high computation cost.
         await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, this.useDevArgon2);
+        timings.second = Date.now() - timings.start;
+        console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${timings.second}ms (first: ${timings.first}ms)`);
 
-        txInclusionFunction();
+        this.#addMempoolTransaction(transaction, collidingTx);
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
     }
 }
