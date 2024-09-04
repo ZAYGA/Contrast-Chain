@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NodeFactory } from '../src/node-factory.mjs';
-import { Transaction_Builder } from '../src/transaction.mjs';
-import { Wallet } from '../src/wallet.mjs';
+import { NodeFactory } from '../../src/node-factory.mjs';
+import { Transaction_Builder } from '../../src/transaction.mjs';
+import { Wallet } from '../../src/wallet.mjs';
 
 describe('Comprehensive Consensus Test', function () {
     this.timeout(3600000); // 1 hour
@@ -88,7 +88,7 @@ describe('Comprehensive Consensus Test', function () {
 
     async function continuouslySendTransactions(nodes, broadcastNode, allAccounts) {
         const BATCH_SIZE = 2; // Number of transactions to prepare in each batch
-        const BATCH_INTERVAL = 10; // Time in ms between batches
+        const BATCH_INTERVAL = 500; // Time in ms between batches
 
         while (continueSendingTransactions) {
             let transactionPromises = [];
