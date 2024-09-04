@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NodeFactory } from '../src/node-factory.mjs';
-import { Transaction_Builder } from '../src/transaction.mjs';
-import utils from '../src/utils.mjs';
-import { Wallet } from '../src/wallet.mjs';
+import { NodeFactory } from '../../src/node-factory.mjs';
+import { Transaction_Builder } from '../../src/transaction.mjs';
+import utils from '../../src/utils.mjs';
+import { Wallet } from '../../src/wallet.mjs';
 
 describe('Two-Node Mining Test', function () {
     this.timeout(120000); // Increase timeout for network operations

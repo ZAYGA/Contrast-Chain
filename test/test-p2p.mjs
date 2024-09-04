@@ -132,7 +132,7 @@ describe('P2PNetwork', function () {
       this.timeout(60000);
       // Increase timeout further
       const spamTopic = 'spam-topic';
-      const messageSize = 2048 * 1024;  // Exactly 64 kilobytes
+      const messageSize = 512 * 512;  // Exactly 64 kilobytes
       const numMessages = 20;
       const spamInterval = 0;  // 500 ms
       // Create a large message

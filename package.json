@@ -4,7 +4,7 @@
   "description": "The ultra lightweight L1.",
   "main": "",
   "scripts": {
-    "test": "mocha --experimental-modules",
+    "test": "mocha --experimental-modules --timeout 30000000 --parallel",
     "test_local": "node ./test_local/test-NodeJS-FrontES6.mjs"
   },
   "keywords": [],

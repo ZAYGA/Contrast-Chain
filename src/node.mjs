@@ -9,6 +9,7 @@ import { Transaction_Builder } from './transaction.mjs';
 import { Miner } from './miner.mjs';
 import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
+import { Blockchain } from './blockchain.mjs';
 
 /**
 * @typedef {import("./account.mjs").Account} Account
@@ -49,6 +50,8 @@ export class Node {
         this.confirmedBlocks = [];
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
+        //randomize the blockchain db name
+        this.blockchain = new Blockchain('blockchainDB' + Math.floor(Math.random() * 1000));
     }
 
     /**
@@ -160,6 +163,9 @@ export class Node {
         console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         this.blockCandidate = await this.#createBlockCandidate();
+        await this.blockchain.addBlock(minerCandidate);
+        await this.blockchain.checkAndHandleReorg();
+
         this.broadcastCandidate(this.blockCandidate);
 
         return true;
