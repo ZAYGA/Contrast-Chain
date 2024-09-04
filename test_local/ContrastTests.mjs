@@ -12,6 +12,9 @@ const testParams = {
     nbOfAccounts: 200,
     addressType: 'W',
 
+    nbOfMiners: 1,
+    nbOfValidators: 2,
+
     txsSeqs: {
         userSendToAllOthers: { start: 5, end: 100000, interval: 4},
         stakeVss: { start: 15, end: 25, interval: 1 },
@@ -26,7 +29,7 @@ const testParams = {
  * @param {number} senderAccountIndex
  * @param {number} receiverAccountIndex
  */
-async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAccountIndex = 2) {
+async function userSendToUser(node, accounts, senderAccountIndex = 0, receiverAccountIndex = 2) {
     const senderAccount = accounts[senderAccountIndex];
     const receiverAddress = accounts[receiverAccountIndex].address;
 
@@ -44,7 +47,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 1, receiverAc
 * @param {Account[]} accounts
 * @param {number} nbOfUsers
  */
-async function userSendToNextUser(node, accounts, validatorNode = false) {
+async function userSendToNextUser(node, accounts) {
     let startTime = Date.now();
 
     const signedTxsJSON = [];
@@ -77,7 +80,7 @@ async function userSendToNextUser(node, accounts, validatorNode = false) {
 * @param {Account[]} accounts
 * @param {number} senderAccountIndex
  */
-async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
+async function userSendToAllOthers(node, accounts, senderAccountIndex = 0) {
     try {
         //const startTime = Date.now();
         const senderAccount = accounts[senderAccountIndex];
@@ -109,7 +112,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 1) {
  * @param {number} senderAccountIndex
  * @param {number} amountToStake
  */
-async function userStakeInVSS(node, accounts, senderAccountIndex = 1, amountToStake = 1_000_000) {
+async function userStakeInVSS(node, accounts, senderAccountIndex = 0, amountToStake = 1_000_000) {
     const senderAccount = accounts[senderAccountIndex];
     const stakingAddress = senderAccount.address;
 
@@ -151,7 +154,32 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
 
     throw new Error('P2P network failed to initialize within the expected time');
 }
+/**
+ * @param {NodeFactory} factory
+ * @param {Account} account
+ */
+async function initMinerNode(factory, account) {
+    const minerNode = await factory.createNode(account, 'miner');
+    minerNode.miner.useDevArgon2 = testParams.useDevArgon2;
+    minerNode.memPool.useDevArgon2 = testParams.useDevArgon2;
+    await minerNode.start();
 
+    return minerNode;
+}
+/**
+ * @param {NodeFactory} factory
+ * @param {Account} account
+ */
+async function initValidatorNode(factory, account) {
+    const validatorNode = await factory.createNode(account, 'validator');
+    await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
+
+    validatorNode.useDevArgon2 = testParams.useDevArgon2;
+    validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
+    await validatorNode.start();
+
+    return validatorNode;
+}
 /**
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
@@ -161,34 +189,36 @@ async function nodeSpecificTest(accounts, wss) {
 
     //#region init nodes
     const factory = new NodeFactory();
-    const useDevArgon2 = testParams.useDevArgon2;
 
-    const minerNode = await factory.createNode(accounts[1], 'miner');
-    minerNode.miner.useDevArgon2 = useDevArgon2;
-    minerNode.memPool.useDevArgon2 = useDevArgon2;
-    await minerNode.start();
+    const minerNodes = [];
+    for (let i = 0; i < testParams.nbOfMiners; i++) {
+        const minerNode = await initMinerNode(factory, accounts[i]);
+        minerNodes.push(minerNode);
+    }
+    
+    const validatorNodes = [];
+    for (let i = testParams.nbOfMiners; i < testParams.nbOfMiners + testParams.nbOfValidators; i++) {
+        const validatorNode = await initValidatorNode(factory, accounts[i]);
+        validatorNodes.push(validatorNode);
+    }
 
-    // Create validator node
-    const validatorNode = await factory.createNode(accounts[0], 'validator');
-    await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
+    const allNodes = [...minerNodes, ...validatorNodes];
+    await waitForP2PNetworkReady(allNodes);
 
-    validatorNode.useDevArgon2 = useDevArgon2;
-    validatorNode.memPool.useDevArgon2 = useDevArgon2;
-    await validatorNode.start();
+    for (const node of minerNodes) { node.miner.startWithWorker(); }
+    for (const node of validatorNodes) { await node.createBlockCandidateAndBroadcast(); }
 
-    await waitForP2PNetworkReady([validatorNode, minerNode]);
+    const minerNode = minerNodes[0];
+    const validatorNode = validatorNodes[0];
 
-    minerNode.miner.startWithWorker(); // TODO : dont forget this one
-
-    await validatorNode.createBlockCandidateAndBroadcast();
-
-    console.log('[TEST] Node & Miner => Initialized. - start mining');
+    console.log('[TEST] Nodes Initialized. - start mining');
     //#endregion
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     
-    /*let msgWeight = 1_000;
+    /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
+    let msgWeight = 1_000;
     while(true) {
         const aBigObject = {}
         //const heavyMessageUint8 = new Uint8Array(msgWeight);

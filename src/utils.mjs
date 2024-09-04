@@ -591,13 +591,13 @@ const compression = {
             toBinary_v1(rawData, compress = false) {
                 const encoded = msgpack.encode(rawData);
                 /** @type {Uint8Array} */
-                const compressed = compress ? new Compressor.Zlib.Gzip(encoded).compress() : encoded;
-                return compressed;
+                const readyToReturn = compress ? new Compressor.Zlib.Gzip(encoded).compress() : encoded;
+                return readyToReturn;
             },
             /** @param {Uint8Array} binary */
-            fromBinary_v1(binary, compressed = false) {
-                const decompressed = compressed ? new Decompressor.Zlib.Gunzip(binary).decompress() : binary;
-                const decoded = msgpack.decode(decompressed);
+            fromBinary_v1(binary, isCompressed = false) {
+                const readyToDecode = isCompressed ? new Decompressor.Zlib.Gunzip(binary).decompress() : binary;
+                const decoded = msgpack.decode(readyToDecode);
 
                 return decoded;
             }
@@ -701,8 +701,9 @@ const compression = {
             }
         },
         finalizedBlock: {
-            /** @param {BlockData} blockData */
-            toBinary_v1(blockData) {
+            /** 
+             * @param {BlockData} blockData */
+            toBinary_v1(blockData, compress = false) {
                 // first block prevHash isn't Hex
                 blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
                 blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
@@ -714,14 +715,15 @@ const compression = {
 
                 const encoded = msgpack.encode(blockData);
                 /** @type {Uint8Array} */
-                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
-                return compressed;
+                //const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                const readyToReturn = compress ? new Compressor.Zlib.Gzip(encoded).compress() : encoded;
+                return readyToReturn;
             },
             /** @param {Uint8Array} binary */
-            fromBinary_v1(binary) {
-                const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
+            fromBinary_v1(binary, compress = false) {
+                const readyToDecode = compress ? new Decompressor.Zlib.Gunzip(binary).decompress() : binary;
                 /** @type {BlockData} */
-                const decoded = msgpack.decode(decompressed);
+                const decoded = msgpack.decode(readyToDecode);
 
                 // first block prevHash isn't Hex
                 decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;

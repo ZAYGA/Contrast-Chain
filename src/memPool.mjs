@@ -15,7 +15,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         /** @type {Object<string, Transaction>} */
         this.transactionByPath = {};
 
-        this.maxPubKeysToRemember = 10000;
+        this.maxPubKeysToRemember = 1_000_000; // ~45MB
         this.knownPubKeysAddresses = {}; // used to avoid excessive address ownership confirmation
         this.useDevArgon2 = false;
     }

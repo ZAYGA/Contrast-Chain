@@ -199,7 +199,7 @@ function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
 function loadBlockDataBinary_v1(blockIndexStr, blocksFolderPath) {
     const blockDataPath = path.join(blocksFolderPath, `${blockIndexStr}.bin`);
     const compressed = fs.readFileSync(blockDataPath);
-    const decompressed = utils.compression.msgpack_Zlib.finalizedBlock.fromBinary_v1(compressed);
+    const decompressed = utils.compression.msgpack_Zlib.finalizedBlock.fromBinary_v1(compressed, true);
     
     return decompressed;
 }
@@ -262,10 +262,21 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
  * @param {string} blocksFolderPath
  */
 function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
-    const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockData);
-
+    //const cloneOfBlockData = Block.cloneBlockData(blockData);
+    const timings = { start: Date.now() };
+    const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockData, true);
+    timings.compressed = Date.now() - timings.start;
     const blockDataPath = path.join(blocksFolderPath, `${blockData.index}.bin`);
     fs.writeFileSync(blockDataPath, compressed);
+
+    // test
+    /*timings.start = Date.now();
+    const notCompressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(cloneOfBlockData);
+    timings.uncompressed = Date.now() - timings.start;
+    const blockDataPathNotCompressed = path.join(blocksFolderPath, `${blockData.index}(not compressed).bin`);
+    fs.writeFileSync(blockDataPathNotCompressed, notCompressed);
+
+    console.log(`Block ${blockData.index} saved - compressed: ${timings.compressed}ms, uncompressed: ${timings.uncompressed}ms`);*/
 }
 //#endregion -----------------------------
 

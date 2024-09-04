@@ -213,8 +213,11 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    //this.addTransactionToMemPool( utils.compression.msgpack_Zlib.transaction.fromBinary_v1( new Uint8Array(Object.values(data)) ) );
-                    this.addTransactionToMemPool(data);
+                    //this.addTransactionToMemPool(data);
+                    this.taskStack.push('pushTransaction', {
+                        utxosByAnchor: this.utxoCache.utxosByAnchor,
+                        transaction: data // signedTransaction
+                    });
                     break;
                 case 'new_block_proposal':
                     if (this.role !== 'miner') { break; }
@@ -222,7 +225,8 @@ export class Node {
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    this.submitPowProposal(data);
+                    //this.submitPowProposal(data);
+                    this.taskStack.push('digestPowProposal', data);
                     break;
                 case 'test':
                     console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);
@@ -234,8 +238,10 @@ export class Node {
             console.error(`[P2P-HANDLER] ${topic} -> Failed! `, error);
         }
     }
+
+    //TODO REMOVE DEPRECATED FUNCTIONS
     /** @param {Transaction} signedTransaction */
-    addTransactionToMemPool(signedTransaction) {
+    addTransactionToMemPool(signedTransaction) { // DEPRECATED
         const taskData = {
             utxosByAnchor: this.utxoCache.utxosByAnchor,
             transaction: signedTransaction
@@ -243,7 +249,7 @@ export class Node {
         this.taskStack.push('pushTransaction', taskData);
     }
     /** @param {BlockData} minerCandidate */
-    submitPowProposal(minerCandidate) {
+    submitPowProposal(minerCandidate) { // DEPRECATED -> Pariah, you need to adapt "two-nodes.mjs" lines ~59
         this.taskStack.push('digestPowProposal', minerCandidate);
     }
 
@@ -290,6 +296,4 @@ export class Node {
             peerCount: this.p2pNetwork.getConnectedPeers().length,
         };
     }
-
-
 }
