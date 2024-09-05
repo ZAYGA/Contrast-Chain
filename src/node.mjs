@@ -15,8 +15,9 @@ import { peerIdFromString } from '@libp2p/peer-id'
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
 */
-
+const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 export class Node {
+
     /** @param {Account} account */
     constructor(account, role = 'validator', p2pOptions = {}) {
         /** @type {string} */
@@ -51,7 +52,7 @@ export class Node {
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
         //randomize the blockchain db name
-        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000));
+        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
     }
 
     /**
@@ -75,13 +76,12 @@ export class Node {
     }
 
     async syncWithPeer(peerMultiaddr) {
-        await this.blockchain.syncWithPeer(peerMultiaddr);
+        await this.blockchain.syncNode.syncMissingBlocks(peerMultiaddr);
     }
 
     // Add a method to initiate sync with known peers
     async syncWithKnownPeers() {
         const peerInfo = await this.p2pNetwork.node.peerStore.all();
-        console.warn(`Total peers in peerStore: ${peerInfo.length}`);
 
         for (const peer of peerInfo) {
             const peerId = peer.id;
@@ -93,13 +93,10 @@ export class Node {
             }
 
             for (const addr of peerAddresses) {
-                console.log(addr);
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
-                console.warn(`Attempting to sync with peer ${fullAddr.toString()}`);
 
                 try {
                     await this.syncWithPeer(fullAddr);
-                    console.warn(`Successfully synced with peer ${fullAddr.toString()}`);
                     break; // If successful, move to next peer
                 } catch (error) {
                     console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);

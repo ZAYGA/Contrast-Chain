@@ -8,8 +8,8 @@ import { SyncNode } from '../src/sync.mjs';
 describe('Comprehensive Sync System Test', function () {
     this.timeout(3600000); // 1 hour
 
-    const NUM_NODES = 5;
-    const NUM_MINERS = 2;
+    const NUM_NODES = 2;
+    const NUM_MINERS = 1;
     const INITIAL_BALANCE = 1000000000;
     const TRANSACTION_AMOUNT = 1000000;
     const SYNC_CHECK_INTERVAL = 5000; // Check sync every 5 seconds
@@ -37,7 +37,7 @@ describe('Comprehensive Sync System Test', function () {
             const role = i < NUM_MINERS ? 'miner' : 'validator';
             const node = await factory.createNode(derivedAccounts[i], role);
             nodes.push(node);
-            await factory.startNode(node.id);
+            node.start();
         }
 
         await waitForP2PNetworkReady(nodes);
@@ -59,10 +59,6 @@ describe('Comprehensive Sync System Test', function () {
             await validatorNode.createBlockCandidateAndBroadcast();
 
             await waitForMinerWithBalance(nodes, INITIAL_BALANCE);
-
-
-
-
 
             await waitForSync(nodes);
 

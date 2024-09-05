@@ -1,15 +1,7 @@
 // src/sync.mjs
-
-import { noise } from '@chainsafe/libp2p-noise';
-import { yamux } from '@chainsafe/libp2p-yamux';
-import { tcp } from '@libp2p/tcp';
-import { mplex } from '@libp2p/mplex';
 import { lpStream } from 'it-length-prefixed-stream';
-import { createLibp2p } from 'libp2p';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
-import { kadDHT } from '@libp2p/kad-dht';
-import { identify } from '@libp2p/identify';
 
 const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 const MAX_MESSAGE_SIZE = 20000000; // 20MB
@@ -21,10 +13,11 @@ export class SyncNode {
      * Creates a new SyncNode instance.
      * @param {number} port - The port number to listen on.
      */
-    constructor(port) {
+    constructor(port, p2p, blockchain) {
         this.port = port;
         this.node = null;
-        this.mockBlockData = [];
+        this.p2p = p2p;
+        this.blockchain = blockchain;
     }
 
     /**
@@ -32,26 +25,10 @@ export class SyncNode {
      * @returns {Promise<void>}
      */
     async start() {
-        this.node = await createLibp2p({
-            addresses: {
-                listen: [`/ip4/0.0.0.0/tcp/${this.port}`]
-            },
-            connectionEncryption: [noise()],
-            streamMuxers: [mplex()],
-            transports: [tcp()],
-            services: {
-                identify: identify(),
-                dht: new kadDHT()
-            },
-            connectionManager: {
-                autoDial: true,
-            },
-        });
-
-        await this.node.handle(SYNC_PROTOCOL, this.handleIncomingStream.bind(this));
-        await this.node.start();
+        this.node = this.p2p.node;
         console.log(`Node started with ID: ${this.node.peerId.toString()}`);
         console.log(`Listening on: ${this.node.getMultiaddrs().map(addr => addr.toString()).join(', ')}`);
+        this.node.handle(SYNC_PROTOCOL, this.handleIncomingStream.bind(this));
     }
 
     /**
@@ -74,12 +51,11 @@ export class SyncNode {
 
             let response;
             switch (message.type) {
-                case 'test':
-                case 'block':
-                    response = { status: 'received', echo: message };
-                    break;
                 case 'getBlocks':
-                    response = this.handleGetBlocks(message);
+                    response = await this.handleGetBlocks(message);
+                    break;
+                case 'getStatus':
+                    response = this.handleGetStatus();
                     break;
                 default:
                     throw new Error('Invalid request type');
@@ -91,6 +67,78 @@ export class SyncNode {
             await lp.write(uint8ArrayFromString(JSON.stringify({ status: 'error', message: err.message })));
         } finally {
             await stream.close();
+        }
+    }
+    /**
+ * Handles the getStatus request.
+ * @returns {Object} The current status of the blockchain.
+ */
+    handleGetStatus() {
+        return {
+            status: 'success',
+            currentHeight: this.blockchain.currentHeight,
+            latestBlockHash: this.blockchain.getLatestBlockHash()
+        };
+    }
+    /**
+     * Synchronizes missing blocks from a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer to sync with.
+     * @returns {Promise<void>}
+     */
+    async syncMissingBlocks(peerMultiaddr) {
+        console.log(`Starting sync with peer: ${peerMultiaddr}`);
+
+        try {
+            // First, get the peer's current height
+            const peerStatusMessage = { type: 'getStatus' };
+            const peerStatus = await this.sendMessage(peerMultiaddr, peerStatusMessage);
+            const peerHeight = peerStatus.currentHeight;
+
+            console.log(`Peer height: ${peerHeight}, Our height: ${this.blockchain.currentHeight}`);
+
+            if (peerHeight <= this.blockchain.currentHeight) {
+                console.log('We are up to date or ahead of the peer. No sync needed.');
+                return;
+            }
+
+            // Sync missing blocks
+
+            let currentHeight = this.blockchain.currentHeight + 1;
+            if (this.blockchain.currentHeight === 0) {
+                currentHeight = 0;
+            }
+            while (currentHeight <= peerHeight) {
+                const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerHeight);
+                const message = {
+                    type: 'getBlocks',
+                    startIndex: currentHeight,
+                    endIndex: endIndex
+                };
+
+                console.log(`Requesting blocks from ${currentHeight} to ${endIndex}`);
+                const response = await this.sendMessage(peerMultiaddr, message);
+
+                if (response.status === 'success' && response.blocks.length > 0) {
+                    for (const block of response.blocks) {
+                        try {
+                            await this.blockchain.addBlock(block);
+                            console.log(`Added block at height ${block.index}`);
+                        } catch (error) {
+                            console.error(`Failed to add block at height ${block.index}:`, error);
+                            // If we fail to add a block, we should stop syncing to prevent potential issues
+                            return;
+                        }
+                    }
+                    currentHeight = endIndex + 1;
+                } else {
+                    console.log('No more blocks received from peer. Ending sync.');
+                    break;
+                }
+            }
+
+            console.log('Sync completed successfully.');
+        } catch (error) {
+            console.error('Error during sync:', error);
         }
     }
 
@@ -109,7 +157,7 @@ export class SyncNode {
             await lp.write(uint8ArrayFromString(JSON.stringify(message)));
             const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
             const response = JSON.parse(uint8ArrayToString(res.subarray()));
-            console.log('Received response:', response);
+            // console.log('Received response:', response);
             if (response.status === 'error') {
                 throw new Error(response.message);
             }
@@ -131,14 +179,26 @@ export class SyncNode {
      * @param {number} message.endIndex - The ending block index.
      * @returns {Object} The response containing the requested blocks.
      */
-    handleGetBlocks(message) {
+
+    async handleGetBlocks(message) {
+        console.log('Received getBlocks request:', message);
         const { startIndex, endIndex } = message;
         if (startIndex > endIndex) {
             throw new Error('Invalid block range');
         }
-        const blocks = this.mockBlockData
-            .filter(block => block.index >= startIndex && block.index <= endIndex)
-            .slice(0, MAX_BLOCKS_PER_REQUEST);
+        console.log(`Getting blocks from ${startIndex} to ${endIndex}`);
+        const blocks = [];
+        for (let i = startIndex; i <= endIndex && i <= this.blockchain.currentHeight; i++) {
+            const block = await this.blockchain.getBlockByIndex(i);
+            if (block) {
+                blocks.push(block);
+            } else {
+                console.warn(`Block at height ${i} not found`);
+                break;
+            }
+        }
+
+        console.log(`Sending ${blocks.length} blocks in response`);
         return { status: 'success', blocks };
     }
 

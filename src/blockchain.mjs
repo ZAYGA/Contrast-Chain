@@ -21,7 +21,7 @@ export class Blockchain {
      * @param {string} [options.logLevel='info'] - The logging level for Pino.
      * @param {number} [options.snapshotInterval=100] - Interval at which to take full snapshots.
      */
-    constructor(dbPath, options = {}) {
+    constructor(dbPath, p2p, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
             logLevel = 'silent',
@@ -109,8 +109,8 @@ export class Blockchain {
                 }
             }
         });
-
-        this.syncNode = new SyncNode(8000 + Math.floor(Math.random() * 1000));
+        this.p2p = p2p;
+        this.syncNode = new SyncNode(8000 + Math.floor(Math.random() * 1000), p2p, this);
         this.isSyncing = false;
 
         this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
@@ -131,6 +131,8 @@ export class Blockchain {
             this.logger.error({ error }, 'Failed to initialize blockchain');
             throw error;
         }
+        this.syncNode.p2p = this.p2p;
+
         await this.syncNode.start();
     }
 
@@ -140,19 +142,20 @@ export class Blockchain {
             return;
         }
 
+
+
         this.isSyncing = true;
         try {
-            console.warn('isSyncing with peer', peerMultiaddr);
-            await this.syncNode.connect(peerMultiaddr);
-            console.warn('Connected to peer', peerMultiaddr);
             const localHeight = this.currentHeight;
+
+            await this.syncNode.connect(peerMultiaddr);
+
             const message = {
                 type: 'getBlocks',
                 startIndex: localHeight + 1,
                 endIndex: localHeight + 1000 // Request 1000 blocks at a time
             };
 
-            console.error('Sending sync request:', message);
             const response = await this.syncNode.sendMessage(peerMultiaddr, message);
 
             if (response.status === 'success') {
@@ -177,6 +180,7 @@ export class Blockchain {
         await this.db.close();
         await this.syncNode.stop();
     }
+
 
     // Add a method to handle incoming sync requests
     async handleSyncRequest(message) {
@@ -442,6 +446,49 @@ export class Blockchain {
         }
         this.logger.debug({ latestBlockHash: this.lastBlock.hash }, 'Returning latest block hash');
         return this.lastBlock.hash;
+    }
+
+    /**
+ * Retrieves a block by its index (height).
+ * @param {number} index - The index of the block to retrieve.
+ * @returns {Promise<BlockData|null>} The retrieved block or null if not found.
+ */
+    async getBlockByIndex(index) {
+        this.logger.debug({ blockIndex: index }, 'Retrieving block by index');
+
+        // Check if the requested index is valid
+        if (index < 0 || index > this.currentHeight) {
+            this.logger.warn({ blockIndex: index }, 'Invalid block index requested');
+            return null;
+        }
+
+        // Check in-memory blocks first
+        for (const [hash, block] of this.inMemoryBlocks) {
+            if (block.index === index) {
+                this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found in memory');
+                return block;
+            }
+        }
+
+        // If not in memory, try to fetch from disk
+        try {
+            // We need to iterate through the database to find the block with the correct index
+            // This is not efficient for large blockchains and should be optimized in a production environment
+            const blockHashes = await this.db.keys().all();
+            for (const hash of blockHashes) {
+                const blockJSON = await this.db.get(hash);
+                const block = Block.blockDataFromJSON(blockJSON);
+                if (block.index === index) {
+                    this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found on disk');
+                    return block;
+                }
+            }
+        } catch (error) {
+            this.logger.error({ error, blockIndex: index }, 'Failed to retrieve block from disk');
+        }
+
+        this.logger.warn({ blockIndex: index }, 'Block not found');
+        return null;
     }
 
 }

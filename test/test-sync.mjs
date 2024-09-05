@@ -31,7 +31,6 @@ describe('SyncNode', function () {
         const node2Peers = await node2.peers
     })
 
-    return;
 
     it('should send and receive small messages', async function () {
         const node1Addr = node1.node.getMultiaddrs()[0]
