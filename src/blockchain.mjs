@@ -8,6 +8,7 @@ import { Block, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
 import utils from './utils.mjs';
+import { SyncNode } from './sync.mjs';
 /**
  * Represents the blockchain and manages its operations.
  */
@@ -23,7 +24,7 @@ export class Blockchain {
     constructor(dbPath, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'debug',
+            logLevel = 'silent',
             snapshotInterval = 100
         } = options;
 
@@ -109,6 +110,9 @@ export class Blockchain {
             }
         });
 
+        this.syncNode = new SyncNode(8000 + Math.floor(Math.random() * 1000));
+        this.isSyncing = false;
+
         this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
     }
 
@@ -127,8 +131,67 @@ export class Blockchain {
             this.logger.error({ error }, 'Failed to initialize blockchain');
             throw error;
         }
+        await this.syncNode.start();
     }
 
+    async syncWithPeer(peerMultiaddr) {
+        if (this.isSyncing) {
+            console.warn('Sync already in progress');
+            return;
+        }
+
+        this.isSyncing = true;
+        try {
+            console.warn('isSyncing with peer', peerMultiaddr);
+            await this.syncNode.connect(peerMultiaddr);
+            console.warn('Connected to peer', peerMultiaddr);
+            const localHeight = this.currentHeight;
+            const message = {
+                type: 'getBlocks',
+                startIndex: localHeight + 1,
+                endIndex: localHeight + 1000 // Request 1000 blocks at a time
+            };
+
+            console.error('Sending sync request:', message);
+            const response = await this.syncNode.sendMessage(peerMultiaddr, message);
+
+            if (response.status === 'success') {
+                for (const blockData of response.blocks) {
+                    await this.addBlock(blockData);
+                }
+                this.logger.info(`Synced ${response.blocks.length} blocks`);
+
+                if (response.blocks.length === 1000) {
+                    // There might be more blocks, continue syncing
+                    await this.syncWithPeer(peerMultiaddr);
+                }
+            }
+        } catch (error) {
+            this.logger.error('Sync failed:', error);
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
+    async close() {
+        await this.db.close();
+        await this.syncNode.stop();
+    }
+
+    // Add a method to handle incoming sync requests
+    async handleSyncRequest(message) {
+        console.error('Received sync request:', message);
+        if (message.type === 'getBlocks') {
+            const { startIndex, endIndex } = message;
+            const blocks = [];
+            for (let i = startIndex; i <= endIndex && i <= this.currentHeight; i++) {
+                const block = await this.getBlock(i);
+                blocks.push(block);
+            }
+            return { status: 'success', blocks };
+        }
+        return { status: 'error', message: 'Invalid request type' };
+    }
     /**
      * Adds a new block to the blockchain.
      * @param {BlockData} block - The block to be added.
@@ -200,10 +263,10 @@ export class Blockchain {
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = utils.mining.getBlockFinalDifficulty(block);
         const blockMiningTime = block.timestamp - block.posTimestamp;
-        
+
         const diffAdjustment = finalDifficulty - difficulty;
         const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE
-         
+
 
         // TODO: Implement a more sophisticated scoring mechanism
         // For now, we're using the block height as the score
@@ -381,18 +444,4 @@ export class Blockchain {
         return this.lastBlock.hash;
     }
 
-    /**
-     * Closes the blockchain and its associated resources.
-     * @returns {Promise<void>}
-     */
-    async close() {
-        this.logger.info('Closing blockchain');
-        try {
-            await this.db.close();
-            this.logger.info('Blockchain closed successfully');
-        } catch (error) {
-            this.logger.error({ error }, 'Error closing blockchain');
-            throw error;
-        }
-    }
 }
