@@ -742,7 +742,7 @@ const compression = {
 
 const miningParams = {
     // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
-    // an increment of 1 means 3.125% more difficult to find a valid hash
+    // a difference of 1 difficulty means 3.125% harder to find a valid hash
     argon2: {
         time: 1,
         mem: 2 ** 18,

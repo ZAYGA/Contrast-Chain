@@ -46,7 +46,7 @@ export class Node {
         this.miner = new Miner(account, this.p2pNetwork);
 
         this.useDevArgon2 = false;
-        this.considerDefinitiveAfter = 6; // in blocks
+        this.considerDefinitiveAfter = 1000; // in blocks
         this.confirmedBlocks = [];
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
@@ -80,7 +80,7 @@ export class Node {
     async createBlockCandidateAndBroadcast() {
         if (this.role === 'validator') {
             this.blockCandidate = await this.#createBlockCandidate();
-            this.broadcastCandidate(this.blockCandidate);
+            await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
         }
     } // Work as a "init"
 
@@ -124,7 +124,6 @@ export class Node {
             return false;
         }
     }
-
     /** @param {BlockData} minerCandidate */
     async digestPowProposal(minerCandidate) {
         if (!minerCandidate) { throw new Error('Invalid block candidate'); }
@@ -166,7 +165,7 @@ export class Node {
         await this.blockchain.addBlock(minerCandidate);
         await this.blockchain.checkAndHandleReorg();
 
-        this.broadcastCandidate(this.blockCandidate);
+        await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
 
         return true;
     }
@@ -219,7 +218,6 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    //this.addTransactionToMemPool(data);
                     this.taskStack.push('pushTransaction', {
                         utxosByAnchor: this.utxoCache.utxosByAnchor,
                         transaction: data // signedTransaction
@@ -231,7 +229,6 @@ export class Node {
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    //this.submitPowProposal(data);
                     this.taskStack.push('digestPowProposal', data);
                     break;
                 case 'test':
@@ -263,17 +260,17 @@ export class Node {
      * @param {string} topic
      * @param {Uint8Array} message
      */
-    async p2pBroadcaster(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
+    async p2pBroadcast(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
         await this.p2pNetwork.broadcast(topic, message);
     }
 
     // I'll be happy if we replace that by one function with a switch case
     /** @param {Transaction} transaction */
-    async broadcastTransaction(transaction) {
+    async broadcastTransaction(transaction) { // DEPRECATED
         await this.p2pNetwork.broadcast('new_transaction', transaction);
     }
     /** @param {BlockData} blockProposal */
-    async broadcastCandidate(blockProposal) {
+    async broadcastCandidate(blockProposal) { // DEPRECATED
         try {
             await this.p2pNetwork.broadcast('new_block_proposal', blockProposal);
         } catch (error) {
@@ -281,7 +278,7 @@ export class Node {
         }
     }
     /** @param {BlockData} blockPow */
-    async broadcastBlockPow(blockPow) {
+    async broadcastBlockPow(blockPow) { // DEPRECATED
         try {
             await this.p2pNetwork.broadcast('new_block_pow', blockPow);
         } catch (error) {
@@ -289,7 +286,7 @@ export class Node {
         }
     }
     /** @param {Uint8Array} data */
-    async broadcastTest(data) {
+    async broadcastTest(data) { // DEPRECATED
         await this.p2pNetwork.broadcast('test', data);
     }
 

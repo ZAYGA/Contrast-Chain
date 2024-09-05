@@ -7,6 +7,7 @@ import { UtxoCache } from './utxoCache.mjs';
 import { Block, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
+import utils from './utils.mjs';
 /**
  * Represents the blockchain and manages its operations.
  */
@@ -192,13 +193,18 @@ export class Blockchain {
 
     }
 
-    /**
-     * Calculates the score of a block.
-     * @param {BlockData} block - The block to calculate the score for.
-     * @returns {number} The calculated score.
-     * @private
-     */
+    /** @param {BlockData} block */
     calculateBlockScore(block) {
+        const targetBlockTime = utils.blockchainSettings.targetBlockTime;
+        const oneDiffPointTimeImpact = targetBlockTime * 0.03125; // a difference of 1 difficulty means 3.125% harder to find a valid hash
+
+        const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = utils.mining.getBlockFinalDifficulty(block);
+        const blockMiningTime = block.timestamp - block.posTimestamp;
+        
+        const diffAdjustment = finalDifficulty - difficulty;
+        const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE
+         
+
         // TODO: Implement a more sophisticated scoring mechanism
         // For now, we're using the block height as the score
         return block.index;

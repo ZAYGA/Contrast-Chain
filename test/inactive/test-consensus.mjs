@@ -154,12 +154,7 @@ describe('Comprehensive Consensus Test', function () {
         try {
             const transaction = await Transaction_Builder.createTransferTransaction(sender, outputs, 1);
             const signedTx = await sender.signTransaction(transaction);
-            /*const txJSON = Transaction_Builder.getTransactionJSON(signedTx); // TODO: Look here, we now send raw Tx
-            // witness size
-            if (txJSON.length > 2000) {
-                console.debug(`Transaction prepared: ${signedTx.id} from ${sender.address}, outputs: ${txJSON.length}`);
-            }*/
-            await broadcastNode.broadcastTransaction(signedTx);
+            await broadcastNode.p2pBroadcast('new_transaction', signedTx);
             //console.debug(`Transaction broadcasted: ${signedTx.id} from ${sender.address}`);
         } catch (error) {
             console.error(`Error preparing transaction: ${error.message}`);

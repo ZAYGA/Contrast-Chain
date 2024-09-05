@@ -285,17 +285,12 @@ export class Transaction_Builder {
     }
     /** @param {Transaction} transaction */
     static async hashTxToGetID(transaction, hashHexLength = 8) {
-        const message = Transaction_Builder.getTransactionStringToHash(transaction);
-        const hashHex = await HashFunctions.SHA256(message);
-        return hashHex.slice(0, hashHexLength);
-    }
-    /** @param {Transaction} transaction */
-    static getTransactionStringToHash(transaction) {
         const inputsStr = JSON.stringify(transaction.inputs);
         const outputsStr = JSON.stringify(transaction.outputs);
-        
-        const stringHex = utils.convert.string.toHex(`${inputsStr}${outputsStr}`);
-        return stringHex;
+
+        const message = utils.convert.string.toHex(`${inputsStr}${outputsStr}`);
+        const hashHex = await HashFunctions.SHA256(message);
+        return hashHex.slice(0, hashHexLength);
     }
     /** 
      * @param {Transaction} transaction
@@ -313,16 +308,6 @@ export class Transaction_Builder {
         return typeof transaction.outputs[0] === 'string';
     }
     /** @param {Transaction} transaction */
-    static getTransactionJSON(transaction) { // DEPRECATED
-        return JSON.stringify(transaction)
-    }
-    /** @param {string} transactionJSON */
-    static transactionFromJSON(transactionJSON) {
-        /** @type {Transaction} */
-        const transaction = JSON.parse(transactionJSON);
-        return transaction;
-    }
-    /** @param {Transaction} transaction */
     static cloneTransaction(transaction) {
         const inputs = TxIO_Builder.cloneTxIO(transaction.inputs);
         const outputs = TxIO_Builder.cloneTxIO(transaction.outputs);
@@ -331,7 +316,7 @@ export class Transaction_Builder {
         return Transaction(inputs, outputs, transaction.id, witnesses);
     }
 
-    // Faster methods
+    // Multi-functions methods
     /**
      * @param {Account} senderAccount
      * @param {number} amount

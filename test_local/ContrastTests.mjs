@@ -37,7 +37,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 0, receiverAc
     const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
     if (signedTx) {
         //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${signedTx.id}`);
-        node.broadcastTransaction(signedTx);
+        await node.p2pBroadcast('new_transaction', signedTx);
     } else {
         console.log(error);
     }
@@ -69,7 +69,7 @@ async function userSendToNextUser(node, accounts) {
     startTime = Date.now();
 
     for (let i = 0; i < signedTxsJSON.length; i++) {
-        await node.broadcastTransaction(signedTxsJSON[i]);
+        await node.p2pBroadcast('new_transaction', signedTxsJSON[i]);
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;
 
@@ -97,7 +97,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 0) {
         if (signedTx) {
             //console.log(`[TEST] SEND: ${senderAccount.address} -> rnd() -> ${transfers.length} users`);
             //console.log(`[TEST] Submit transaction: ${signedTx.id} to mempool.`);
-            node.broadcastTransaction(signedTx);
+            await node.p2pBroadcast('new_transaction', signedTx);
         } else {
             console.log(error);
         }
@@ -121,7 +121,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 0, amountToSt
     if (signedTx) {
         //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
         //console.log(`[TEST] Pushing transaction: ${signedTx.id} to mempool.`);
-        node.broadcastTransaction(signedTx);
+        await node.p2pBroadcast('new_transaction', signedTx);
     } else {
         console.log(error);
     }
@@ -229,7 +229,7 @@ async function nodeSpecificTest(accounts, wss) {
         const msgPackStartTimestamp = Date.now();
         const heavyMessageUint8 = contrast.utils.compression.msgpack_Zlib.rawData.toBinary_v1(aBigObject);
         console.log(`[TEST] heavy msg bytes: ${heavyMessageUint8.length} - compressed in: ${Date.now() - msgPackStartTimestamp}ms`);
-        minerNode.broadcastTest(heavyMessageUint8);
+        await minerNode.p2pNetwork.broadcast('test', heavyMessageUint8);
         msgWeight += 10;
         await new Promise(resolve => setTimeout(resolve, 100));
     }*/
