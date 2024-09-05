@@ -242,54 +242,6 @@ export class Node {
         }
     }
 
-    //TODO REMOVE DEPRECATED FUNCTIONS
-    /** @param {Transaction} signedTransaction */
-    addTransactionToMemPool(signedTransaction) { // DEPRECATED
-        const taskData = {
-            utxosByAnchor: this.utxoCache.utxosByAnchor,
-            transaction: signedTransaction
-        }
-        this.taskStack.push('pushTransaction', taskData);
-    }
-    /** @param {BlockData} minerCandidate */
-    submitPowProposal(minerCandidate) { // DEPRECATED -> Pariah, you need to adapt "two-nodes.mjs" lines ~59
-        this.taskStack.push('digestPowProposal', minerCandidate);
-    }
-
-    /**
-     * @param {string} topic
-     * @param {Uint8Array} message
-     */
-    async p2pBroadcast(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
-        await this.p2pNetwork.broadcast(topic, message);
-    }
-
-    // I'll be happy if we replace that by one function with a switch case
-    /** @param {Transaction} transaction */
-    async broadcastTransaction(transaction) { // DEPRECATED
-        await this.p2pNetwork.broadcast('new_transaction', transaction);
-    }
-    /** @param {BlockData} blockProposal */
-    async broadcastCandidate(blockProposal) { // DEPRECATED
-        try {
-            await this.p2pNetwork.broadcast('new_block_proposal', blockProposal);
-        } catch (error) {
-            console.error(`[NODE] Failed to broadcast block proposal: ${error.message}`);
-        }
-    }
-    /** @param {BlockData} blockPow */
-    async broadcastBlockPow(blockPow) { // DEPRECATED
-        try {
-            await this.p2pNetwork.broadcast('new_block_pow', blockPow);
-        } catch (error) {
-            console.error(`[NODE] Failed to broadcast block PoW: ${error.message}`);
-        }
-    }
-    /** @param {Uint8Array} data */
-    async broadcastTest(data) { // DEPRECATED
-        await this.p2pNetwork.broadcast('test', data);
-    }
-
     getStatus() {
         return {
             id: this.id,
