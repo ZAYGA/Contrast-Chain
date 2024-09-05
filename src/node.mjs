@@ -241,6 +241,13 @@ export class Node {
             console.error(`[P2P-HANDLER] ${topic} -> Failed! `, error);
         }
     }
+    /**
+     * @param {string} topic
+     * @param {Uint8Array} message
+     */
+    async p2pBroadcast(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
+        await this.p2pNetwork.broadcast(topic, message);
+    }
 
     getStatus() {
         return {
