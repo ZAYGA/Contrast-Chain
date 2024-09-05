@@ -42,7 +42,7 @@ describe('Blockchain', function () {
         };
 
         // Create a new Blockchain instance for each test
-        blockchain = new Blockchain('./test-db' + Math.random(), { logLevel: 'silent' });
+        blockchain = new Blockchain('./databases/test-db' + Math.random(), { logLevel: 'silent' });
         blockchain.blockTree = mockBlockTree;
         blockchain.forkChoiceRule = mockForkChoiceRule;
         blockchain.utxoCache = mockUtxoCache;
