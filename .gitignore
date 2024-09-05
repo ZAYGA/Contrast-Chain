@@ -2,3 +2,4 @@ node_modules
 storage/accounts
 storage/accounts(dev)
 storage/blocks
+databases

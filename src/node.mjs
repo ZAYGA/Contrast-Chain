@@ -51,7 +51,7 @@ export class Node {
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
         //randomize the blockchain db name
-        this.blockchain = new Blockchain('blockchainDB' + Math.floor(Math.random() * 1000));
+        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000));
     }
 
     /**
