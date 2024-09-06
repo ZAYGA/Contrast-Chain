@@ -1,12 +1,8 @@
 // src/sync.mjs
 import { lpStream } from 'it-length-prefixed-stream';
-import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
-import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 import utils from './utils.mjs';
-import P2PNetwork from './p2p.mjs';
 
 const MAX_BLOCKS_PER_REQUEST = 10000;
-
 
 export class SyncNode {
     /**
@@ -25,10 +21,8 @@ export class SyncNode {
      */
     async start() {
         this.node = this.p2p.node;
-        console.log(`Node started with ID: ${this.node.peerId.toString()}`);
-        console.log(this.p2p.syncProtocol);
         this.node.handle(this.p2p.syncProtocol, this.handleIncomingStream.bind(this));
-
+        console.log('Sync node started on', this.p2p.syncProtocol);
     }
 
     /**
