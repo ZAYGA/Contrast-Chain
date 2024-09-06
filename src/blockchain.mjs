@@ -8,6 +8,7 @@ import { Block, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
 import utils from './utils.mjs';
+import { SyncNode } from './sync.mjs';
 /**
  * Represents the blockchain and manages its operations.
  */
@@ -20,10 +21,10 @@ export class Blockchain {
      * @param {string} [options.logLevel='info'] - The logging level for Pino.
      * @param {number} [options.snapshotInterval=100] - Interval at which to take full snapshots.
      */
-    constructor(dbPath, options = {}) {
+    constructor(dbPath, p2p, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'debug',
+            logLevel = 'silent',
             snapshotInterval = 100
         } = options;
 
@@ -108,6 +109,9 @@ export class Blockchain {
                 }
             }
         });
+        this.p2p = p2p;
+        this.syncNode = new SyncNode(8000 + Math.floor(Math.random() * 1000), p2p, this);
+        this.isSyncing = false;
 
         this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
     }
@@ -127,8 +131,71 @@ export class Blockchain {
             this.logger.error({ error }, 'Failed to initialize blockchain');
             throw error;
         }
+        this.syncNode.p2p = this.p2p;
+
+        await this.syncNode.start();
     }
 
+    async syncWithPeer(peerMultiaddr) {
+        if (this.isSyncing) {
+            console.warn('Sync already in progress');
+            return;
+        }
+
+
+
+        this.isSyncing = true;
+        try {
+            const localHeight = this.currentHeight;
+
+            await this.syncNode.connect(peerMultiaddr);
+
+            const message = {
+                type: 'getBlocks',
+                startIndex: localHeight + 1,
+                endIndex: localHeight + 1000 // Request 1000 blocks at a time
+            };
+
+            const response = await this.syncNode.sendMessage(peerMultiaddr, message);
+
+            if (response.status === 'success') {
+                for (const blockData of response.blocks) {
+                    await this.addBlock(blockData);
+                }
+                this.logger.info(`Synced ${response.blocks.length} blocks`);
+
+                if (response.blocks.length === 1000) {
+                    // There might be more blocks, continue syncing
+                    await this.syncWithPeer(peerMultiaddr);
+                }
+            }
+        } catch (error) {
+            this.logger.error('Sync failed:', error);
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
+    async close() {
+        await this.db.close();
+        await this.syncNode.stop();
+    }
+
+
+    // Add a method to handle incoming sync requests
+    async handleSyncRequest(message) {
+        console.error('Received sync request:', message);
+        if (message.type === 'getBlocks') {
+            const { startIndex, endIndex } = message;
+            const blocks = [];
+            for (let i = startIndex; i <= endIndex && i <= this.currentHeight; i++) {
+                const block = await this.getBlock(i);
+                blocks.push(block);
+            }
+            return { status: 'success', blocks };
+        }
+        return { status: 'error', message: 'Invalid request type' };
+    }
     /**
      * Adds a new block to the blockchain.
      * @param {BlockData} block - The block to be added.
@@ -200,7 +267,7 @@ export class Blockchain {
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = utils.mining.getBlockFinalDifficulty(block);
         const blockMiningTime = block.timestamp - block.posTimestamp;
-        
+
         const diffAdjustment = finalDifficulty - difficulty;
         const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE */
         // need to clarify our requirements for the block score
@@ -383,17 +450,46 @@ export class Blockchain {
     }
 
     /**
-     * Closes the blockchain and its associated resources.
-     * @returns {Promise<void>}
-     */
-    async close() {
-        this.logger.info('Closing blockchain');
-        try {
-            await this.db.close();
-            this.logger.info('Blockchain closed successfully');
-        } catch (error) {
-            this.logger.error({ error }, 'Error closing blockchain');
-            throw error;
+ * Retrieves a block by its index (height).
+ * @param {number} index - The index of the block to retrieve.
+ * @returns {Promise<BlockData|null>} The retrieved block or null if not found.
+ */
+    async getBlockByIndex(index) {
+        this.logger.debug({ blockIndex: index }, 'Retrieving block by index');
+
+        // Check if the requested index is valid
+        if (index < 0 || index > this.currentHeight) {
+            this.logger.warn({ blockIndex: index }, 'Invalid block index requested');
+            return null;
         }
+
+        // Check in-memory blocks first
+        for (const [hash, block] of this.inMemoryBlocks) {
+            if (block.index === index) {
+                this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found in memory');
+                return block;
+            }
+        }
+
+        // If not in memory, try to fetch from disk
+        try {
+            // We need to iterate through the database to find the block with the correct index
+            // This is not efficient for large blockchains and should be optimized in a production environment
+            const blockHashes = await this.db.keys().all();
+            for (const hash of blockHashes) {
+                const blockJSON = await this.db.get(hash);
+                const block = Block.blockDataFromJSON(blockJSON);
+                if (block.index === index) {
+                    this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found on disk');
+                    return block;
+                }
+            }
+        } catch (error) {
+            this.logger.error({ error, blockIndex: index }, 'Failed to retrieve block from disk');
+        }
+
+        this.logger.warn({ blockIndex: index }, 'Block not found');
+        return null;
     }
+
 }

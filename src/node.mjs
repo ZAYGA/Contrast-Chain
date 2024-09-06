@@ -10,13 +10,14 @@ import { Miner } from './miner.mjs';
 import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
 import { Blockchain } from './blockchain.mjs';
-
+import { peerIdFromString } from '@libp2p/peer-id'
 /**
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
 */
-
+const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 export class Node {
+
     /** @param {Account} account */
     constructor(account, role = 'validator', p2pOptions = {}) {
         /** @type {string} */
@@ -51,7 +52,7 @@ export class Node {
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
         //randomize the blockchain db name
-        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000));
+        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
     }
 
     /**
@@ -69,12 +70,44 @@ export class Node {
         // Set the event listeners
         const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow', 'test'];
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
+        await this.blockchain.init();
 
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
+    }
+
+    async syncWithPeer(peerMultiaddr) {
+        await this.blockchain.syncNode.syncMissingBlocks(peerMultiaddr);
+    }
+
+    // Add a method to initiate sync with known peers
+    async syncWithKnownPeers() {
+        const peerInfo = await this.p2pNetwork.node.peerStore.all();
+
+        for (const peer of peerInfo) {
+            const peerId = peer.id;
+            const peerAddresses = peer.addresses;
+
+            if (peerAddresses.length === 0) {
+                console.warn(`No addresses found for peer ${peerId.toString()}`);
+                continue;
+            }
+
+            for (const addr of peerAddresses) {
+                const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
+
+                try {
+                    await this.syncWithPeer(fullAddr);
+                    break; // If successful, move to next peer
+                } catch (error) {
+                    console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);
+                }
+            }
+        }
     }
     async stop() {
         await this.p2pNetwork.stop();
         if (this.miner) { this.miner.terminate(); }
+        await this.blockchain.close();
         console.log(`Node ${this.id} (${this.role}) => stopped`);
     }
     async createBlockCandidateAndBroadcast() {
@@ -253,7 +286,7 @@ export class Node {
         return {
             id: this.id,
             role: this.role,
-            currentBlockHeight: this.blockCandidate ? this.blockCandidate.index : 0,
+            currentBlockHeight: this.blockchain.currentHeight,
             memPoolSize: Object.keys(this.memPool.transactionsByID).length,
             peerCount: this.p2pNetwork.getConnectedPeers().length,
         };
