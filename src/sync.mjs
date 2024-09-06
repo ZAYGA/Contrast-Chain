@@ -1,18 +1,27 @@
-// src/sync.mjs
 import { lpStream } from 'it-length-prefixed-stream';
+import pino from 'pino';
 import utils from './utils.mjs';
 
 const MAX_BLOCKS_PER_REQUEST = 10000;
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY = 1000; // 1 second
 
 export class SyncNode {
     /**
      * Creates a new SyncNode instance.
-     * @param {number} port - The port number to listen on.
+     * @param {import('libp2p')} p2p - The libp2p instance.
+     * @param {import('./blockchain.mjs').Blockchain} blockchain - The blockchain instance.
      */
     constructor(p2p, blockchain) {
         this.node = null;
         this.p2p = p2p;
         this.blockchain = blockchain;
+        this.logger = pino({
+            level: process.env.LOG_LEVEL || 'info',
+            transport: {
+                target: 'pino-pretty'
+            }
+        });
     }
 
     /**
@@ -20,9 +29,14 @@ export class SyncNode {
      * @returns {Promise<void>}
      */
     async start() {
-        this.node = this.p2p.node;
-        this.node.handle(this.p2p.syncProtocol, this.handleIncomingStream.bind(this));
-        console.log('Sync node started on', this.p2p.syncProtocol);
+        try {
+            this.node = this.p2p.node;
+            this.node.handle(this.p2p.syncProtocol, this.handleIncomingStream.bind(this));
+            this.logger.info({ protocol: this.p2p.syncProtocol }, 'Sync node started');
+        } catch (error) {
+            this.logger.error({ error: error.message }, 'Failed to start sync node');
+            throw error;
+        }
     }
 
     /**
@@ -35,29 +49,11 @@ export class SyncNode {
         const lp = lpStream(stream);
         try {
             const req = await lp.read({ maxSize: this.p2p.maxMessageSize });
-            let message;
-            message = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(req.subarray());
-            let response;
-            switch (message.type.toString()) {
-                case 'getBlocks':
-                    response = await this.handleGetBlocks(message);
-                    break;
-                case 'getStatus':
-                    response = this.handleGetStatus();
-                    break;
-                case 'test':
-                    response = message;
-                    break;
-                case 'block':
-                    response = { status: 'received', echo: message };
-                    break;
-                default:
-                    console.error('Invalid request type ' + message.type);
-            }
-
+            const message = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(req.subarray());
+            const response = await this.handleMessage(message);
             await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1(response));
         } catch (err) {
-            console.error('Error handling incoming stream:', err);
+            this.logger.error({ error: err.message }, 'Error handling incoming stream');
             await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1({ status: 'error', message: err.message }));
         } finally {
             await stream.close();
@@ -65,9 +61,30 @@ export class SyncNode {
     }
 
     /**
- * Handles the getStatus request.
- * @returns {Object} The current status of the blockchain.
- */
+     * Handles incoming messages based on their type.
+     * @param {Object} message - The incoming message.
+     * @returns {Promise<Object>} The response to the message.
+     */
+    async handleMessage(message) {
+        switch (message.type.toString()) {
+            case 'getBlocks':
+                return await this.handleGetBlocks(message);
+            case 'getStatus':
+                return this.handleGetStatus();
+            case 'test':
+                return message;
+            case 'block':
+                return { status: 'received', echo: message };
+            default:
+                this.logger.warn({ type: message.type }, 'Invalid request type');
+                throw new Error('Invalid request type');
+        }
+    }
+
+    /**
+     * Handles the getStatus request.
+     * @returns {Object} The current status of the blockchain.
+     */
     handleGetStatus() {
         return {
             status: 'success',
@@ -82,89 +99,115 @@ export class SyncNode {
      * @returns {Promise<void>}
      */
     async syncMissingBlocks(peerMultiaddr) {
-
         try {
-            // First, get the peer's current height
-            const peerStatusMessage = { type: 'getStatus' };
-            const peerStatus = await this.p2p.sendMessage(peerMultiaddr, peerStatusMessage);
-            const peerHeight = peerStatus.currentHeight;
-
-            console.log(`Peer height: ${peerHeight}, Our height: ${this.blockchain.currentHeight}`);
-
-            if (peerHeight <= this.blockchain.currentHeight) {
-                // console.log('We are up to date or ahead of the peer. No sync needed.');
+            const peerStatus = await this.getPeerStatus(peerMultiaddr);
+            if (peerStatus.currentHeight <= this.blockchain.currentHeight) {
+                this.logger.debug('No sync needed');
                 return;
             }
 
-            // Sync missing blocks
-
-            let currentHeight = this.blockchain.currentHeight + 1;
-            if (this.blockchain.currentHeight === 0) {
-                currentHeight = 0;
-            }
-            while (currentHeight <= peerHeight) {
-                const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerHeight);
-                const message = {
-                    type: 'getBlocks',
-                    startIndex: currentHeight,
-                    endIndex: endIndex
-                };
-
-                console.log(`Requesting blocks from ${currentHeight} to ${endIndex}`);
-                const response = await this.p2p.sendMessage(peerMultiaddr, message);
-
-                if (response.status === 'success' && response.blocks.length > 0) {
-                    for (const block of response.blocks) {
-                        try {
-                            await this.blockchain.addConfirmedBlock(block);
-                            console.log(`Added block at height ${block.index}`);
-                        } catch (error) {
-                            console.error(`Failed to add block at height ${block.index}:`, error);
-                            // If we fail to add a block, we should stop syncing to prevent potential issues
-                            return;
-                        }
-                    }
-                    currentHeight = endIndex + 1;
-                } else {
-                    console.log('No more blocks received from peer. Ending sync.');
-                    break;
-                }
-            }
-
-            console.log('Sync completed successfully.');
+            await this.syncBlocksFromPeer(peerMultiaddr, peerStatus.currentHeight);
+            this.logger.info('Sync completed successfully');
         } catch (error) {
-            console.error('Error during sync:', error);
+            this.logger.error({ error: error.message }, 'Error during sync');
+            throw error;
+        }
+    }
+
+    /**
+     * Gets the status of a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer.
+     * @returns {Promise<Object>} The peer's status.
+     */
+    async getPeerStatus(peerMultiaddr) {
+        const peerStatusMessage = { type: 'getStatus' };
+        return await this.retryOperation(() => this.p2p.sendMessage(peerMultiaddr, peerStatusMessage));
+    }
+
+    /**
+     * Synchronizes blocks from a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer.
+     * @param {number} peerHeight - The height of the peer's blockchain.
+     * @returns {Promise<void>}
+     */
+    async syncBlocksFromPeer(peerMultiaddr, peerHeight) {
+        let currentHeight = Math.max(this.blockchain.currentHeight + 1, 0);
+        while (currentHeight <= peerHeight) {
+            const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerHeight);
+            const blocks = await this.requestBlocksFromPeer(peerMultiaddr, currentHeight, endIndex);
+            if (blocks.length === 0) break;
+
+            await this.addBlocksToChain(blocks);
+            currentHeight = endIndex + 1;
+        }
+    }
+
+    /**
+     * Requests blocks from a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer.
+     * @param {number} startIndex - The starting block index.
+     * @param {number} endIndex - The ending block index.
+     * @returns {Promise<Array>} An array of blocks.
+     */
+    async requestBlocksFromPeer(peerMultiaddr, startIndex, endIndex) {
+        const message = { type: 'getBlocks', startIndex, endIndex };
+        this.logger.debug({ startIndex, endIndex }, 'Requesting blocks');
+        const response = await this.retryOperation(() => this.p2p.sendMessage(peerMultiaddr, message));
+        return response.status === 'success' ? response.blocks : [];
+    }
+
+    /**
+     * Adds blocks to the blockchain.
+     * @param {Array} blocks - The blocks to add.
+     * @returns {Promise<void>}
+     */
+    async addBlocksToChain(blocks) {
+        for (const block of blocks) {
+            try {
+                await this.blockchain.addConfirmedBlock(block);
+                this.logger.debug({ height: block.index }, 'Added block');
+            } catch (error) {
+                this.logger.error({ height: block.index, error: error.message }, 'Failed to add block');
+                throw error;
+            }
         }
     }
 
     /**
      * Handles the getBlocks request.
      * @param {Object} message - The getBlocks message.
-     * @param {number} message.startIndex - The starting block index.
-     * @param {number} message.endIndex - The ending block index.
-     * @returns {Object} The response containing the requested blocks.
+     * @returns {Promise<Object>} The response containing the requested blocks.
      */
-
     async handleGetBlocks(message) {
-        console.log('Received getBlocks request:', message);
+        this.logger.debug(message, 'Received getBlocks request');
         const { startIndex, endIndex } = message;
         if (startIndex > endIndex) {
             throw new Error('Invalid block range');
         }
-        console.log(`Getting blocks from ${startIndex} to ${endIndex}`);
+
+        const blocks = await this.getBlocksInRange(startIndex, endIndex);
+        this.logger.debug({ count: blocks.length }, 'Sending blocks in response');
+        return { status: 'success', blocks };
+    }
+
+    /**
+     * Gets blocks within a specified range.
+     * @param {number} startIndex - The starting block index.
+     * @param {number} endIndex - The ending block index.
+     * @returns {Promise<Array>} An array of blocks.
+     */
+    async getBlocksInRange(startIndex, endIndex) {
         const blocks = [];
         for (let i = startIndex; i <= endIndex && i <= this.blockchain.currentHeight; i++) {
             const block = await this.blockchain.getBlockByIndex(i);
             if (block) {
                 blocks.push(block);
             } else {
-                console.warn(`Block at height ${i} not found`);
+                this.logger.warn({ height: i }, 'Block not found');
                 break;
             }
         }
-
-        console.log(`Sending ${blocks.length} blocks in response`);
-        return { status: 'success', blocks };
+        return blocks;
     }
 
     /**
@@ -173,9 +216,29 @@ export class SyncNode {
      * @returns {Promise<void>}
      */
     async connect(peerMultiaddr) {
-        console.error(`Connecting to: ${peerMultiaddr}`);
-        await this.node.dial(peerMultiaddr);
-        console.log(`Connected to: ${peerMultiaddr}`);
+        try {
+            await this.node.dial(peerMultiaddr);
+            this.logger.info({ peerMultiaddr }, 'Connected to peer');
+        } catch (error) {
+            this.logger.error({ peerMultiaddr, error: error.message }, 'Failed to connect to peer');
+            throw error;
+        }
     }
 
+    /**
+     * Retries an operation with exponential backoff.
+     * @param {Function} operation - The operation to retry.
+     * @returns {Promise<any>} The result of the operation.
+     */
+    async retryOperation(operation) {
+        for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+            try {
+                return await operation();
+            } catch (error) {
+                if (attempt === RETRY_ATTEMPTS) throw error;
+                this.logger.warn({ attempt, error: error.message }, 'Operation failed, retrying');
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
+            }
+        }
+    }
 }

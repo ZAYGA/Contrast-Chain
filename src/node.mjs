@@ -10,13 +10,12 @@ import { Miner } from './miner.mjs';
 import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
 import { Blockchain } from './blockchain.mjs';
-import { peerIdFromString } from '@libp2p/peer-id'
 import { SyncNode } from './sync.mjs';
 /**
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
 */
-const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
+
 export class Node {
 
     /** @param {Account} account */
@@ -53,7 +52,7 @@ export class Node {
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
         this.syncIntervalId = null;
-        //randomize the blockchain db name
+
         this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
         this.syncNode = new SyncNode(this.p2pNetwork, this.blockchain);
     }
@@ -125,6 +124,7 @@ export class Node {
         await this.p2pNetwork.stop();
         if (this.miner) { this.miner.terminate(); }
         await this.blockchain.close();
+
         console.log(`Node ${this.id} (${this.role}) => stopped`);
     }
 

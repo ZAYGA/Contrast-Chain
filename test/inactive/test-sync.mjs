@@ -1,9 +1,9 @@
 import { expect } from 'chai';
-import { SyncNode } from '../src/sync.mjs';
+import { SyncNode } from '../../src/sync.mjs';
 import { multiaddr } from 'multiaddr';
 import sinon from 'sinon';
-import { NodeFactory } from '../src/node-factory.mjs';
-import { Wallet } from '../src/wallet.mjs';
+import { NodeFactory } from '../../src/node-factory.mjs';
+import { Wallet } from '../../src/wallet.mjs';
 
 describe('SyncNode', function () {
     this.timeout(120000); // Increase timeout for longer tests
