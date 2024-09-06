@@ -15,104 +15,79 @@ export class Blockchain {
     /**
      * Creates a new Blockchain instance.
      * @param {string} dbPath - The path to the LevelDB database.
+     * @param {Object} p2p - The P2P network interface.
      * @param {Object} [options] - Configuration options for the blockchain.
      * @param {number} [options.maxInMemoryBlocks=1000] - Maximum number of blocks to keep in memory.
      * @param {string} [options.logLevel='info'] - The logging level for Pino.
      * @param {number} [options.snapshotInterval=100] - Interval at which to take full snapshots.
+     * @param {boolean} [options.loadFromDisk=false] - Whether to load the blockchain from disk on initialization.
      */
     constructor(dbPath, p2p, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'silent',
-            snapshotInterval = 100
+            logLevel = 'info',
+            snapshotInterval = 100,
+            loadFromDisk = false
         } = options;
 
-        /**
-         * LevelDB database instance.
-         * @type {LevelUp}
-         * @private
-         */
+        /** @type {LevelUp} */
         this.db = LevelUp(LevelDown(dbPath));
 
-        /**
-         * Block tree for managing blockchain structure.
-         * @type {BlockTree}
-         */
+        /** @type {BlockTree} */
         this.blockTree = new BlockTree('ContrastGenesisBlock');
 
-        /**
-         * Fork choice rule for determining the best chain.
-         * @type {ForkChoiceRule}
-         */
+        /** @type {ForkChoiceRule} */
         this.forkChoiceRule = new ForkChoiceRule(this.blockTree);
 
-        /**
-         * UTXO cache for managing unspent transaction outputs.
-         * @type {UtxoCache}
-         */
+        /** @type {UtxoCache} */
         this.utxoCache = new UtxoCache();
 
-        /**
-         * Snapshot manager for managing blockchain state snapshots.
-         * @type {SnapshotManager}
-         */
+        /** @type {SnapshotManager} */
         this.snapshotManager = new SnapshotManager();
 
-        /**
-         * In-memory storage for recent blocks.
-         * @type {Map<string, BlockData>}
-         */
+        /** @type {Map<string, BlockData>} */
         this.inMemoryBlocks = new Map();
 
-        /**
-         * Maximum number of blocks to keep in memory.
-         * @type {number}
-         */
+        /** @type {Map<number, string>} */
+        this.blocksByHeight = new Map();
+
+        /** @type {Map<string, number>} */
+        this.blockHeightByHash = new Map();
+
+        /** @type {number} */
         this.maxInMemoryBlocks = maxInMemoryBlocks;
 
-        /**
-         * Current blockchain height.
-         * @type {number}
-         */
+        /** @type {number} */
         this.currentHeight = 0;
 
-        /**
-         * The most recent block in the chain.
-         * @type {BlockData|null}
-         */
+        /** @type {BlockData|null} */
         this.lastBlock = null;
 
-        /**
-         * Interval at which to take full snapshots.
-         * @type {number}
-         */
+        /** @type {number} */
         this.snapshotInterval = snapshotInterval;
 
-        /**
-         * Vss instance for managing validators' legitimacy.
-         * @type {Vss}
-         * */
-
+        /** @type {Vss} */
         this.vss = new Vss();
 
-        /**
-         * Pino logger instance.
-         * @type {pino.Logger}
-         */
+        /** @type {pino.Logger} */
         this.logger = pino({
             level: logLevel,
             transport: {
                 target: 'pino-pretty',
-                options: {
-                    colorize: true
-                }
+                options: { colorize: true }
             }
         });
 
+        /** @type {Object} */
         this.p2p = p2p;
+
+        /** @type {boolean} */
         this.isSyncing = false;
 
-        this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
+        /** @type {boolean} */
+        this.loadFromDisk = loadFromDisk;
+
+        this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval, loadFromDisk }, 'Blockchain instance created');
     }
 
     /**
@@ -123,8 +98,14 @@ export class Blockchain {
         this.logger.info('Initializing blockchain');
         try {
             await this.db.open();
-            // TODO: Load the latest state from the database
-            // This might involve loading the last known block, UTXO set, etc.
+
+            if (this.loadFromDisk) {
+                await this.loadBlockchainFromDisk();
+            } else {
+                const genesisBlock = this.createGenesisBlock();
+                await this.addConfirmedBlock(genesisBlock);
+            }
+
             this.logger.info('Blockchain initialized successfully');
         } catch (error) {
             this.logger.error({ error }, 'Failed to initialize blockchain');
@@ -132,55 +113,96 @@ export class Blockchain {
         }
     }
 
+    /**
+     * Loads the blockchain state from disk.
+     * @returns {Promise<void>}
+     * @private
+     */
+    async loadBlockchainFromDisk() {
+        this.logger.info('Loading blockchain from disk');
+        try {
+            const storedHeight = await this.db.get('currentHeight').catch(() => '0');
+            const currentHeight = parseInt(storedHeight, 10);
+
+            for (let i = 0; i <= currentHeight; i++) {
+                const blockData = await this.getBlockFromDiskByHeight(i);
+                if (blockData) {
+                    await this.addConfirmedBlock(blockData, false);
+                } else {
+                    this.logger.warn({ height: i }, 'Failed to load block from disk');
+                    break;
+                }
+            }
+
+            this.logger.info({ loadedBlocks: currentHeight + 1 }, 'Finished loading blockchain from disk');
+        } catch (error) {
+            this.logger.error({ error }, 'Error loading blockchain from disk');
+            if (this.currentHeight === 0) {
+                this.logger.info('Initializing with genesis block');
+                const genesisBlock = this.createGenesisBlock();
+                await this.addConfirmedBlock(genesisBlock);
+            }
+        }
+    }
+
+    /**
+     * Creates the genesis block.
+     * @returns {BlockData}
+     * @private
+     */
+    createGenesisBlock() {
+        return BlockData(0, 0, 0, 1, 0, 'ContrastGenesisBlock', [], Date.now(), Date.now(), 'genesisHash', '0');
+    }
+
+    /**
+     * Closes the blockchain database.
+     * @returns {Promise<void>}
+     */
     async close() {
         await this.db.close();
     }
 
     /**
-     * Adds a new block to the blockchain.
+     * Adds a new confirmed block to the blockchain.
      * @param {BlockData} block - The block to be added.
+     * @param {boolean} [persistToDisk=true] - Whether to persist the block to disk.
      * @returns {Promise<void>}
      * @throws {Error} If the block is invalid or cannot be added.
      */
-    async addConfirmedBlock(block) {
+    async addConfirmedBlock(block, persistToDisk = true) {
         this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Adding new block');
 
         try {
-            // Validate the block before adding
-            //await this.validateBlock(block); no need to validate again
-
-            // Add block to in-memory storage
+            this.updateIndices(block);
             this.inMemoryBlocks.set(block.hash, block);
-            this.logger.debug({ blockHash: block.hash }, 'Block added to in-memory storage');
 
-            // Check if we need to persist older blocks to disk
             if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) {
                 await this.persistOldestBlockToDisk();
             }
 
-            // Update block tree
             this.blockTree.addBlock({
                 hash: block.hash,
                 prevHash: block.prevHash,
                 height: block.index,
                 score: this.calculateBlockScore(block)
             });
-            this.logger.debug({ blockHash: block.hash }, 'Block tree updated');
 
-            // Apply the block to the UTXO cache
             await this.applyBlock(block);
 
-            // Take a snapshot if necessary
             if (block.index % this.snapshotInterval === 0) {
                 this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
-                this.logger.info({ blockHeight: block.index }, 'Snapshot taken');
             }
 
-            // Check if we need to do a chain reorganization
             await this.checkAndHandleReorg();
 
             this.lastBlock = block;
             this.currentHeight = block.index;
+
+            if (persistToDisk) {
+                await this.persistBlockToDisk(block);
+            }
+
+            await this.db.put('currentHeight', this.currentHeight.toString());
 
             this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
         } catch (error) {
@@ -189,21 +211,24 @@ export class Blockchain {
         }
     }
 
-    /** @param {BlockData} block */
+    /**
+     * Updates the block indices.
+     * @param {BlockData} block - The block to update indices for.
+     * @private
+     */
+    updateIndices(block) {
+        this.blocksByHeight.set(block.index, block.hash);
+        this.blockHeightByHash.set(block.hash, block.index);
+    }
+
+    /**
+     * Calculates the score for a block.
+     * @param {BlockData} block - The block to calculate the score for.
+     * @returns {number} The calculated score.
+     * @private
+     */
     calculateBlockScore(block) {
-        /*const targetBlockTime = utils.blockchainSettings.targetBlockTime;
-        const oneDiffPointTimeImpact = targetBlockTime * 0.03125; // a difference of 1 difficulty means 3.125% harder to find a valid hash
-
-        const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = utils.mining.getBlockFinalDifficulty(block);
-        const blockMiningTime = block.timestamp - block.posTimestamp;
-
-        const diffAdjustment = finalDifficulty - difficulty;
-        const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE */
-        // need to clarify our requirements for the block score
-
-
         // TODO: Implement a more sophisticated scoring mechanism
-        // For now, we're using the block height as the score
         return block.index;
     }
 
@@ -216,20 +241,17 @@ export class Blockchain {
     async getBlock(hash) {
         this.logger.debug({ blockHash: hash }, 'Retrieving block');
 
-        // Check in-memory first
         if (this.inMemoryBlocks.has(hash)) {
-            this.logger.debug({ blockHash: hash }, 'Block found in memory');
             return this.inMemoryBlocks.get(hash);
         }
 
-        // If not in memory, fetch from disk
-        try {
-            this.logger.debug({ blockHash: hash }, 'Block not in memory, fetching from disk');
-            return await this.getBlockFromDisk(hash);
-        } catch (error) {
-            this.logger.error({ error, blockHash: hash }, 'Failed to retrieve block');
-            throw new Error(`Block not found: ${hash}`);
+        const height = this.blockHeightByHash.get(hash);
+        if (height !== undefined) {
+            return this.getBlockFromDiskByHeight(height);
         }
+
+        this.logger.error({ blockHash: hash }, 'Block not found');
+        throw new Error(`Block not found: ${hash}`);
     }
 
     /**
@@ -238,8 +260,6 @@ export class Blockchain {
      * @private
      */
     async persistOldestBlockToDisk() {
-        this.logger.info('Persisting oldest block to disk');
-
         const oldestBlockHash = this.inMemoryBlocks.keys().next().value;
         if (!oldestBlockHash) {
             throw new Error('Failed to get oldest block');
@@ -262,6 +282,7 @@ export class Blockchain {
         this.logger.debug({ blockHash: block.hash }, 'Persisting block to disk');
         try {
             await this.db.put(block.hash, Block.dataAsJSON(block));
+            await this.db.put(`height-${block.index}`, block.hash);
             this.logger.debug({ blockHash: block.hash }, 'Block persisted to disk');
         } catch (error) {
             this.logger.error({ error, blockHash: block.hash }, 'Failed to persist block to disk');
@@ -270,20 +291,20 @@ export class Blockchain {
     }
 
     /**
-     * Retrieves a block from disk.
-     * @param {string} hash - The hash of the block to retrieve.
-     * @returns {Promise<BlockData>} The retrieved block.
+     * Retrieves a block from disk by its height.
+     * @param {number} height - The height of the block to retrieve.
+     * @returns {Promise<BlockData|null>} The retrieved block or null if not found.
      * @private
      */
-    async getBlockFromDisk(hash) {
-        this.logger.debug({ blockHash: hash }, 'Retrieving block from disk');
+    async getBlockFromDiskByHeight(height) {
         try {
-            const blockJSON = await this.db.get(hash);
-            const block = Block.blockDataFromJSON(blockJSON);
-            this.logger.debug({ blockHash: hash }, 'Block retrieved from disk');
-            return block;
+            const blockHash = await this.db.get(`height-${height}`);
+            const blockJson = await this.db.get(blockHash);
+            return Block.blockDataFromJSON(blockJson);
         } catch (error) {
-            this.logger.error({ error, blockHash: hash }, 'Failed to retrieve block from disk');
+            if (error.type === 'NotFoundError') {
+                return null;
+            }
             throw error;
         }
     }
@@ -297,7 +318,7 @@ export class Blockchain {
         const currentTip = this.getLatestBlockHash();
         const newTip = this.forkChoiceRule.findBestBlock();
 
-        this.logger.debug({ currentTip, newTip }, 'Checking for chain reorganization');
+        this.logger.debug({ currentTip, newTip, currentHeight: this.currentHeight }, 'Checking for chain reorganization');
 
         if (newTip !== currentTip && this.forkChoiceRule.shouldReorg(currentTip, newTip)) {
             await this.performChainReorg(newTip);
@@ -321,15 +342,12 @@ export class Blockchain {
             return;
         }
 
-        this.logger.debug({ reorgPath }, 'Reorganization path determined');
-
-        // Find the common ancestor's height
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
         if (commonAncestorHeight === -1) {
             this.logger.error('Failed to get common ancestor height');
             return;
         }
-        // Restore the snapshot at the common ancestor's height
+
         await this.snapshotManager.restoreSnapshot(commonAncestorHeight, this.utxoCache, this.blockTree);
 
         for (const hash of reorgPath.apply) {
@@ -338,11 +356,13 @@ export class Blockchain {
         }
 
         this.lastBlock = await this.getBlock(newTip);
-        if (this.lastBlock === null || this.lastBlock === undefined) {
+        if (!this.lastBlock) {
             this.logger.error('Failed to get new tip block');
             return;
         }
+
         this.currentHeight = this.lastBlock.index;
+        await this.db.put('currentHeight', this.currentHeight.toString());
 
         this.logger.info({ newTip, newHeight: this.currentHeight }, 'Chain reorganization complete');
     }
@@ -370,58 +390,28 @@ export class Blockchain {
      * @returns {string} The hash of the latest block.
      */
     getLatestBlockHash() {
-        if (this.lastBlock === null) {
-            this.logger.debug('No last block, returning genesis block hash');
-            return "ContrastGenesisBlock";
-        }
-        this.logger.debug({ latestBlockHash: this.lastBlock.hash }, 'Returning latest block hash');
-        return this.lastBlock.hash;
+        return this.lastBlock ? this.lastBlock.hash : "ContrastGenesisBlock";
     }
 
-
-    // TODO: Redo with proper data structure to avoid O(n) lookups
-
     /**
- * Retrieves a block by its index (height).
- * @param {number} index - The index of the block to retrieve.
- * @returns {Promise<BlockData|null>} The retrieved block or null if not found.
- */
+         * Retrieves a block by its index (height).
+         * @param {number} index - The index of the block to retrieve.
+         * @returns {Promise<BlockData|null>} The retrieved block or null if not found.
+         */
     async getBlockByIndex(index) {
         this.logger.debug({ blockIndex: index }, 'Retrieving block by index');
 
-        // Check if the requested index is valid
         if (index < 0 || index > this.currentHeight) {
             this.logger.warn({ blockIndex: index }, 'Invalid block index requested');
             return null;
         }
 
-        // Check in-memory blocks first
-        for (const [hash, block] of this.inMemoryBlocks) {
-            if (block.index === index) {
-                this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found in memory');
-                return block;
-            }
+        const blockHash = this.blocksByHeight.get(index);
+        if (blockHash) {
+            return this.getBlock(blockHash);
         }
 
-        // If not in memory, try to fetch from disk
-        try {
-            // We need to iterate through the database to find the block with the correct index
-            // This is not efficient for large blockchains and should be optimized in a production environment
-            const blockHashes = await this.db.keys().all();
-            for (const hash of blockHashes) {
-                const blockJSON = await this.db.get(hash);
-                const block = Block.blockDataFromJSON(blockJSON);
-                if (block.index === index) {
-                    this.logger.debug({ blockIndex: index, blockHash: hash }, 'Block found on disk');
-                    return block;
-                }
-            }
-        } catch (error) {
-            this.logger.error({ error, blockIndex: index }, 'Failed to retrieve block from disk');
-        }
-
-        this.logger.warn({ blockIndex: index }, 'Block not found');
-        return null;
+        return this.getBlockFromDiskByHeight(index);
     }
 
 }
