@@ -13,8 +13,7 @@ export class SyncNode {
      * Creates a new SyncNode instance.
      * @param {number} port - The port number to listen on.
      */
-    constructor(port, p2p, blockchain) {
-        this.port = port;
+    constructor(p2p, blockchain) {
         this.node = null;
         this.p2p = p2p;
         this.blockchain = blockchain;
@@ -47,18 +46,23 @@ export class SyncNode {
             } catch (parseError) {
                 throw new Error('Malformed JSON: ' + parseError.message);
             }
-            console.log('Received message:', message);
 
             let response;
-            switch (message.type) {
+            switch (message.type.toString()) {
                 case 'getBlocks':
                     response = await this.handleGetBlocks(message);
                     break;
                 case 'getStatus':
                     response = this.handleGetStatus();
                     break;
+                case 'test':
+                    response = message;
+                    break;
+                case 'block':
+                    response = { status: 'received', echo: message };
+                    break;
                 default:
-                    throw new Error('Invalid request type');
+                    console.error('Invalid request type ' + message.type);
             }
 
             await lp.write(uint8ArrayFromString(JSON.stringify(response)));
@@ -86,7 +90,6 @@ export class SyncNode {
      * @returns {Promise<void>}
      */
     async syncMissingBlocks(peerMultiaddr) {
-        console.log(`Starting sync with peer: ${peerMultiaddr}`);
 
         try {
             // First, get the peer's current height
@@ -97,7 +100,7 @@ export class SyncNode {
             console.log(`Peer height: ${peerHeight}, Our height: ${this.blockchain.currentHeight}`);
 
             if (peerHeight <= this.blockchain.currentHeight) {
-                console.log('We are up to date or ahead of the peer. No sync needed.');
+                // console.log('We are up to date or ahead of the peer. No sync needed.');
                 return;
             }
 

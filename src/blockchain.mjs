@@ -110,7 +110,7 @@ export class Blockchain {
             }
         });
         this.p2p = p2p;
-        this.syncNode = new SyncNode(8000 + Math.floor(Math.random() * 1000), p2p, this);
+        this.syncNode = new SyncNode(p2p, this);
         this.isSyncing = false;
 
         this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
@@ -260,7 +260,7 @@ export class Blockchain {
         const diffAdjustment = finalDifficulty - difficulty;
         const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE */
         // need to clarify our requirements for the block score
-         
+
 
         // TODO: Implement a more sophisticated scoring mechanism
         // For now, we're using the block height as the score
@@ -437,6 +437,9 @@ export class Blockchain {
         this.logger.debug({ latestBlockHash: this.lastBlock.hash }, 'Returning latest block hash');
         return this.lastBlock.hash;
     }
+
+
+    // TODO: Redo with proper data structure to avoid O(n) lookups
 
     /**
  * Retrieves a block by its index (height).

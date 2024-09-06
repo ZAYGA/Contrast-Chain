@@ -1,14 +1,14 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NodeFactory } from '../src/node-factory.mjs';
-import { Transaction_Builder } from '../src/transaction.mjs';
-import { Wallet } from '../src/wallet.mjs';
-import { SyncNode } from '../src/sync.mjs';
+import { NodeFactory } from '../../src/node-factory.mjs';
+import { Transaction_Builder } from '../../src/transaction.mjs';
+import { Wallet } from '../../src/wallet.mjs';
+import { SyncNode } from '../../src/sync.mjs';
 
 describe('Comprehensive Sync System Test', function () {
     this.timeout(3600000); // 1 hour
 
-    const NUM_NODES = 2;
+    const NUM_NODES = 3;
     const NUM_MINERS = 1;
     const INITIAL_BALANCE = 1000000000;
     const TRANSACTION_AMOUNT = 1000000;
@@ -71,7 +71,6 @@ describe('Comprehensive Sync System Test', function () {
         }
     });
 
-    return;
 
     it('should handle network partition and resync', async function () {
         try {
@@ -210,6 +209,11 @@ describe('Comprehensive Sync System Test', function () {
         console.warn('Waiting for nodes to sync... Node IDs: ' + nodes.map(node => node.id).join(', '));
 
         while (Date.now() - start < timeout) {
+            // start syncing all nodes
+            for (const node of nodes) {
+                await node.syncWithKnownPeers();
+            }
+            await new Promise(resolve => setTimeout(resolve, SYNC_CHECK_INTERVAL));
             const heightMap = new Map();
             let allSynced = true;
 
@@ -231,10 +235,7 @@ describe('Comprehensive Sync System Test', function () {
             for (const [height, nodeIds] of heightMap.entries()) {
                 console.error(`  Height ${height}: Nodes ${nodeIds.join(', ')}`);
             }
-            // start syncing all nodes
-            for (const node of nodes) {
-                await node.syncWithKnownPeers();
-            }
+
             // Check for any nodes that are significantly behind
             const maxHeight = Math.max(...heightMap.keys());
             const minHeight = Math.min(...heightMap.keys());

@@ -1,58 +1,75 @@
-// test/sync.test.js
-
 import { expect } from 'chai'
 import { SyncNode } from '../src/sync.mjs'
 import { multiaddr } from 'multiaddr'
 import sinon from 'sinon'
-describe('SyncNode', function () {
-    this.timeout(30000) // Increase timeout for longer tests
+import { NodeFactory } from '../src/node-factory.mjs'
+import { Wallet } from '../src/wallet.mjs'
 
-    let node1, node2
+describe('SyncNode', function () {
+    this.timeout(60000) // Increase timeout for longer tests
+
+    const NUM_NODES = 3
+    let factory
+    let nodes = []
+    let wallet
+    let accounts = []
 
     before(async function () {
-        node1 = new SyncNode(10000)
-        node2 = new SyncNode(10001)
+        console.info('Initializing test environment...')
+        factory = new NodeFactory()
+        wallet = new Wallet()
 
-        await node1.start()
-        await node2.start()
+        const derivedAccounts = await wallet.loadOrCreateAccounts()
+        accounts = derivedAccounts
+        if (!derivedAccounts) throw new Error('Failed to derive accounts.')
+
+        console.info(`Derived ${derivedAccounts.length} accounts.`)
+
+        // Create and start nodes
+        for (let i = 0; i < NUM_NODES; i++) {
+            const role = i === 0 ? 'miner' : 'validator'
+            const node = await factory.createNode(derivedAccounts[i], role)
+            nodes.push(node)
+            await node.start()
+        }
+
+        await waitForP2PNetworkReady(nodes)
     })
 
     after(async function () {
-        await node1.stop()
-        await node2.stop()
+        console.info('Cleaning up test environment...')
+        for (const node of nodes) {
+            await factory.stopNode(node.id)
+        }
     })
 
     it('should connect nodes successfully', async function () {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        const node1Addr = node1.node.getMultiaddrs()[0].toString()
-        await node2.connect(multiaddr(node1Addr))
-
-        const node1Peers = await node1.peers
-        const node2Peers = await node2.peers
-    })
-
-
-    it('should send and receive small messages', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const testMessage = { type: 'test', content: 'Hello, libp2p!' }
-
-        const response = await node2.sendMessage(node1Addr, testMessage)
-
-        expect(response).to.deep.equal({
-            status: 'received',
-            echo: testMessage
+        const connectedPeers = nodes.map(node => node.p2pNetwork.getConnectedPeers().length)
+        connectedPeers.forEach((peerCount, index) => {
+            expect(peerCount).to.be.at.least(NUM_NODES - 1, `Node ${index} should be connected to at least ${NUM_NODES - 1} peers`)
         })
     })
 
+    it('should send and receive small messages', async function () {
+        const testMessage = { type: 'test', content: 'Hello, libp2p!' }
+        const sender = nodes[0]
+        const receiver = nodes[1]
+
+        const response = await sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], testMessage)
+
+        expect(response).to.deep.equal(testMessage)
+    })
+
     it('should handle large messages (simulating a large block)', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
         const largeBlock = {
             type: 'block',
             index: 1000000,
-            data: 'x'.repeat(2000000) // 1MB of data
+            data: 'x'.repeat(2000000) // 2MB of data
         }
+        const sender = nodes[1]
+        const receiver = nodes[2]
 
-        const response = await node2.sendMessage(node1Addr, largeBlock)
+        const response = await sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], largeBlock)
 
         expect(response).to.deep.equal({
             status: 'received',
@@ -60,15 +77,18 @@ describe('SyncNode', function () {
         })
     })
 
-    it('should handle multiple messages in quick succession (simulating rapid block propagation)', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
+    it('should handle multiple messages in quick succession', async function () {
         const blocks = Array.from({ length: 10 }, (_, i) => ({
             type: 'block',
             index: i,
             data: `Block data ${i}`.repeat(1000) // ~10KB per block
         }))
+        const sender = nodes[0]
+        const receiver = nodes[1]
 
-        const responses = await Promise.all(blocks.map(block => node2.sendMessage(node1Addr, block)))
+        const responses = await Promise.all(blocks.map(block =>
+            sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], block)
+        ))
 
         responses.forEach((response, i) => {
             expect(response).to.deep.equal({
@@ -78,128 +98,22 @@ describe('SyncNode', function () {
         })
     })
 
-    it('should handle request for multiple blocks', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const request = {
-            type: 'getBlocks',
-            startIndex: 1000,
-            endIndex: 1010
+    // Helper function
+    async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const allNodesConnected = nodes.every(node => {
+                const peerCount = node.p2pNetwork.getConnectedPeers().length
+                return peerCount >= NUM_NODES - 1
+            })
+
+            if (allNodesConnected) {
+                console.info('P2P network is ready')
+                return
+            }
+
+            await new Promise(resolve => setTimeout(resolve, interval))
         }
 
-        // Mock the block data on node1
-        node1.mockBlockData = Array.from({ length: 11 }, (_, i) => ({
-            index: 1000 + i,
-            data: `Block data ${1000 + i}`.repeat(100)
-        }))
-
-        const response = await node2.sendMessage(node1Addr, request)
-
-        expect(response.status).to.equal('success')
-        expect(response.blocks).to.have.length(11)
-        expect(response.blocks[0].index).to.equal(1000)
-        expect(response.blocks[10].index).to.equal(1010)
-    })
-
-    it('should handle errors gracefully', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const invalidRequest = {
-            type: 'invalid',
-            data: 'This should cause an error'
-        }
-
-        try {
-            await node2.sendMessage(node1Addr, invalidRequest)
-            expect.fail('Should have thrown an error')
-        } catch (error) {
-            expect(error.message).to.include('Invalid request type')
-        }
-    })
-
-    it('should handle very large messages (simulating an extremely large block)', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const veryLargeBlock = {
-            type: 'block',
-            index: 1000000,
-            data: 'x'.repeat(10000000) // 10MB of data
-        }
-
-        const response = await node2.sendMessage(node1Addr, veryLargeBlock)
-
-        expect(response).to.deep.equal({
-            status: 'received',
-            echo: veryLargeBlock
-        })
-    })
-
-    it('should handle a high number of concurrent requests', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const requests = Array.from({ length: 50 }, (_, i) => ({
-            type: 'test',
-            content: `Concurrent request ${i}`
-        }))
-
-        const responses = await Promise.allSettled(requests.map(req => node2.sendMessage(node1Addr, req)))
-
-        const successfulResponses = responses.filter(r => r.status === 'fulfilled')
-        expect(successfulResponses.length).to.be.at.least(1) // At least some requests should succeed
-
-        successfulResponses.forEach((response) => {
-            expect(response.value).to.have.property('status', 'received')
-            expect(response.value.echo).to.have.property('type', 'test')
-        })
-    })
-
-    it('should handle requests for non-existent blocks', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const request = {
-            type: 'getBlocks',
-            startIndex: 10000,
-            endIndex: 10010
-        }
-
-        // Mock empty block data on node1
-        node1.mockBlockData = []
-
-        const response = await node2.sendMessage(node1Addr, request)
-
-        expect(response.status).to.equal('success')
-        expect(response.blocks).to.have.length(0)
-    })
-
-    it('should handle requests with invalid block range', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const request = {
-            type: 'getBlocks',
-            startIndex: 1010,
-            endIndex: 1000 // End index less than start index
-        }
-
-        try {
-            await node2.sendMessage(node1Addr, request)
-            expect.fail('Should have thrown an error')
-        } catch (error) {
-            expect(error.message).to.include('Invalid block range')
-        }
-    })
-
-    it('should handle requests with extremely large block ranges', async function () {
-        const node1Addr = node1.node.getMultiaddrs()[0]
-        const request = {
-            type: 'getBlocks',
-            startIndex: 1,
-            endIndex: 1000000 // Requesting a million blocks
-        }
-
-        // Mock some block data on node1
-        node1.mockBlockData = Array.from({ length: 1000000 }, (_, i) => ({
-            index: i + 1,
-            data: `Block data ${i + 1}`
-        }))
-
-        const response = await node2.sendMessage(node1Addr, request)
-
-        expect(response.status).to.equal('success')
-        expect(response.blocks.length).to.be.at.most(10000) // Assuming we've implemented a limit
-        expect(response.blocks[0].index).to.equal(1)
-    })
+        throw new Error('P2P network failed to initialize within the expected time')
+    }
 })

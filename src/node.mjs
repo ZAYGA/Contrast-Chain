@@ -51,6 +51,7 @@ export class Node {
         this.confirmedBlocks = [];
         this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
+        this.syncIntervalId = null;
         //randomize the blockchain db name
         this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
     }
@@ -73,15 +74,23 @@ export class Node {
         await this.blockchain.init();
 
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
+
+        // sync every 3 seconds
+        this.syncIntervalId = setInterval(() => {
+            this.syncWithKnownPeers();
+        }, 3000);
     }
 
     async syncWithPeer(peerMultiaddr) {
         await this.blockchain.syncNode.syncMissingBlocks(peerMultiaddr);
     }
 
-    // Add a method to initiate sync with known peers
     async syncWithKnownPeers() {
         const peerInfo = await this.p2pNetwork.node.peerStore.all();
+        if (peerInfo.length === 0) {
+            console.warn('No peers found');
+            return;
+        }
 
         for (const peer of peerInfo) {
             const peerId = peer.id;
@@ -104,12 +113,18 @@ export class Node {
             }
         }
     }
+
     async stop() {
+        if (this.syncIntervalId) {
+            clearInterval(this.syncIntervalId);
+            this.syncIntervalId = null;
+        }
         await this.p2pNetwork.stop();
         if (this.miner) { this.miner.terminate(); }
         await this.blockchain.close();
         console.log(`Node ${this.id} (${this.role}) => stopped`);
     }
+
     async createBlockCandidateAndBroadcast() {
         if (this.role === 'validator') {
             this.blockCandidate = await this.#createBlockCandidate();
