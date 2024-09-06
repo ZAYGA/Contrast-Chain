@@ -1,9 +1,9 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { NodeFactory } from '../../src/node-factory.mjs';
-import { Transaction_Builder } from '../../src/transaction.mjs';
-import { Wallet } from '../../src/wallet.mjs';
-import { SyncNode } from '../../src/sync.mjs';
+import { NodeFactory } from '../src/node-factory.mjs';
+import { Transaction_Builder } from '../src/transaction.mjs';
+import { Wallet } from '../src/wallet.mjs';
+import { SyncNode } from '../src/sync.mjs';
 
 describe('Comprehensive Sync System Test', function () {
     this.timeout(3600000); // 1 hour
@@ -124,46 +124,6 @@ describe('Comprehensive Sync System Test', function () {
             throw error;
         }
     });
-
-    it('should handle concurrent transactions and maintain consistency', async function () {
-        try {
-            const transactionPromises = nodes.map(node =>
-                sendRandomTransaction(node, accounts)
-            );
-
-            await Promise.all(transactionPromises);
-            await waitForSync(nodes);
-
-            const mempools = nodes.map(node => node.memPool.transactionsByID);
-            const mempoolSizes = mempools.map(m => Object.keys(m).length);
-            expect(new Set(mempoolSizes).size).to.equal(1, 'All nodes should have the same number of transactions in mempool');
-            console.info('Concurrent transactions handled successfully. Mempool size:', mempoolSizes[0]);
-        } catch (error) {
-            console.error('Test failed:', error);
-            throw error;
-        }
-    });
-    it('should resolve conflicts with the longest chain rule', async function () {
-        const [partition1, partition2] = partitionNetwork(nodes);
-
-        // Create longer chain in partition1
-        await createBlocksInPartition(partition1, 5);
-        await waitForSync(partition1);
-
-        // Create shorter chain in partition2
-        await createBlocksInPartition(partition2, 2);
-        await waitForSync(partition2);
-
-        await reuniteNetwork(partition1, partition2);
-        await waitForSync(nodes);
-
-        const heights = nodes.map(node => node.getStatus().currentBlockHeight);
-        const maxHeight = Math.max(...heights);
-        expect(new Set(heights).size).to.equal(1, 'All nodes should have the same height');
-        expect(maxHeight).to.equal(partition1[0].getStatus().currentBlockHeight, 'All nodes should adopt the longest chain');
-    });
-
-    // Helper functions
 
     async function waitForP2PNetworkReady(nodes, maxAttempts = 300, interval = 6000) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {

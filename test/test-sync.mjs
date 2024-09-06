@@ -55,7 +55,7 @@ describe('SyncNode', function () {
         const sender = nodes[0]
         const receiver = nodes[1]
 
-        const response = await sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], testMessage)
+        const response = await sender.p2pNetwork.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], testMessage)
 
         expect(response).to.deep.equal(testMessage)
     })
@@ -69,7 +69,7 @@ describe('SyncNode', function () {
         const sender = nodes[1]
         const receiver = nodes[2]
 
-        const response = await sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], largeBlock)
+        const response = await sender.p2pNetwork.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], largeBlock)
 
         expect(response).to.deep.equal({
             status: 'received',
@@ -87,7 +87,7 @@ describe('SyncNode', function () {
         const receiver = nodes[1]
 
         const responses = await Promise.all(blocks.map(block =>
-            sender.blockchain.syncNode.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], block)
+            sender.p2pNetwork.sendMessage(receiver.p2pNetwork.node.getMultiaddrs()[0], block)
         ))
 
         responses.forEach((response, i) => {

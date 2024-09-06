@@ -3,8 +3,8 @@ import { lpStream } from 'it-length-prefixed-stream';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
 import utils from './utils.mjs';
-const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
-const MAX_MESSAGE_SIZE = 20000000; // 20MB
+import P2PNetwork from './p2p.mjs';
+
 const MAX_BLOCKS_PER_REQUEST = 10000;
 
 
@@ -26,40 +26,9 @@ export class SyncNode {
     async start() {
         this.node = this.p2p.node;
         console.log(`Node started with ID: ${this.node.peerId.toString()}`);
-        console.log(`Listening on: ${this.node.getMultiaddrs().map(addr => addr.toString()).join(', ')}`);
-        this.node.handle(SYNC_PROTOCOL, this.handleIncomingStream.bind(this));
-    }
+        console.log(this.p2p.syncProtocol);
+        this.node.handle(this.p2p.syncProtocol, this.handleIncomingStream.bind(this));
 
-    /**
-     * Sends a message to a peer.
-     * @param {string} peerMultiaddr - The multiaddress of the peer.
-     * @param {Object} message - The message to send.
-     * @returns {Promise<Object>} The response from the peer.
-     */
-    async sendMessage(peerMultiaddr, message) {
-        let stream;
-        try {
-            const stream = await this.node.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
-            const lp = lpStream(stream);
-            console.log('Sending message:', message);
-            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
-
-            await lp.write(serialize);
-            const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
-            const response = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(res.subarray());
-            // console.log('Received response:', response);
-            if (response.status === 'error') {
-                throw new Error(response.message);
-            }
-            return response;
-        } catch (err) {
-            console.error('Error sending message:', err);
-            throw err;
-        } finally {
-            if (stream) {
-                await stream.close().catch(console.error);
-            }
-        }
     }
 
     /**
@@ -71,10 +40,9 @@ export class SyncNode {
     async handleIncomingStream({ stream }) {
         const lp = lpStream(stream);
         try {
-            const req = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
+            const req = await lp.read({ maxSize: this.p2p.maxMessageSize });
             let message;
             message = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(req.subarray());
-            console.log('Received message:', message);
             let response;
             switch (message.type.toString()) {
                 case 'getBlocks':
@@ -124,7 +92,7 @@ export class SyncNode {
         try {
             // First, get the peer's current height
             const peerStatusMessage = { type: 'getStatus' };
-            const peerStatus = await this.sendMessage(peerMultiaddr, peerStatusMessage);
+            const peerStatus = await this.p2p.sendMessage(peerMultiaddr, peerStatusMessage);
             const peerHeight = peerStatus.currentHeight;
 
             console.log(`Peer height: ${peerHeight}, Our height: ${this.blockchain.currentHeight}`);
@@ -149,7 +117,7 @@ export class SyncNode {
                 };
 
                 console.log(`Requesting blocks from ${currentHeight} to ${endIndex}`);
-                const response = await this.sendMessage(peerMultiaddr, message);
+                const response = await this.p2p.sendMessage(peerMultiaddr, message);
 
                 if (response.status === 'success' && response.blocks.length > 0) {
                     for (const block of response.blocks) {

@@ -7,8 +7,7 @@ import { UtxoCache } from './utxoCache.mjs';
 import { Block, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
-import utils from './utils.mjs';
-import { SyncNode } from './sync.mjs';
+
 /**
  * Represents the blockchain and manages its operations.
  */
@@ -111,7 +110,6 @@ export class Blockchain {
         });
 
         this.p2p = p2p;
-        this.syncNode = new SyncNode(p2p, this);
         this.isSyncing = false;
 
         this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
@@ -131,46 +129,6 @@ export class Blockchain {
         } catch (error) {
             this.logger.error({ error }, 'Failed to initialize blockchain');
             throw error;
-        }
-        this.syncNode.p2p = this.p2p;
-
-        await this.syncNode.start();
-    }
-
-    async syncWithPeer(peerMultiaddr) {
-        if (this.isSyncing) {
-            console.warn('Sync already in progress');
-            return;
-        }
-        this.isSyncing = true;
-        try {
-            const localHeight = this.currentHeight;
-
-            await this.syncNode.connect(peerMultiaddr);
-
-            const message = {
-                type: 'getBlocks',
-                startIndex: localHeight + 1,
-                endIndex: localHeight + 1000 // Request 1000 blocks at a time
-            };
-
-            const response = await this.syncNode.sendMessage(peerMultiaddr, message);
-
-            if (response.status === 'success') {
-                for (const blockData of response.blocks) {
-                    await this.addBlock(blockData);
-                }
-                this.logger.info(`Synced ${response.blocks.length} blocks`);
-
-                if (response.blocks.length === 1000) {
-                    // There might be more blocks, continue syncing
-                    await this.syncWithPeer(peerMultiaddr);
-                }
-            }
-        } catch (error) {
-            this.logger.error('Sync failed:', error);
-        } finally {
-            this.isSyncing = false;
         }
     }
 

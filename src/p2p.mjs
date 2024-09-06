@@ -11,6 +11,10 @@ import { mdns } from '@libp2p/mdns';
 import { bootstrap } from '@libp2p/bootstrap';
 import { multiaddr } from 'multiaddr';
 import utils from './utils.mjs';
+import { lpStream } from 'it-length-prefixed-stream';
+
+const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
+const MAX_MESSAGE_SIZE = 20000000;
 
 class P2PNetwork extends EventEmitter {
 
@@ -34,6 +38,8 @@ class P2PNetwork extends EventEmitter {
 
         this.announceIntervalId = null;
         this.cleanupIntervalId = null;
+        this.syncProtocol = SYNC_PROTOCOL;
+        this.maxMessageSize = MAX_MESSAGE_SIZE;
 
         if (!P2PNetwork.logger) {
             P2PNetwork.logger = P2PNetwork.initLogger(this.options);
@@ -174,6 +180,37 @@ class P2PNetwork extends EventEmitter {
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
             throw error;
+        }
+    }
+
+    /**
+ * Sends a message to a peer.
+ * @param {string} peerMultiaddr - The multiaddress of the peer.
+ * @param {Object} message - The message to send.
+ * @returns {Promise<Object>} The response from the peer.
+ */
+    async sendMessage(peerMultiaddr, message) {
+        let stream;
+        try {
+            const stream = await this.node.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
+            const lp = lpStream(stream);
+            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+
+            await lp.write(serialize);
+            const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
+            const response = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(res.subarray());
+            // console.log('Received response:', response);
+            if (response.status === 'error') {
+                throw new Error(response.message);
+            }
+            return response;
+        } catch (err) {
+            console.error('Error sending message:' + SYNC_PROTOCOL, err);
+            throw err;
+        } finally {
+            if (stream) {
+                await stream.close().catch(console.error);
+            }
         }
     }
 

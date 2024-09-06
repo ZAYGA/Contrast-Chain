@@ -11,6 +11,7 @@ import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
 import { Blockchain } from './blockchain.mjs';
 import { peerIdFromString } from '@libp2p/peer-id'
+import { SyncNode } from './sync.mjs';
 /**
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
@@ -54,6 +55,7 @@ export class Node {
         this.syncIntervalId = null;
         //randomize the blockchain db name
         this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
+        this.syncNode = new SyncNode(this.p2pNetwork, this.blockchain);
     }
 
     /**
@@ -72,6 +74,7 @@ export class Node {
         const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow', 'test'];
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
         await this.blockchain.init();
+        await this.syncNode.start();
 
         console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
 
@@ -82,7 +85,7 @@ export class Node {
     }
 
     async syncWithPeer(peerMultiaddr) {
-        await this.blockchain.syncNode.syncMissingBlocks(peerMultiaddr);
+        await this.syncNode.syncMissingBlocks(peerMultiaddr);
     }
 
     async syncWithKnownPeers() {
