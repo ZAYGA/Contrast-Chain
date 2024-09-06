@@ -109,6 +109,7 @@ export class Blockchain {
                 }
             }
         });
+
         this.p2p = p2p;
         this.syncNode = new SyncNode(p2p, this);
         this.isSyncing = false;
@@ -141,9 +142,6 @@ export class Blockchain {
             console.warn('Sync already in progress');
             return;
         }
-
-
-
         this.isSyncing = true;
         try {
             const localHeight = this.currentHeight;
@@ -178,24 +176,8 @@ export class Blockchain {
 
     async close() {
         await this.db.close();
-        await this.syncNode.stop();
     }
 
-
-    // Add a method to handle incoming sync requests
-    async handleSyncRequest(message) {
-        console.error('Received sync request:', message);
-        if (message.type === 'getBlocks') {
-            const { startIndex, endIndex } = message;
-            const blocks = [];
-            for (let i = startIndex; i <= endIndex && i <= this.currentHeight; i++) {
-                const block = await this.getBlock(i);
-                blocks.push(block);
-            }
-            return { status: 'success', blocks };
-        }
-        return { status: 'error', message: 'Invalid request type' };
-    }
     /**
      * Adds a new block to the blockchain.
      * @param {BlockData} block - The block to be added.

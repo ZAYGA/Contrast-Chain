@@ -2,7 +2,7 @@
 import { lpStream } from 'it-length-prefixed-stream';
 import { fromString as uint8ArrayFromString } from 'uint8arrays/from-string';
 import { toString as uint8ArrayToString } from 'uint8arrays/to-string';
-
+import utils from './utils.mjs';
 const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 const MAX_MESSAGE_SIZE = 20000000; // 20MB
 const MAX_BLOCKS_PER_REQUEST = 10000;
@@ -31,6 +31,38 @@ export class SyncNode {
     }
 
     /**
+     * Sends a message to a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer.
+     * @param {Object} message - The message to send.
+     * @returns {Promise<Object>} The response from the peer.
+     */
+    async sendMessage(peerMultiaddr, message) {
+        let stream;
+        try {
+            const stream = await this.node.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
+            const lp = lpStream(stream);
+            console.log('Sending message:', message);
+            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+
+            await lp.write(serialize);
+            const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
+            const response = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(res.subarray());
+            // console.log('Received response:', response);
+            if (response.status === 'error') {
+                throw new Error(response.message);
+            }
+            return response;
+        } catch (err) {
+            console.error('Error sending message:', err);
+            throw err;
+        } finally {
+            if (stream) {
+                await stream.close().catch(console.error);
+            }
+        }
+    }
+
+    /**
      * Handles incoming streams from peers.
      * @param {Object} param0 - The stream object.
      * @param {import('libp2p').Stream} param0.stream - The libp2p stream.
@@ -41,12 +73,8 @@ export class SyncNode {
         try {
             const req = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
             let message;
-            try {
-                message = JSON.parse(uint8ArrayToString(req.subarray()));
-            } catch (parseError) {
-                throw new Error('Malformed JSON: ' + parseError.message);
-            }
-
+            message = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(req.subarray());
+            console.log('Received message:', message);
             let response;
             switch (message.type.toString()) {
                 case 'getBlocks':
@@ -65,14 +93,15 @@ export class SyncNode {
                     console.error('Invalid request type ' + message.type);
             }
 
-            await lp.write(uint8ArrayFromString(JSON.stringify(response)));
+            await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1(response));
         } catch (err) {
             console.error('Error handling incoming stream:', err);
-            await lp.write(uint8ArrayFromString(JSON.stringify({ status: 'error', message: err.message })));
+            await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1({ status: 'error', message: err.message }));
         } finally {
             await stream.close();
         }
     }
+
     /**
  * Handles the getStatus request.
  * @returns {Object} The current status of the blockchain.
@@ -84,6 +113,7 @@ export class SyncNode {
             latestBlockHash: this.blockchain.getLatestBlockHash()
         };
     }
+
     /**
      * Synchronizes missing blocks from a peer.
      * @param {string} peerMultiaddr - The multiaddress of the peer to sync with.
@@ -146,36 +176,6 @@ export class SyncNode {
     }
 
     /**
-     * Sends a message to a peer.
-     * @param {string} peerMultiaddr - The multiaddress of the peer.
-     * @param {Object} message - The message to send.
-     * @returns {Promise<Object>} The response from the peer.
-     */
-    async sendMessage(peerMultiaddr, message) {
-        let stream;
-        try {
-            const stream = await this.node.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
-            const lp = lpStream(stream);
-
-            await lp.write(uint8ArrayFromString(JSON.stringify(message)));
-            const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
-            const response = JSON.parse(uint8ArrayToString(res.subarray()));
-            // console.log('Received response:', response);
-            if (response.status === 'error') {
-                throw new Error(response.message);
-            }
-            return response;
-        } catch (err) {
-            console.error('Error sending message:', err);
-            throw err;
-        } finally {
-            if (stream) {
-                await stream.close().catch(console.error);
-            }
-        }
-    }
-
-    /**
      * Handles the getBlocks request.
      * @param {Object} message - The getBlocks message.
      * @param {number} message.startIndex - The starting block index.
@@ -216,22 +216,4 @@ export class SyncNode {
         console.log(`Connected to: ${peerMultiaddr}`);
     }
 
-    /**
-     * Stops the synchronization node.
-     * @returns {Promise<void>}
-     */
-    async stop() {
-        if (this.node) {
-            await this.node.stop();
-            console.log('Node stopped');
-        }
-    }
-
-    /**
-     * Gets the list of connected peers.
-     * @returns {Array} An array of connected peers.
-     */
-    get peers() {
-        return this.node.peerStore.all();
-    }
 }
