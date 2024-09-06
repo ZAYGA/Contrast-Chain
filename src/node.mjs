@@ -195,7 +195,7 @@ export class Node {
         console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         this.blockCandidate = await this.#createBlockCandidate();
-        await this.blockchain.addBlock(minerCandidate);
+        await this.blockchain.addConfirmedBlock(minerCandidate);
         await this.blockchain.checkAndHandleReorg();
 
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);

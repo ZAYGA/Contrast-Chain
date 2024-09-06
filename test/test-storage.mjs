@@ -76,7 +76,7 @@ describe('Blockchain', function () {
         it('should add a valid block to the blockchain', async function () {
             // Test adding a valid block
             const mockBlock = createMockBlock(1);
-            await blockchain.addBlock(mockBlock);
+            await blockchain.addConfirmedBlock(mockBlock);
             expect(blockchain.inMemoryBlocks.get(mockBlock.hash)).to.deep.equal(mockBlock);
             expect(mockBlockTree.addBlock.calledOnce).to.be.true;
             expect(mockUtxoCache.digestFinalizedBlocks.calledOnce).to.be.true;
@@ -84,13 +84,13 @@ describe('Blockchain', function () {
         it('should handle adding blocks out of order', async function () {
             const block1 = createMockBlock(1);
             const block3 = createMockBlock(3);
-            await blockchain.addBlock(block1);
+            await blockchain.addConfirmedBlock(block1);
 
             // Mock the validateBlock method to throw the expected error
             blockchain.validateBlock = sinon.stub().throws(new Error('Invalid block height'));
 
             try {
-                await blockchain.addBlock(block3);
+                await blockchain.addConfirmedBlock(block3);
                 expect.fail('Should have thrown an error');
             } catch (error) {
                 expect(error.message).to.equal('Invalid block height');
@@ -101,16 +101,16 @@ describe('Blockchain', function () {
             // Test snapshot creation at specified intervals
             blockchain.snapshotInterval = 2;
             const mockBlock = createMockBlock(3);
-            await blockchain.addBlock(mockBlock);
+            await blockchain.addConfirmedBlock(mockBlock);
             expect(mockSnapshotManager.takeSnapshot.calledOnce).to.be.true;
         });
 
         it('should persist oldest block to disk when exceeding max in-memory blocks', async function () {
             // Test persisting blocks to disk when memory limit is reached
             blockchain.maxInMemoryBlocks = 2;
-            await blockchain.addBlock(createMockBlock(1));
-            await blockchain.addBlock(createMockBlock(2));
-            await blockchain.addBlock(createMockBlock(3));
+            await blockchain.addConfirmedBlock(createMockBlock(1));
+            await blockchain.addConfirmedBlock(createMockBlock(2));
+            await blockchain.addConfirmedBlock(createMockBlock(3));
 
             expect(blockchain.inMemoryBlocks.size).to.equal(2);
             expect(mockDb.put.calledOnce).to.be.true;

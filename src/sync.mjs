@@ -121,7 +121,7 @@ export class SyncNode {
                 if (response.status === 'success' && response.blocks.length > 0) {
                     for (const block of response.blocks) {
                         try {
-                            await this.blockchain.addBlock(block);
+                            await this.blockchain.addConfirmedBlock(block);
                             console.log(`Added block at height ${block.index}`);
                         } catch (error) {
                             console.error(`Failed to add block at height ${block.index}:`, error);

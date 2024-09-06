@@ -202,12 +202,12 @@ export class Blockchain {
      * @returns {Promise<void>}
      * @throws {Error} If the block is invalid or cannot be added.
      */
-    async addBlock(block) {
+    async addConfirmedBlock(block) {
         this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Adding new block');
 
         try {
             // Validate the block before adding
-            await this.validateBlock(block);
+            //await this.validateBlock(block); no need to validate again
 
             // Add block to in-memory storage
             this.inMemoryBlocks.set(block.hash, block);
@@ -247,17 +247,6 @@ export class Blockchain {
             this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
             throw error;
         }
-    }
-
-    /**
-     * Validates a block before adding it to the blockchain.
-     * @param {BlockData} block - The block to validate.
-     * @returns {Promise<void>}
-     * @throws {Error} If the block is invalid.
-     * @private
-     */
-    async validateBlock(block) {
-
     }
 
     /** @param {BlockData} block */
