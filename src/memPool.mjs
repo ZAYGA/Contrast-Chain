@@ -168,14 +168,6 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         return true;
     }
     /**
-     * @param {TaskStack} taskStack
-     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
-     * @param {Transaction} transaction
-     */
-    submitTransaction(taskStack, utxosByAnchor, transaction) {
-        taskStack.push(() => this.pushTransaction(utxosByAnchor, transaction));
-    }
-    /**
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      */
@@ -219,46 +211,4 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.#addMempoolTransaction(transaction, collidingTx);
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
     }
-    /*async pushTransactionOLD(utxosByAnchor, transaction) {
-        const timings = { start: Date.now(), first: 0, second: 0 };
-        const isCoinBase = false;
-
-        // First control format of : amount, address, rule, version, TxID
-        Validation.isConformTransaction(transaction, isCoinBase);
-
-        // Second control : input > output
-        const fee = Validation.calculateRemainingAmount(transaction, isCoinBase);
-
-        // Calculate fee per byte
-        transaction.byteWeight = Transaction_Builder.getWeightOfTransaction(transaction);
-        transaction.feePerByte = (fee / transaction.byteWeight).toFixed(6);
-
-        const identicalIDTransaction = this.transactionsByID[transaction.id];
-        const collidingTx = identicalIDTransaction ? identicalIDTransaction : this.#caughtTransactionsUTXOCollision(transaction);
-        if (collidingTx) { // reject the transaction if it collides with the mempool
-            throw new Error(`Conflicting UTXOs with: ${collidingTx.id}`);
-            // not implemented yet
-            //if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
-        }
-
-        if (!MemPool.transactionUTXOsAreNotSpent(utxosByAnchor, transaction)) { throw new Error('UTXOs(one at least) are spent'); }
-        timings.first = Date.now() - timings.start;
-
-        // Third validation: medium computation cost.
-        await Validation.controlTransactionHash(transaction);
-
-        // Fourth validation: low computation cost.
-        await Validation.controlTransactionOutputsRulesConditions(transaction);
-
-        // Fifth validation: medium computation cost.
-        await Validation.controlAllWitnessesSignatures(transaction);
-        
-        // Sixth validation: high computation cost.
-        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, this.useDevArgon2);
-        timings.second = Date.now() - timings.start;
-        //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${timings.second}ms (first: ${timings.first}ms)`);
-
-        this.#addMempoolTransaction(transaction, collidingTx);
-        //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${Date.now() - startTime}ms`);
-    }*/
 }

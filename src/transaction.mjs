@@ -1,8 +1,12 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-import { Account } from './account.mjs';
-import { Block } from './block.mjs';
 import { Validation } from './validation.mjs';
+import { Block } from './block.mjs';
+
+/**
+ * @typedef {import('./account.mjs').Account} Account
+ * @typedef {import('./block.mjs').BlockData} BlockData
+ */
 
 export const uxtoRulesGlossary = {
     sig: { description: 'Simple signature verification' },

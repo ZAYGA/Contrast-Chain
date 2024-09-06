@@ -200,6 +200,4 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         this.utxosByAnchor = snapshot.utxosByAnchor;
         this.blockMiningData = snapshot.blockMiningData;
     }
-
-    digestBlockProposal(blockData) { }
 }

@@ -145,7 +145,6 @@ export class Block {
     }
     /** @param {Transaction[]} Txs */
     static calculateTxsTotalFees(Txs) {
-        // TODO - calculate the fee
         const fees = [];
         for (let i = 0; i < Txs.length; i++) {
             const Tx = Txs[i];
@@ -164,17 +163,12 @@ export class Block {
     /** @param {string} blockDataJSON */
     static blockDataFromJSON(blockDataJSON) {
         const parsed = JSON.parse(blockDataJSON);
-        //const Txs = Block.TransactionsFromJSON(parsed.Txs);
         const { index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce } = parsed;
-        /** @type {BlockData} */
-        const blockData = BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce);
-        
-        return blockData;
+        return BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce);
     }
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {
         const JSON = Block.dataAsJSON(blockData);
-        const clone = Block.blockDataFromJSON(JSON);
-        return clone;
+        return Block.blockDataFromJSON(JSON);
     }
 }

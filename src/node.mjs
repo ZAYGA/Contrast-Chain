@@ -245,7 +245,7 @@ export class Node {
      * @param {string} topic
      * @param {Uint8Array} message
      */
-    async p2pBroadcast(topic, message) { // Waiting for P2P developper : sinon.psy() would be broken ?
+    async p2pBroadcast(topic, message) {
         await this.p2pNetwork.broadcast(topic, message);
     }
 

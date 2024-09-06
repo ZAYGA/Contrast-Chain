@@ -195,14 +195,15 @@ export class Blockchain {
 
     /** @param {BlockData} block */
     calculateBlockScore(block) {
-        const targetBlockTime = utils.blockchainSettings.targetBlockTime;
+        /*const targetBlockTime = utils.blockchainSettings.targetBlockTime;
         const oneDiffPointTimeImpact = targetBlockTime * 0.03125; // a difference of 1 difficulty means 3.125% harder to find a valid hash
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = utils.mining.getBlockFinalDifficulty(block);
         const blockMiningTime = block.timestamp - block.posTimestamp;
         
         const diffAdjustment = finalDifficulty - difficulty;
-        const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE
+        const expectedMiningTime = blockMiningTime + (diffAdjustment * oneDiffPointTimeImpact); // FAKE */
+        // need to clarify our requirements for the block score
          
 
         // TODO: Implement a more sophisticated scoring mechanism
