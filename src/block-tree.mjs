@@ -1,6 +1,25 @@
 import { LRUCache } from 'lru-cache';
 import pino from 'pino';
 
+/**
+* @typedef {Object} treeBlockData
+* @property {string} hash
+* @property {string} prevHash
+* @property {number} height
+* @property {number} score
+*/
+
+/**
+ * @param {string} hash
+ * @param {string} prevHash
+ * @param {number} height
+ * @param {number} score
+ * @returns {treeBlockData}
+ */
+const treeBlockData = (hash, prevHash, height, score) => {
+    return { hash, prevHash, height, score };
+};
+
 class BlockTree {
     constructor(genesisBlockHash, options = {}) {
         const {
@@ -27,7 +46,7 @@ class BlockTree {
             score: 0
         });
     }
-
+    /** @param {treeBlockData} block */
     addBlock(block) {
 
         if (block.hash === block.prevHash) {
@@ -49,50 +68,34 @@ class BlockTree {
         };
 
         this.blocks.set(block.hash, node);
+        this.leaves.add(block.hash);
 
-        if (block.prevHash) {
-            const parent = this.blocks.get(block.prevHash);
-            if (parent) {
-                parent.children.add(block.hash);
-                this.leaves.delete(block.prevHash);
-                this.updateSubtreeScores(block.prevHash, block.score);
-                this.logger.debug({
-                    blockHash: block.hash,
-                    parentHash: block.prevHash,
-                    score: block.score
-                }, 'Block added as child');
-            } else {
-                this.logger.warn({
-                    blockHash: block.hash,
-                    parentHash: block.prevHash
-                }, 'Parent block not found');
-            }
+        if (!block.prevHash) { return true; } // Genesis block
+
+        const parent = this.blocks.get(block.prevHash);
+        if (parent) {
+            parent.children.add(block.hash);
+            this.leaves.delete(block.prevHash);
+            this.#updateSubtreeScores(block.prevHash, block.score);
+            this.logger.debug({
+                blockHash: block.hash,
+                parentHash: block.prevHash,
+                score: block.score
+            }, 'Block added as child');
+        } else {
+            this.logger.warn({
+                blockHash: block.hash,
+                parentHash: block.prevHash
+            }, 'Parent block not found');
         }
 
-        this.leaves.add(block.hash);
         return true;
     }
-
-    getHeaviestLeaf() {
-        this.logger.debug('Finding heaviest leaf');
-        let heaviestLeaf = null;
-        let maxScore = -1;
-
-        for (const leaf of this.leaves) {
-            const node = this.blocks.get(leaf);
-            this.logger.trace({ leaf, score: node.subtreeScore }, 'Leaf score');
-
-            if (node.subtreeScore > maxScore) {
-                maxScore = node.subtreeScore;
-                heaviestLeaf = leaf;
-                this.logger.debug({ heaviestLeaf, score: maxScore }, 'New heaviest leaf');
-            }
-        }
-
-        return heaviestLeaf;
-    }
-
-    updateSubtreeScores(hash, addedScore) {
+    /**
+     * @param {string} hash
+     * @param {number} addedScore
+     */
+    #updateSubtreeScores(hash, addedScore) {
         let current = this.blocks.get(hash);
         while (current) {
             current.subtreeScore += addedScore;
@@ -104,28 +107,28 @@ class BlockTree {
         }
     }
 
+    /**
+     * @param {string} fromHash
+     * @param {string} toHash
+     */
     getPath(fromHash, toHash) {
         this.logger.debug({ fromHash, toHash }, 'Finding path');
 
-        if (fromHash === toHash) {
-            return [fromHash];
-        }
+        /** @type {string[]} */
+        const defaultPath = [fromHash];
+        if (fromHash === toHash) { return defaultPath; }
 
-        const forwardPath = this.getForwardPath(fromHash, toHash);
-        if (forwardPath) {
-            return forwardPath;
-        }
+        const forwardPath = this.#getForwardPath(fromHash, toHash);
+        if (forwardPath) { return forwardPath; }
 
-        const backwardPath = this.getBackwardPath(fromHash, toHash);
-        if (backwardPath) {
-            return backwardPath;
-        }
+        const backwardPath = this.#getBackwardPath(fromHash, toHash);
+        if (backwardPath) { return backwardPath; }
 
         this.logger.warn({ fromHash, toHash }, 'No path found');
         return null;
     }
-
-    getForwardPath(fromHash, toHash) {
+    #getForwardPath(fromHash, toHash) {
+        /** @type {string[]} */
         const path = [];
         let currentHash = toHash;
 
@@ -145,8 +148,8 @@ class BlockTree {
         this.logger.debug({ path }, 'Forward path found');
         return path;
     }
-
-    getBackwardPath(fromHash, toHash) {
+    #getBackwardPath(fromHash, toHash) {
+        /** @type {string[]} */
         const path = [fromHash];
         let currentHash = fromHash;
 
@@ -166,26 +169,45 @@ class BlockTree {
         return path;
     }
 
+    /**
+     * @param {string} hash1
+     * @param {string} hash2
+     */
     getCommonAncestor(hash1, hash2) {
         const path1 = new Set();
-        let current1 = hash1;
+        const current = { hash1, hash2 };
 
-        while (current1) {
-            path1.add(current1);
-            current1 = this.blocks.get(current1)?.block.prevHash;
+        while (current.hash1) {
+            path1.add(current.hash1);
+            current.hash1 = this.blocks.get(current.hash1)?.block.prevHash;
         }
 
-        let current2 = hash2;
-        while (current2) {
-            if (path1.has(current2)) {
-                return current2;
+        while (current.hash2) {
+            if (path1.has(current.hash2)) {
+                return current.hash2;
             }
-            current2 = this.blocks.get(current2)?.block.prevHash;
+            current.hash2 = this.blocks.get(current.hash2)?.block.prevHash;
         }
 
         return null; // No common ancestor found
     }
+    getHeaviestLeaf() {
+        this.logger.debug('Finding heaviest leaf');
+        const heaviest = { leaf: null, score: -1 };
 
+        for (const leaf of this.leaves) {
+            const node = this.blocks.get(leaf);
+            this.logger.trace({ leaf, score: node.subtreeScore }, 'Leaf score');
+
+            if (node.subtreeScore > heaviest.score) {
+                heaviest.score = node.subtreeScore;
+                heaviest.leaf = leaf;
+                this.logger.debug({ heaviestLeaf: heaviest.leaf, score: heaviest.score }, 'New heaviest leaf');
+            }
+        }
+
+        return heaviest.leaf;
+    }
     isDescendant(ancestorHash, descendantHash) {
         let current = this.blocks.get(descendantHash);
         while (current) {
@@ -200,11 +222,11 @@ class BlockTree {
     getBlockHeight(hash) {
         return this.blocks.get(hash)?.block.height ?? -1;
     }
-
     getBlockScore(hash) {
         return this.blocks.get(hash)?.subtreeScore ?? 0;
     }
 
+    /** @param {number} heightThreshold */
     pruneOldBlocks(heightThreshold) {
         this.logger.info({ heightThreshold }, 'Pruning blocks');
         const prunedHashes = [];
@@ -231,4 +253,4 @@ class BlockTree {
     }
 }
 
-export { BlockTree };
+export { BlockTree, treeBlockData };
