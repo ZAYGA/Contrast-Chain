@@ -9,6 +9,10 @@ import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
 
 /**
+* @typedef {import("../src/block-tree copy.mjs").treeBlockData} treeBlockData
+*/
+
+/**
  * Represents the blockchain and manages its operations.
  */
 export class Blockchain {

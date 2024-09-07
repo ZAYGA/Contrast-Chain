@@ -4,7 +4,6 @@ import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
 import Compressor from '../externalLibs/gzip.min.js';
 import Decompressor from '../externalLibs/gunzip.min.js';
 import msgpack from '../externalLibs/msgpack.min.js';
-import { util } from 'chai';
 
 /**
 * @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
@@ -243,7 +242,7 @@ const typeValidation = {
     },
     /** @param {number} number - Number to validate */
     numberIsPositiveInteger(number) {
-        if (typeof number !== 'number') { return false; }
+        if (typeof number !== 'number' || isNaN(number)) { return false; }
         if (number < 0) { return false; }
         if (number % 1 !== 0) { return false; }
         return true;
@@ -769,10 +768,9 @@ const mining = {
         if (typeof blockIndex !== 'number') { console.error('Invalid blockIndex'); return difficulty; }
         if (blockIndex === 0) { return difficulty; }
 
-        const modulus = blockIndex % blockchainSettings.blocksBeforeAdjustment;
-        if (modulus !== 0) { return difficulty; }
+        if (blockIndex % blockchainSettings.blocksBeforeAdjustment !== 0) { return difficulty; }
 
-        const averageBlockTimeMS = mining.getAverageBlockTime(blockMiningData);
+        const averageBlockTimeMS = mining.calculateAverageBlockTime(blockMiningData);
         const deviation = 1 - (averageBlockTimeMS / blockchainSettings.targetBlockTime);
         const deviationPercentage = deviation * 100; // over zero = too fast / under zero = too slow
 
@@ -794,7 +792,7 @@ const mining = {
         return newDifficulty;
     },
     /** @param {BlockMiningData[]} blockMiningData */
-    getAverageBlockTime: (blockMiningData) => {
+    calculateAverageBlockTime: (blockMiningData) => {
         const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
         const olderBlock = blockMiningData[blockMiningData.length - NbBlocks];
         const newerBlock = blockMiningData[blockMiningData.length - 1];
@@ -826,30 +824,20 @@ const mining = {
 
         return newBlockHash;
     },
-    /**
-     * @param {number} powTimestamp
-     * @param {number} posTimestamp
-     */
-    calculateTimeDifferenceAdjustment: (powTimestamp, posTimestamp) => {
-        const difference = powTimestamp - posTimestamp;
-        const differenceRatio = difference / blockchainSettings.targetBlockTime;
-
-        const mTDA = miningParams.maxTimeDifferenceAdjustment;
-        const adjustment = mTDA - Math.round(differenceRatio * mTDA);
-        return adjustment;
-    },
     getBlockFinalDifficulty: (blockData) => {
         const { difficulty, legitimacy, posTimestamp, timestamp } = blockData;
 
         if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
         if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
 
-        const timeDiffAdjustment = mining.calculateTimeDifferenceAdjustment(timestamp, posTimestamp);
+        const differenceRatio = (timestamp - posTimestamp) / blockchainSettings.targetBlockTime;
+        const timeDiffAdjustment = miningParams.maxTimeDifferenceAdjustment - Math.round(differenceRatio * miningParams.maxTimeDifferenceAdjustment);
+        
         const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
 
         return { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty };
     },
-    getDiffAndAdjust: (difficulty = 1) => {
+    decomposeDifficulty: (difficulty = 1) => {
         const zeros = Math.floor(difficulty / 16);
         const adjust = difficulty % 16;
         return { zeros, adjust };
@@ -859,12 +847,11 @@ const mining = {
      * @param {BlockData} blockData
      */
     verifyBlockHashConformToDifficulty: (HashBitsAsString = '', blockData) => {
-        if (typeof HashBitsAsString !== 'string') {
-            throw new Error('Invalid HashBitsAsString');
-        }
+        if (typeof HashBitsAsString !== 'string') { throw new Error('Invalid HashBitsAsString'); }
 
         const { difficulty, timeDiffAdjustment, legitimacy, finalDifficulty } = mining.getBlockFinalDifficulty(blockData);
-        const { zeros, adjust } = mining.getDiffAndAdjust(finalDifficulty);
+        const { zeros, adjust } = mining.decomposeDifficulty(finalDifficulty);
+
         const result = { conform: false, message: 'na', difficulty, timeDiffAdjustment, legitimacy, finalDifficulty, zeros, adjust };
 
         const condition1 = conditionnals.binaryStringStartsWithZeros(HashBitsAsString, zeros);
@@ -887,29 +874,25 @@ const anchor = {
         if (splitted.length !== 3) { return false; }
 
         // height
-        if (isNaN(parseInt(splitted[0], 10))) { return false; }
-        if (parseInt(splitted[0], 10) < 0) { return false; }
-        if (parseInt(splitted[0], 10) % 1 !== 0) { return false; }
+        if (typeValidation.numberIsPositiveInteger(parseInt(splitted[0], 10)) === false) { return false; }
 
         // TxID
         if (typeof splitted[1] !== 'string') { return false; }
-        if (typeValidation.hex(splitted[1]) === false) { return false; }
         if (splitted[1].length !== 8) { return false; }
+        if (typeValidation.hex(splitted[1]) === false) { return false; }
 
         // vout
-        if (isNaN(parseInt(splitted[2], 10))) { return false; }
-        if (parseInt(splitted[2], 10) < 0) { return false; }
-        if (parseInt(splitted[2], 10) % 1 !== 0) { return false; }
+        if (typeValidation.numberIsPositiveInteger(parseInt(splitted[2], 10)) === false) { return false; }
 
         return true;
     },
     /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    to_Height_TxID_Vout(anchor) { // should be in utils (LOL !)
+    decomposeToReferences(anchor) { // should be in utils (LOL !)
         const splitted = anchor.split(':');
 
-        const utxoBlockHeight = splitted[0];
+        const utxoBlockHeight = parseInt(splitted[0], 10);
         const utxoTxID = splitted[1];
-        const vout = splitted[2];
+        const vout = parseInt(splitted[2], 10);
 
         return { utxoBlockHeight, utxoTxID, vout };
     },
@@ -918,13 +901,10 @@ const anchor = {
      * @param {string} utxoTxID
      * @param {number} vout
      */
-    from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout) {
+    fromReferences(utxoBlockHeight, utxoTxID, vout) {
         if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { return undefined; }
         return `${utxoBlockHeight}:${utxoTxID}:${vout}`;
     }
-
-
-
 }
 
 const devParams = {

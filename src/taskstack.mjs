@@ -2,7 +2,7 @@
 * @typedef {import("../src/node.mjs").Node} Node
 */
 
-// Now we stack task instead of functions
+// Simple task manager, used to avoid vars overwriting in the callstack
 // we also use multithreading when we can group uncolisionning tasks
 export class TaskStack {
     /** @type {Node} */
@@ -35,7 +35,6 @@ export class TaskStack {
         const task = this.tasks.shift();
         if (!task) { return; }
 
-        //const taskType = task.type;
         try {
             switch (task.type) {
                 case 'pushTransaction':
@@ -60,12 +59,6 @@ export class TaskStack {
      * @param {boolean} firstPlace
      */
     push(type, data, firstPlace = false) {
-        //this.tasks.push({ type, data });
-        if (firstPlace) { 
-            this.tasks.unshift({ type, data });
-        } else {
-            this.tasks.push({ type, data });
-        }
-
+        firstPlace ? this.tasks.unshift({ type, data }) : this.tasks.push({ type, data });
     }
 }

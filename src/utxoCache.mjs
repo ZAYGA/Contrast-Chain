@@ -90,7 +90,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             if (amount === 0) { continue; } // no need to add UTXO with 0 amount
 
             // UXTO would be used as input, then we set (blockIndex, utxoTxID, and vout) => anchor
-            const anchor = utils.anchor.from_TransactionInputReferences(blockIndex, TxID, i);
+            const anchor = utils.anchor.fromReferences(blockIndex, TxID, i);
             if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
             output.anchor = anchor;
@@ -146,7 +146,6 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
                 throw new Error('Invalid total of balances');
             }
             //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
-
 
             this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
             newStakesOutputs.push(...newStakesOutputsFromBlock);

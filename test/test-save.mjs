@@ -35,7 +35,7 @@ describe('Blockchain Save and Load Tests', function () {
         const coinbaseTxId = generateRandomHex(8);
         const coinbaseReward = utils.blockchainSettings.blockReward / Math.pow(2, Math.floor(index / utils.blockchainSettings.halvingInterval));
         const newSupply = prevSupply + coinbaseReward;
-        const anchor = utils.anchor.from_TransactionInputReferences(index, coinbaseTxId, 0);
+        const anchor = utils.anchor.fromReferences(index, coinbaseTxId, 0);
         const transactions = [
             {
                 id: coinbaseTxId,
@@ -54,6 +54,8 @@ describe('Blockchain Save and Load Tests', function () {
         ];
 
         return BlockData(index, prevSupply, coinbaseReward, 1, 0, prevHash, transactions, timestamp, timestamp, `block${index}Hash`, index.toString());
+        // Should be ? :
+        //return BlockData(index, newSupply, coinbaseReward, 1, 0, prevHash, transactions, timestamp, timestamp, `block${index}Hash`, index.toString());
     }
 
     describe('Initialization and Genesis Block', function () {

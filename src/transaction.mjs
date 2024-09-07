@@ -56,7 +56,7 @@ export class TxIO_Builder {
         const ruleName = rule.split('_')[0];
         if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
 
-        const anchor = utils.anchor.from_TransactionInputReferences(utxoBlockHeight, utxoTxID, vout);
+        const anchor = utils.anchor.fromReferences(utxoBlockHeight, utxoTxID, vout);
         const newTxIO = TransactionIO(amount, rule, version, address, anchor);
         Validation.isValidTransactionIO(newTxIO, type);
 
