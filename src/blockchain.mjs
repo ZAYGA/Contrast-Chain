@@ -29,7 +29,7 @@ export class Blockchain {
     constructor(dbPath, p2p, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'info',
+            logLevel = 'silent',
             snapshotInterval = 100,
             loadFromDisk = false
         } = options;
@@ -62,7 +62,7 @@ export class Blockchain {
         this.maxInMemoryBlocks = maxInMemoryBlocks;
 
         /** @type {number} */
-        this.currentHeight = 0;
+        this.currentHeight = -1;
 
         /** @type {BlockData|null} */
         this.lastBlock = null;
@@ -107,7 +107,7 @@ export class Blockchain {
                 await this.loadBlockchainFromDisk();
             } else {
                 const genesisBlock = this.createGenesisBlock();
-                await this.addConfirmedBlock(genesisBlock);
+                // await this.addConfirmedBlock(genesisBlock);
             }
 
             this.logger.info('Blockchain initialized successfully');
