@@ -341,16 +341,10 @@ export class Blockchain {
         this.logger.info({ newTip }, 'Performing chain reorganization');
 
         const reorgPath = this.forkChoiceRule.getReorgPath(this.getLatestBlockHash(), newTip);
-        if (!reorgPath) {
-            this.logger.error('Failed to get reorganization path');
-            return;
-        }
+        if (!reorgPath) { this.logger.error('Failed to get reorganization path'); return; }
 
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
-        if (commonAncestorHeight === -1) {
-            this.logger.error('Failed to get common ancestor height');
-            return;
-        }
+        if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return; }
 
         await this.snapshotManager.restoreSnapshot(commonAncestorHeight, this.utxoCache, this.blockTree);
 
@@ -360,10 +354,7 @@ export class Blockchain {
         }
 
         this.lastBlock = await this.getBlock(newTip);
-        if (!this.lastBlock) {
-            this.logger.error('Failed to get new tip block');
-            return;
-        }
+        if (!this.lastBlock) { this.logger.error('Failed to get new tip block'); return; }
 
         this.currentHeight = this.lastBlock.index;
         await this.db.put('currentHeight', this.currentHeight.toString());

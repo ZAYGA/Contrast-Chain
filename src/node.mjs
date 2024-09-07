@@ -53,7 +53,9 @@ export class Node {
         this.lastBlockData = null;
         this.syncIntervalId = null;
 
+        /** @type {Blockchain} */
         this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
+        /** @type {SyncNode} */
         this.syncNode = new SyncNode(this.p2pNetwork, this.blockchain);
     }
 
@@ -83,16 +85,9 @@ export class Node {
         }, 3000);
     }
 
-    async syncWithPeer(peerMultiaddr) {
-        await this.syncNode.syncMissingBlocks(peerMultiaddr);
-    }
-
     async syncWithKnownPeers() {
         const peerInfo = await this.p2pNetwork.node.peerStore.all();
-        if (peerInfo.length === 0) {
-            console.warn('No peers found');
-            return;
-        }
+        if (peerInfo.length === 0) { console.warn('No peers found'); return; }
 
         for (const peer of peerInfo) {
             const peerId = peer.id;
@@ -107,7 +102,7 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
 
                 try {
-                    await this.syncWithPeer(fullAddr);
+                    await this.syncNode.syncMissingBlocks(fullAddr);
                     break; // If successful, move to next peer
                 } catch (error) {
                     console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);

@@ -66,7 +66,7 @@ export class SyncNode {
      * @returns {Promise<Object>} The response to the message.
      */
     async handleMessage(message) {
-        switch (message.type.toString()) {
+        switch (message.type) {
             case 'getBlocks':
                 return await this.handleGetBlocks(message);
             case 'getStatus':
@@ -80,7 +80,20 @@ export class SyncNode {
                 throw new Error('Invalid request type');
         }
     }
+    /**
+     * Handles the getBlocks request.
+     * @param {Object} message - The getBlocks message.
+     * @returns {Promise<Object>} The response containing the requested blocks.
+     */
+    async handleGetBlocks(message) {
+        this.logger.debug(message, 'Received getBlocks request');
+        const { startIndex, endIndex } = message;
+        if (startIndex > endIndex) { throw new Error('Invalid block range'); }
 
+        const blocks = await this.getBlocksInRange(startIndex, endIndex);
+        this.logger.debug({ count: blocks.length }, 'Sending blocks in response');
+        return { status: 'success', blocks };
+    }    
     /**
      * Handles the getStatus request.
      * @returns {Object} The current status of the blockchain.
@@ -101,10 +114,7 @@ export class SyncNode {
     async syncMissingBlocks(peerMultiaddr) {
         try {
             const peerStatus = await this.getPeerStatus(peerMultiaddr);
-            if (peerStatus.currentHeight <= this.blockchain.currentHeight) {
-                this.logger.debug('No sync needed');
-                return;
-            }
+            if (peerStatus.currentHeight <= this.blockchain.currentHeight) { this.logger.debug('No sync needed'); return; }
 
             await this.syncBlocksFromPeer(peerMultiaddr, peerStatus.currentHeight);
             this.logger.info('Sync completed successfully');
@@ -141,7 +151,6 @@ export class SyncNode {
             currentHeight = endIndex + 1;
         }
     }
-
     /**
      * Requests blocks from a peer.
      * @param {string} peerMultiaddr - The multiaddress of the peer.
@@ -155,7 +164,6 @@ export class SyncNode {
         const response = await this.retryOperation(() => this.p2p.sendMessage(peerMultiaddr, message));
         return response.status === 'success' ? response.blocks : [];
     }
-
     /**
      * Adds blocks to the blockchain.
      * @param {Array} blocks - The blocks to add.
@@ -171,23 +179,6 @@ export class SyncNode {
                 throw error;
             }
         }
-    }
-
-    /**
-     * Handles the getBlocks request.
-     * @param {Object} message - The getBlocks message.
-     * @returns {Promise<Object>} The response containing the requested blocks.
-     */
-    async handleGetBlocks(message) {
-        this.logger.debug(message, 'Received getBlocks request');
-        const { startIndex, endIndex } = message;
-        if (startIndex > endIndex) {
-            throw new Error('Invalid block range');
-        }
-
-        const blocks = await this.getBlocksInRange(startIndex, endIndex);
-        this.logger.debug({ count: blocks.length }, 'Sending blocks in response');
-        return { status: 'success', blocks };
     }
 
     /**

@@ -184,11 +184,11 @@ class P2PNetwork extends EventEmitter {
     }
 
     /**
- * Sends a message to a peer.
- * @param {string} peerMultiaddr - The multiaddress of the peer.
- * @param {Object} message - The message to send.
- * @returns {Promise<Object>} The response from the peer.
- */
+     * Sends a message to a peer.
+     * @param {string} peerMultiaddr - The multiaddress of the peer.
+     * @param {Object} message - The message to send.
+     * @returns {Promise<Object>} The response from the peer.
+     */
     async sendMessage(peerMultiaddr, message) {
         let stream;
         try {

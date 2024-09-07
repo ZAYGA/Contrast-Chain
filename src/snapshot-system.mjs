@@ -44,7 +44,7 @@ export class SnapshotManager {
         this.restoreUtxoCache(utxoCache, snapshot.utxoState);
         this.restoreVss(vss, snapshot.vssState);
     }
-    
+
     restoreUtxoCache(utxoCache, utxoState) {
         utxoCache.addressesUTXOs = Object.fromEntries(utxoState.addressesUTXOs);
         utxoCache.addressesBalances = Object.fromEntries(utxoState.addressesBalances);
@@ -90,4 +90,3 @@ export class SnapshotableVss extends Vss {
         this.legitimacies = snapshot.legitimacies;
     }
 }
-
