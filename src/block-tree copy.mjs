@@ -9,6 +9,17 @@ import pino from 'pino';
 * @property {number} score
 */
 
+/**
+ * @param {string} hash
+ * @param {string} prevHash
+ * @param {number} height
+ * @param {number} score
+ * @returns {treeBlockData}
+ */
+const treeBlockData = (hash, prevHash, height, score) => {
+    return { hash, prevHash, height, score };
+};
+
 class BlockTree {
     constructor(genesisBlockHash, options = {}) {
         const {

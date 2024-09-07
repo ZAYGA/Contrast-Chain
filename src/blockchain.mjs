@@ -9,7 +9,7 @@ import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
 
 /**
-* @typedef {import("../src/block-tree copy.mjs").treeBlockData} treeBlockData
+* @typedef {import("../src/block-tree.mjs").treeBlockData} treeBlockData
 */
 
 /**

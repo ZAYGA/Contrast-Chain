@@ -14,7 +14,7 @@ export class SnapshotManager {
         };
         this.snapshots.set(blockHeight, snapshot);
     }
-
+    /** @param {UtxoCache} utxoCache */
     getUtxoCacheSnapshot(utxoCache) {
         return {
             addressesUTXOs: new Map(Object.entries(utxoCache.addressesUTXOs)),
@@ -23,14 +23,18 @@ export class SnapshotManager {
             blockMiningData: [...utxoCache.blockMiningData]
         };
     }
-
+    /** @param {Vss} vss */
     getVssSnapshot(vss) {
         return {
             spectrum: new Map(Object.entries(vss.spectrum)),
             legitimacies: [...vss.legitimacies]
         };
     }
-
+    /**
+     * @param {number} blockHeight
+     * @param {UtxoCache} utxoCache
+     * @param {Vss} vss
+     */
     restoreSnapshot(blockHeight, utxoCache, vss) {
         const snapshot = this.snapshots.get(blockHeight);
         if (!snapshot) {
@@ -40,7 +44,7 @@ export class SnapshotManager {
         this.restoreUtxoCache(utxoCache, snapshot.utxoState);
         this.restoreVss(vss, snapshot.vssState);
     }
-
+    
     restoreUtxoCache(utxoCache, utxoState) {
         utxoCache.addressesUTXOs = Object.fromEntries(utxoState.addressesUTXOs);
         utxoCache.addressesBalances = Object.fromEntries(utxoState.addressesBalances);
