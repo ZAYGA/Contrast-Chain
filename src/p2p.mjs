@@ -13,6 +13,10 @@ import { multiaddr } from 'multiaddr';
 import utils from './utils.mjs';
 import { lpStream } from 'it-length-prefixed-stream';
 
+/**
+* @typedef {import("./node.mjs").Node} Node
+*/
+
 const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 const MAX_MESSAGE_SIZE = 20000000;
 
@@ -31,7 +35,7 @@ class P2PNetwork extends EventEmitter {
             listenAddress: '/ip4/0.0.0.0/tcp/0',
             ...options
         };
-
+        /** @type {Node} */
         this.node = null;
         this.peers = new Map();
         this.subscriptions = new Set();
@@ -41,9 +45,7 @@ class P2PNetwork extends EventEmitter {
         this.syncProtocol = SYNC_PROTOCOL;
         this.maxMessageSize = MAX_MESSAGE_SIZE;
 
-        if (!P2PNetwork.logger) {
-            P2PNetwork.logger = P2PNetwork.initLogger(this.options);
-        }
+        if (!P2PNetwork.logger) { P2PNetwork.logger = P2PNetwork.initLogger(this.options); }
         this.logger = P2PNetwork.logger;
         this.logger.setMaxListeners(10000);
     }
@@ -65,13 +67,13 @@ class P2PNetwork extends EventEmitter {
     }
     async start() {
         try {
-            this.node = await this.createLibp2pNode();
+            this.node = await this.#createLibp2pNode();
             await this.node.start();
             this.logger.debug({ component: 'P2PNetwork', peerId: this.node.peerId.toString() }, `${this.options.role} node started`);
 
-            await this.connectToBootstrapNodes();
-            this.setupEventListeners();
-            this.startPeriodicTasks();
+            await this.#connectToBootstrapNodes();
+            this.#setupEventListeners();
+            this.#startPeriodicTasks();
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to start P2P network');
             throw error;
@@ -94,7 +96,7 @@ class P2PNetwork extends EventEmitter {
             this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
         }
     }
-    async createLibp2pNode() {
+    async #createLibp2pNode() {
         const peerDiscovery = [mdns()];
         if (this.options.bootstrapNodes.length > 0) {
             peerDiscovery.push(bootstrap({ list: this.options.bootstrapNodes }));
@@ -121,7 +123,7 @@ class P2PNetwork extends EventEmitter {
             },
         });
     }
-    async connectToBootstrapNodes() {
+    async #connectToBootstrapNodes() {
         for (const addr of this.options.bootstrapNodes) {
             try {
                 const ma = multiaddr(addr);
@@ -132,34 +134,28 @@ class P2PNetwork extends EventEmitter {
             }
         }
     }
-    setupEventListeners() {
-        this.node.addEventListener('peer:connect', this.handlePeerConnect.bind(this));
-        this.node.addEventListener('peer:disconnect', this.handlePeerDisconnect.bind(this));
-        this.node.services.pubsub.addEventListener('message', this.handlePubsubMessage.bind(this));
+    #setupEventListeners() {
+        this.node.addEventListener('peer:connect', this.#handlePeerConnect.bind(this));
+        this.node.addEventListener('peer:disconnect', this.#handlePeerDisconnect.bind(this));
+        this.node.services.pubsub.addEventListener('message', this.#handlePubsubMessage.bind(this));
     }
-    startPeriodicTasks() {
-        //this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
-        //this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
-    }
-
-    handlePeerConnect = ({ detail: peerId }) => {
+    #handlePeerConnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
         this.updatePeer(peerId.toString(), { status: 'connected' });
         this.emit('peer:connect', peerId.toString());
     }
-    handlePeerDisconnect = ({ detail: peerId }) => {
+    #handlePeerDisconnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
         this.peers.delete(peerId.toString());
         this.emit('peer:disconnect', peerId.toString());
     }
-
     /**
      * @param {Object} detail
      * @param {string} detail.topic
      * @param {Uint8Array} detail.data
      * @param {PeerId} detail.from
      */
-    handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
+    #handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
         try {
             const parsedMessage = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(data);
             this.emit(topic, parsedMessage, from);
@@ -167,6 +163,11 @@ class P2PNetwork extends EventEmitter {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
     }
+    #startPeriodicTasks() {
+        //this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
+        //this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
+    }
+    
     /**
      * @param {string} topic
      * @param {any} message - Can be any JavaScript object
@@ -182,7 +183,6 @@ class P2PNetwork extends EventEmitter {
             throw error;
         }
     }
-
     /**
      * Sends a message to a peer.
      * @param {string} peerMultiaddr - The multiaddress of the peer.

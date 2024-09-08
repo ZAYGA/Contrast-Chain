@@ -2,6 +2,12 @@ import { lpStream } from 'it-length-prefixed-stream';
 import pino from 'pino';
 import utils from './utils.mjs';
 
+/**
+* @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
+* @typedef {import("./node.mjs").Node} Node
+* @typedef {import("./blockchain.mjs").Blockchain} Blockchain
+*/
+
 const MAX_BLOCKS_PER_REQUEST = 10000;
 const RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000; // 1 second
@@ -9,12 +15,15 @@ const RETRY_DELAY = 1000; // 1 second
 export class SyncNode {
     /**
      * Creates a new SyncNode instance.
-     * @param {import('libp2p')} p2p - The libp2p instance.
-     * @param {import('./blockchain.mjs').Blockchain} blockchain - The blockchain instance.
+     * @param {P2PNetwork} p2p - The P2P network instance.
+     * @param {Blockchain} blockchain - The blockchain instance.
      */
     constructor(p2p, blockchain) {
+        /** @type {Node} */
         this.node = null;
+        /** @type {P2PNetwork} */
         this.p2p = p2p;
+        /** @type {Blockchain} */
         this.blockchain = blockchain;
         this.logger = pino({
             level: process.env.LOG_LEVEL || 'info',
