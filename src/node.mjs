@@ -59,8 +59,9 @@ export class Node {
         await this.blockchain.init();
         const loadedBlocks = await this.blockchain.recoverBlocksFromStorage();
         for (const block of loadedBlocks) {
-            await this.digestFinalizedBlock(block, false); }
-        
+            await this.digestFinalizedBlock(block, false, false);
+        }
+
         await this.p2pNetwork.start();
         // Set the event listeners
         const validatorsTopics = ['new_transaction', 'new_block_pow', 'test'];
@@ -124,9 +125,9 @@ export class Node {
             // verify the height
             const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1;
 
-            if (finalizedBlock.index > lastBlockIndex + 1) { 
-                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false; 
-                
+            if (finalizedBlock.index > lastBlockIndex + 1) {
+                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
+
             }
             if (finalizedBlock.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex}`); return false; }
 
@@ -162,7 +163,7 @@ export class Node {
         }
     }
     /** @param {BlockData} finalizedBlock */
-    async digestFinalizedBlock(finalizedBlock, broadcastNewCandidate = true) {
+    async digestFinalizedBlock(finalizedBlock, broadcastNewCandidate = true, persistToDisk = true) {
         if (!finalizedBlock) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
@@ -179,7 +180,7 @@ export class Node {
             if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
         } catch (error) {
             if (error.message !== "Invalid total of balances") { throw error; }
-            console.warn(`[NODE-${this.id.slice(0,6)}] digestPowProposal rejected: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}
+            console.warn(`[NODE-${this.id.slice(0, 6)}] digestPowProposal rejected: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}
 ----------------------
 || ${error.message} || ==> Rollback UTXO cache
 ----------------------`);
@@ -188,18 +189,18 @@ export class Node {
 
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlockTransactions(blockDataCloneToDigest.Txs);
-        
+
         this.lastBlockData = Block.cloneBlockData(finalizedBlock);
         this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
-        await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock]);
+        await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock], persistToDisk);
         await this.blockchain.checkAndHandleReorg(this.utxoCache);
 
         const timeBetweenPosPow = ((finalizedBlock.timestamp - finalizedBlock.posTimestamp) / 1000).toFixed(2);
-        console.info(`[NODE-${this.id.slice(0,6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         if (!broadcastNewCandidate) { return true; }
-        
+
         this.blockCandidate = await this.#createBlockCandidate();
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
 
