@@ -31,7 +31,7 @@ export class Blockchain {
             logLevel = 'silent',
             snapshotInterval = 100,
         } = options;
-        
+
         /** @type {LevelUp} */
         this.db = LevelUp(LevelDown('./databases/blockchainDB' + nodeId));
         /** @type {BlockTree} */
@@ -88,7 +88,7 @@ export class Blockchain {
             for (let i = 0; i <= storedHeightInt; i++) {
                 const blockData = await this.getBlockFromDiskByHeight(i);
                 if (!blockData) { this.logger.warn({ height: i }, 'Failed to load block from disk'); break; }
-    
+
                 blocksData.push(blockData);
             }
 
@@ -124,27 +124,25 @@ export class Blockchain {
             try {
                 this.updateIndices(block);
                 this.inMemoryBlocks.set(block.hash, block);
-    
+
                 if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(); }
-    
+
                 this.blockTree.addBlock({
                     hash: block.hash,
                     prevHash: block.prevHash,
                     height: block.index,
                     score: this.calculateBlockScore(block)
                 });
-    
+
                 this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
-    
-                await this.checkAndHandleReorg();
-    
+
                 this.lastBlock = block;
                 this.currentHeight = block.index;
-    
+
                 if (persistToDisk) { await this.persistBlockToDisk(block); }
-    
+
                 await this.db.put('currentHeight', this.currentHeight.toString());
-    
+
                 this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
             } catch (error) {
                 this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
@@ -225,7 +223,7 @@ export class Blockchain {
             /*const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
             const blockHashUint8Array = utils.convert.hex.toUint8Array(block.hash);
             await this.db.put(blockHashUint8Array, compressedBlock);
-            
+
             const referenceUint8Array = utils.convert.string.toUint8Array(`height-${block.index}`);
             await this.db.put(referenceUint8Array, blockHashUint8Array);*/
 
