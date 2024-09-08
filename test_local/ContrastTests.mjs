@@ -13,7 +13,7 @@ const testParams = {
     addressType: 'W',
 
     nbOfMiners: 1,
-    nbOfValidators: 2,
+    nbOfValidators: 1,
 
     txsSeqs: {
         userSendToAllOthers: { start: 5, end: 100000, interval: 4},
@@ -215,7 +215,6 @@ async function nodeSpecificTest(accounts, wss) {
     //#endregion
 
     await new Promise(resolve => setTimeout(resolve, 1000));
-
     
     /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
     let msgWeight = 1_000;
@@ -252,6 +251,11 @@ async function nodeSpecificTest(accounts, wss) {
                     client.send(JSON.stringify({ utxoCache: validatorNode.utxoCache }));
                 }
             });
+
+            if (validatorNode.blockCandidate.index > 9 && validatorNodes.length < 2) {
+                const newValidator = await initValidatorNode(factory, accounts[10]);
+                validatorNodes.push(newValidator);
+            }
 
             /*const timeDiff = Date.now() - lastBlockIndexAndTime.time;
             console.log(`[TEST] New block: ${node.blockCandidate.index} | Time: ${timeDiff}ms`);

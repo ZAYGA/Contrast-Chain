@@ -78,7 +78,7 @@ export class Miner {
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
-
+    /** DON'T AWAIT THIS FUNCTION */
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {

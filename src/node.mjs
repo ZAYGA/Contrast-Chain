@@ -17,7 +17,6 @@ import { SyncNode } from './sync.mjs';
 */
 
 export class Node {
-
     /** @param {Account} account */
     constructor(account, role = 'validator', p2pOptions = {}) {
         /** @type {string} */
@@ -48,47 +47,40 @@ export class Node {
         this.miner = new Miner(account, this.p2pNetwork);
 
         this.useDevArgon2 = false;
-        this.considerDefinitiveAfter = 1000; // in blocks
-        this.confirmedBlocks = [];
         this.lastBlockData = null;
-        this.syncIntervalId = null;
 
         /** @type {Blockchain} */
-        this.blockchain = new Blockchain('./databases/blockchainDB' + Math.floor(Math.random() * 1000), this.p2pNetwork);
+        this.blockchain = new Blockchain(this.id);
         /** @type {SyncNode} */
-        this.syncNode = new SyncNode(this.p2pNetwork, this.blockchain);
+        this.syncNode = new SyncNode(this.blockchain);
     }
 
-    /**
-     * @param {Account} account
-     * @param {string} role
-     * @param {Object<string, any>} p2pOptions
-     * @param {boolean} saveBlocksInfo
-     */
-    static async load(account, role, p2pOptions = {}, saveBlocksInfo = false) {
-        const node = new Node(account, role, p2pOptions);
-        return node;
-    }
     async start() {
+        await this.blockchain.init();
+        const loadedBlocks = await this.blockchain.recoverBlocksFromStorage();
+        for (const block of loadedBlocks) {
+            await this.digestFinalizedBlock(block, false); }
+        
         await this.p2pNetwork.start();
         // Set the event listeners
-        const topicsToSubscribe = ['new_block_proposal', 'new_block_pow', 'test'];
-        if (this.role === 'validator') { topicsToSubscribe.push('new_transaction'); }
+        const validatorsTopics = ['new_transaction', 'new_block_pow', 'test'];
+        const minersTopics = ['new_block_proposal', 'test'];
+        const topicsToSubscribe = this.role === 'validator' ? validatorsTopics : minersTopics;
 
+        await this.syncNode.start(this.p2pNetwork);
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
-        await this.blockchain.init();
-        await this.syncNode.start();
 
-        console.info(`Node ${this.id.toString()} , ${this.role.toString()} started`);
-
-        // sync every 3 seconds
-        this.syncIntervalId = setInterval(() => {
-            this.syncWithKnownPeers();
-        }, 3000);
+        console.info(`Node ${this.id.toString()}, ${this.role.toString()} started - ${loadedBlocks.length} blocks loaded`);
     }
+    async stop() {
+        await this.p2pNetwork.stop();
+        if (this.miner) { this.miner.terminate(); }
+        await this.blockchain.close();
 
+        console.log(`Node ${this.id} (${this.role}) => stopped`);
+    }
     async syncWithKnownPeers() {
-        const peerInfo = await this.p2pNetwork.node.peerStore.all();
+        const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
         if (peerInfo.length === 0) { console.warn('No peers found'); return; }
 
         for (const peer of peerInfo) {
@@ -104,25 +96,19 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
 
                 try {
-                    await this.syncNode.syncMissingBlocks(this.utxoCache, fullAddr);
+                    const blocks = await this.syncNode.getMissingBlocks(this.p2pNetwork, fullAddr);
+                    if (!blocks) { continue; }
+
+                    for (const block of blocks) {
+                        await this.digestFinalizedBlock(block, false);
+                    }
+
                     break; // If successful, move to next peer
                 } catch (error) {
                     console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);
                 }
             }
         }
-    }
-
-    async stop() {
-        if (this.syncIntervalId) {
-            clearInterval(this.syncIntervalId);
-            this.syncIntervalId = null;
-        }
-        await this.p2pNetwork.stop();
-        if (this.miner) { this.miner.terminate(); }
-        await this.blockchain.close();
-
-        console.log(`Node ${this.id} (${this.role}) => stopped`);
     }
 
     async createBlockCandidateAndBroadcast() {
@@ -132,32 +118,35 @@ export class Node {
         }
     } // Work as a "init"
 
-    /** @param {BlockData} minerCandidate */
-    async #validateBlockProposal(minerCandidate) {
+    /** @param {BlockData} finalizedBlock */
+    async #validateBlockProposal(finalizedBlock) {
         try {
             // verify the height
             const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1;
 
-            if (minerCandidate.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${minerCandidate.index} <= ${lastBlockIndex}`); return false; }
-            if (minerCandidate.index > lastBlockIndex + 1) { console.log(`Rejected block proposal, higher index: ${minerCandidate.index} > ${lastBlockIndex + 1}`); return false; }
+            if (finalizedBlock.index > lastBlockIndex + 1) { 
+                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false; 
+                
+            }
+            if (finalizedBlock.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex}`); return false; }
 
             // verify the hash
-            const { hex, bitsArrayAsString } = await Block.getMinerHash(minerCandidate, this.useDevArgon2);
-            if (minerCandidate.hash !== hex) { return 'Hash invalid!'; }
-            const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, minerCandidate);
+            const { hex, bitsArrayAsString } = await Block.getMinerHash(finalizedBlock, this.useDevArgon2);
+            if (finalizedBlock.hash !== hex) { return 'Hash invalid!'; }
+            const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, finalizedBlock);
             if (!hashConfInfo.conform) { return 'Hash not conform!'; }
 
             // control coinBase Amount
-            const coinBaseAmount = minerCandidate.Txs[0].outputs[0].amount;
-            const expectedCoinBase = Block.calculateNextCoinbaseReward(minerCandidate);
+            const coinBaseAmount = finalizedBlock.Txs[0].outputs[0].amount;
+            const expectedCoinBase = Block.calculateNextCoinbaseReward(finalizedBlock);
             if (coinBaseAmount !== expectedCoinBase) { return `Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`; }
 
             // double spend control
-            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, minerCandidate);
+            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
 
             // verify the transactions
-            for (let i = 0; i < minerCandidate.Txs.length; i++) {
-                const tx = minerCandidate.Txs[i];
+            for (let i = 0; i < finalizedBlock.Txs.length; i++) {
+                const tx = finalizedBlock.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
                 const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
                 if (!txValidation.success) {
@@ -172,63 +161,57 @@ export class Node {
             return false;
         }
     }
-    /** @param {BlockData} minerCandidate */
-    async digestPowProposal(minerCandidate) {
-        if (!minerCandidate) { throw new Error('Invalid block candidate'); }
+    /** @param {BlockData} finalizedBlock */
+    async digestFinalizedBlock(finalizedBlock, broadcastNewCandidate = true) {
+        if (!finalizedBlock) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
-        //console.log(`[NODE] Processing PoW block: ${minerCandidate.index} | ${minerCandidate.hash}`);
+        //console.log(`[NODE] Processing PoW block: ${finalizedBlock.index} | ${finalizedBlock.hash}`);
         const startTime = Date.now();
 
-        const hashConfInfo = await this.#validateBlockProposal(minerCandidate);
+        const hashConfInfo = await this.#validateBlockProposal(finalizedBlock);
         if (!hashConfInfo.conform) { return false; }
 
-        const blockDataCloneToDigest = Block.cloneBlockData(minerCandidate); // clone to avoid modification
+        const blockDataCloneToDigest = Block.cloneBlockData(finalizedBlock); // clone to avoid modification
         try {
             const newStakesOutputs = await this.utxoCache.digestFinalizedBlocks([blockDataCloneToDigest]);
-            //console.log(`[NODE -- VALIDATOR] digestPowProposal accepted: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}`);
+            //console.log(`[NODE -- VALIDATOR] digestPowProposal accepted: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}`);
             if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
         } catch (error) {
             if (error.message !== "Invalid total of balances") { throw error; }
-            console.warn(`[NODE -- VALIDATOR] digestPowProposal rejected: blockIndex: ${minerCandidate.index} | legitimacy: ${minerCandidate.legitimacy}
+            console.warn(`[NODE-${this.id.slice(0,6)}] digestPowProposal rejected: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}
 ----------------------
 || ${error.message} || ==> Rollback UTXO cache
 ----------------------`);
-            this.utxoCache.rollbackUtxoCacheSnapshot(this.utxoCacheSnapshots.pop());
             return false;
         }
 
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlockTransactions(blockDataCloneToDigest.Txs);
+        
+        this.lastBlockData = Block.cloneBlockData(finalizedBlock);
+        this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
-        this.#digestConfirmedBlock(minerCandidate);
-
-        this.utxoCacheSnapshots.push(this.utxoCache.getUtxoCacheSnapshot());
-        if (this.utxoCacheSnapshots.length > this.considerDefinitiveAfter) { this.utxoCacheSnapshots.shift(); }
-
-        const timeBetweenPosPow = ((minerCandidate.timestamp - minerCandidate.posTimestamp) / 1000).toFixed(2);
-        console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
-
-        this.blockCandidate = await this.#createBlockCandidate();
-        await this.blockchain.addConfirmedBlock(this.utxoCache, minerCandidate);
+        await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock]);
         await this.blockchain.checkAndHandleReorg(this.utxoCache);
 
+        const timeBetweenPosPow = ((finalizedBlock.timestamp - finalizedBlock.posTimestamp) / 1000).toFixed(2);
+        console.info(`[NODE-${this.id.slice(0,6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+
+        if (!broadcastNewCandidate) { return true; }
+        
+        this.blockCandidate = await this.#createBlockCandidate();
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
 
         return true;
     }
-    /** @param {BlockData} minerCandidate */
-    #digestConfirmedBlock(minerCandidate) {
-        // store clones to avoid modification
-        this.lastBlockData = Block.cloneBlockData(minerCandidate);
-        this.confirmedBlocks.push(Block.cloneBlockData(minerCandidate));
-        if (this.confirmedBlocks.length <= this.considerDefinitiveAfter) { return; }
-
+    /** @param {BlockData} blockData */
+    #storeConfirmedBlock(blockData) {
+        if (blockData.index >= 1000) { return; }
         // save the block in local storage definitively
-        const blockToDefinitivelySave = this.confirmedBlocks.shift();
-        if (this.blockCandidate.index <= 1000) { localStorage_v1.saveBlockDataLocally(this.id, blockToDefinitivelySave, 'json'); }
-        const saveResult = localStorage_v1.saveBlockDataLocally(this.id, blockToDefinitivelySave, 'bin');
-        if (!saveResult.success) { throw new Error(saveResult.message); }
+        const clone = Block.cloneBlockData(blockData); // clone to avoid modification
+        localStorage_v1.saveBlockDataLocally(this.id, clone, 'json');
+        localStorage_v1.saveBlockDataLocally(this.id, clone, 'bin');
     }
     async #createBlockCandidate() {
         const startTime = Date.now();
@@ -277,7 +260,13 @@ export class Node {
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    this.taskStack.push('digestPowProposal', data);
+                    /*const rnd = Math.floor(Math.random() * 51);
+                    if (rnd === 50) { console.warn(`[NODE-${this.id.slice(0,6)}] incomming new_block_pow rejected`); break; }*/
+                    const lastBlockIndex = this.lastBlockData === null ? 0 : this.lastBlockData.index;
+                    if (data.index === 0 || lastBlockIndex + 1 >= data.index) { this.taskStack.push('digestPowProposal', data); break; }
+
+                    // if we are late, we ask for the missing blocks by p2p streaming
+                    this.taskStack.push('syncWithKnownPeers', null, true);
                     break;
                 case 'test':
                     console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);

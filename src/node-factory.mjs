@@ -10,10 +10,11 @@ export class NodeFactory {
 
     /**
      * @param {Account} account
+     * 
      * @param {Object<string, string>}
      */
-    async createNode(account, p2pOptions = {}) {
-        const node = await Node.load(account, p2pOptions);
+    async createNode(account, role = 'validator', p2pOptions = {}) {
+        const node = new Node(account, role, p2pOptions);
         this.nodes.set(node.id, node);
         console.log(`Node ${node.id} created`);
         return node;

@@ -183,18 +183,4 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
         return { spendableBalance, balance, UTXOs };
     }
-    getUtxoCacheSnapshot() {
-        return {
-            addressesUTXOs: JSON.parse(JSON.stringify(this.addressesUTXOs)),
-            addressesBalances: JSON.parse(JSON.stringify(this.addressesBalances)),
-            utxosByAnchor: JSON.parse(JSON.stringify(this.utxosByAnchor)),
-            blockMiningData: JSON.parse(JSON.stringify(this.blockMiningData))
-        };
-    }
-    rollbackUtxoCacheSnapshot(snapshot) {
-        this.addressesUTXOs = snapshot.addressesUTXOs;
-        this.addressesBalances = snapshot.addressesBalances;
-        this.utxosByAnchor = snapshot.utxosByAnchor;
-        this.blockMiningData = snapshot.blockMiningData;
-    }
 }

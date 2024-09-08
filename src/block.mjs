@@ -162,6 +162,9 @@ export class Block {
     }
     /** @param {string} blockDataJSON */
     static blockDataFromJSON(blockDataJSON) {
+        if (!blockDataJSON) { throw new Error('Invalid blockDataJSON'); }
+        if (typeof blockDataJSON !== 'string') { throw new Error('Invalid blockDataJSON'); }
+
         const parsed = JSON.parse(blockDataJSON);
         const { index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce } = parsed;
         return BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, Txs, posTimestamp, timestamp, hash, nonce);

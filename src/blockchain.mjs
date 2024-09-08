@@ -7,6 +7,7 @@ import { UtxoCache } from './utxoCache.mjs';
 import { Block, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
+import utils from './utils.mjs';
 
 /**
 * @typedef {import("../src/block-tree.mjs").treeBlockData} treeBlockData
@@ -19,57 +20,42 @@ export class Blockchain {
     /**
      * Creates a new Blockchain instance.
      * @param {string} dbPath - The path to the LevelDB database.
-     * @param {Object} p2p - The P2P network interface.
      * @param {Object} [options] - Configuration options for the blockchain.
      * @param {number} [options.maxInMemoryBlocks=1000] - Maximum number of blocks to keep in memory.
      * @param {string} [options.logLevel='info'] - The logging level for Pino.
      * @param {number} [options.snapshotInterval=100] - Interval at which to take full snapshots.
-     * @param {boolean} [options.loadFromDisk=false] - Whether to load the blockchain from disk on initialization.
      */
-    constructor(dbPath, p2p, options = {}) {
+    constructor(nodeId, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
             logLevel = 'silent',
             snapshotInterval = 100,
-            loadFromDisk = false
         } = options;
-
+        
         /** @type {LevelUp} */
-        this.db = LevelUp(LevelDown(dbPath));
-
+        this.db = LevelUp(LevelDown('./databases/blockchainDB' + nodeId));
         /** @type {BlockTree} */
         this.blockTree = new BlockTree('ContrastGenesisBlock');
-
         /** @type {ForkChoiceRule} */
         this.forkChoiceRule = new ForkChoiceRule(this.blockTree);
-
         /** @type {SnapshotManager} */
         this.snapshotManager = new SnapshotManager();
-
         /** @type {Map<string, BlockData>} */
         this.inMemoryBlocks = new Map();
-
         /** @type {Map<number, string>} */
         this.blocksByHeight = new Map();
-
         /** @type {Map<string, number>} */
         this.blockHeightByHash = new Map();
-
         /** @type {number} */
         this.maxInMemoryBlocks = maxInMemoryBlocks;
-
         /** @type {number} */
         this.currentHeight = -1;
-
         /** @type {BlockData|null} */
         this.lastBlock = null;
-
         /** @type {number} */
         this.snapshotInterval = snapshotInterval;
-
         /** @type {Vss} */
         this.vss = new Vss();
-
         /** @type {pino.Logger} */
         this.logger = pino({
             level: logLevel,
@@ -79,80 +65,42 @@ export class Blockchain {
             }
         });
 
-        /** @type {Object} */
-        this.p2p = p2p;
-
         /** @type {boolean} */
         this.isSyncing = false;
-
-        /** @type {boolean} */
-        this.loadFromDisk = loadFromDisk;
-
-        this.logger.info({ dbPath, maxInMemoryBlocks, snapshotInterval, loadFromDisk }, 'Blockchain instance created');
+        this.logger.info({ dbPath: './databases/blockchainDB' + nodeId, maxInMemoryBlocks, snapshotInterval }, 'Blockchain instance created');
     }
 
-    /**
-     * Initializes the blockchain.
-     * @returns {Promise<void>}
-     */
     async init() {
         this.logger.info('Initializing blockchain');
         try {
             await this.db.open();
-
-            if (this.loadFromDisk) {
-                await this.loadBlockchainFromDisk();
-            } else {
-                const genesisBlock = this.createGenesisBlock();
-                // await this.addConfirmedBlock(genesisBlock);
-            }
-
-            this.logger.info('Blockchain initialized successfully');
         } catch (error) {
-            this.logger.error({ error }, 'Failed to initialize blockchain');
+            this.logger.error({ error }, 'Failed to open blockchain database');
             throw error;
         }
     }
-
-    /**
-     * Loads the blockchain state from disk.
-     * @returns {Promise<void>}
-     * @private
-     */
-    async loadBlockchainFromDisk() {
-        this.logger.info('Loading blockchain from disk');
+    async recoverBlocksFromStorage() {
         try {
+            this.logger.info('Loading blockchain from disk...');
             const storedHeight = await this.db.get('currentHeight').catch(() => '0');
-            const currentHeight = parseInt(storedHeight, 10);
-
-            for (let i = 0; i <= currentHeight; i++) {
+            const storedHeightInt = parseInt(storedHeight, 10);
+            const blocksData = [];
+            for (let i = 0; i <= storedHeightInt; i++) {
                 const blockData = await this.getBlockFromDiskByHeight(i);
-                if (blockData) {
-                    await this.addConfirmedBlock(blockData, false);
-                } else {
-                    this.logger.warn({ height: i }, 'Failed to load block from disk');
-                    break;
-                }
+                if (!blockData) { this.logger.warn({ height: i }, 'Failed to load block from disk'); break; }
+    
+                blocksData.push(blockData);
             }
 
-            this.logger.info({ loadedBlocks: currentHeight + 1 }, 'Finished loading blockchain from disk');
+            const loadedBlocks = blocksData.length;
+            if (loadedBlocks === 0) { this.logger.info('No blocks loaded from disk'); }
+            this.logger.info({ loadedBlocks }, 'Loading blockchain from disk successful');
+
+            return blocksData;
         } catch (error) {
-            this.logger.error({ error }, 'Error loading blockchain from disk');
-            if (this.currentHeight === 0) {
-                this.logger.info('Initializing with genesis block');
-                const genesisBlock = this.createGenesisBlock();
-                await this.addConfirmedBlock(genesisBlock);
-            }
+            this.logger.error({ error }, 'Failed to load blockchain from disk');
+            throw error;
         }
-    }
-
-    /**
-     * Creates the genesis block.
-     * @returns {BlockData}
-     * @private
-     */
-    createGenesisBlock() {
-        return BlockData(0, 0, 0, 1, 0, 'ContrastGenesisBlock', [], Date.now(), Date.now(), 'genesisHash', '0');
     }
 
     /**
@@ -162,58 +110,48 @@ export class Blockchain {
     async close() {
         await this.db.close();
     }
-
     /**
      * Adds a new confirmed block to the blockchain.
      * @param {UtxoCache} utxoCache - The UTXO cache to use for the block.
-     * @param {BlockData} block - The block to be added.
+     * @param {BlockData[]} blocks - The blocks to add. ordered by height
      * @param {boolean} [persistToDisk=true] - Whether to persist the block to disk.
      * @returns {Promise<void>}
      * @throws {Error} If the block is invalid or cannot be added.
      */
-    async addConfirmedBlock(utxoCache, block, persistToDisk = true) {
-        this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Adding new block');
-
-        try {
-            this.updateIndices(block);
-            this.inMemoryBlocks.set(block.hash, block);
-
-            if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) {
-                await this.persistOldestBlockToDisk();
-            }
-
-            this.blockTree.addBlock({
-                hash: block.hash,
-                prevHash: block.prevHash,
-                height: block.index,
-                score: this.calculateBlockScore(block)
-            });
-
-            await this.applyBlock(utxoCache, block);
-
-            if (block.index % this.snapshotInterval === 0) {
-                //this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
+    async addConfirmedBlocks(utxoCache, blocks, persistToDisk = true) {
+        for (const block of blocks) {
+            this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Adding new block');
+            try {
+                this.updateIndices(block);
+                this.inMemoryBlocks.set(block.hash, block);
+    
+                if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(); }
+    
+                this.blockTree.addBlock({
+                    hash: block.hash,
+                    prevHash: block.prevHash,
+                    height: block.index,
+                    score: this.calculateBlockScore(block)
+                });
+    
                 this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
+    
+                await this.checkAndHandleReorg();
+    
+                this.lastBlock = block;
+                this.currentHeight = block.index;
+    
+                if (persistToDisk) { await this.persistBlockToDisk(block); }
+    
+                await this.db.put('currentHeight', this.currentHeight.toString());
+    
+                this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
+            } catch (error) {
+                this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
+                throw error;
             }
-
-            await this.checkAndHandleReorg();
-
-            this.lastBlock = block;
-            this.currentHeight = block.index;
-
-            if (persistToDisk) {
-                await this.persistBlockToDisk(block);
-            }
-
-            await this.db.put('currentHeight', this.currentHeight.toString());
-
-            this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
-        } catch (error) {
-            this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
-            throw error;
         }
     }
-
     /**
      * Updates the block indices.
      * @param {BlockData} block - The block to update indices for.
@@ -223,7 +161,6 @@ export class Blockchain {
         this.blocksByHeight.set(block.index, block.hash);
         this.blockHeightByHash.set(block.hash, block.index);
     }
-
     /**
      * Calculates the score for a block.
      * @param {BlockData} block - The block to calculate the score for.
@@ -234,7 +171,6 @@ export class Blockchain {
         // TODO: Implement a more sophisticated scoring mechanism
         return block.index;
     }
-
     /**
      * Retrieves a block by its hash.
      * @param {string} hash - The hash of the block to retrieve.
@@ -256,7 +192,6 @@ export class Blockchain {
         this.logger.error({ blockHash: hash }, 'Block not found');
         throw new Error(`Block not found: ${hash}`);
     }
-
     /**
      * Persists the oldest in-memory block to disk.
      * @returns {Promise<void>}
@@ -274,7 +209,6 @@ export class Blockchain {
         await this.persistBlockToDisk(oldestBlock);
         this.logger.info({ blockHash: oldestBlockHash }, 'Oldest block persisted to disk and removed from memory');
     }
-
     /**
      * Persists a block to disk.
      * @param {BlockData} block - The block to persist.
@@ -284,15 +218,23 @@ export class Blockchain {
     async persistBlockToDisk(block) {
         this.logger.debug({ blockHash: block.hash }, 'Persisting block to disk');
         try {
-            await this.db.put(block.hash, Block.dataAsJSON(block));
+            const blockJson = Block.dataAsJSON(block);
+            await this.db.put(block.hash, blockJson);
             await this.db.put(`height-${block.index}`, block.hash);
+
+            /*const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
+            const blockHashUint8Array = utils.convert.hex.toUint8Array(block.hash);
+            await this.db.put(blockHashUint8Array, compressedBlock);
+            
+            const referenceUint8Array = utils.convert.string.toUint8Array(`height-${block.index}`);
+            await this.db.put(referenceUint8Array, blockHashUint8Array);*/
+
             this.logger.debug({ blockHash: block.hash }, 'Block persisted to disk');
         } catch (error) {
             this.logger.error({ error, blockHash: block.hash }, 'Failed to persist block to disk');
             throw error;
         }
     }
-
     /**
      * Retrieves a block from disk by its height.
      * @param {number} height - The height of the block to retrieve.
@@ -301,9 +243,19 @@ export class Blockchain {
      */
     async getBlockFromDiskByHeight(height) {
         try {
-            const blockHash = await this.db.get(`height-${height}`);
-            const blockJson = await this.db.get(blockHash);
-            return Block.blockDataFromJSON(blockJson);
+            const blockHashUint8 = await this.db.get(`height-${height}`);
+            const blockHash = new TextDecoder().decode(blockHashUint8);
+
+            const blockJsonUint8 = await this.db.get(blockHash);
+            const blockJson = new TextDecoder().decode(blockJsonUint8);
+
+            const blockData = Block.blockDataFromJSON(blockJson);
+
+            /*const referenceUint8Array = utils.convert.string.toUint8Array(`height-${height}`);
+            const blockHashUint8Array = await this.db.get(referenceUint8Array);
+            const compressedBlock = await this.db.get(blockHashUint8Array);
+            const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);*/
+            return blockData;
         } catch (error) {
             if (error.type === 'NotFoundError') {
                 return null;
@@ -311,7 +263,6 @@ export class Blockchain {
             throw error;
         }
     }
-
     /**
      * Checks if a chain reorganization is needed and handles it if necessary.
      * @param {UtxoCache} utxoCache - The UTXO cache to use for the
@@ -363,30 +314,6 @@ export class Blockchain {
 
         this.logger.info({ newTip, newHeight: this.currentHeight }, 'Chain reorganization complete');
     }
-
-    /**
-     * Applies a block to the current state.
-     * @param {UtxoCache} utxoCache - The UTXO cache to apply the block to.
-     * @param {BlockData} block - The block to apply.
-     * @returns {Promise<void>}
-     * @private
-     */
-    async applyBlock(utxoCache, block) {
-        this.logger.debug({ blockHash: block.hash }, 'Applying block');
-        try {
-            // const blockDataCloneToDigest = Block.cloneBlockData(minerCandidate); // clone to avoid modification ?
-            //await this.utxoCache.digestFinalizedBlocks([block]);
-            //this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
-
-            // already digest in node.mjs
-            this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
-            this.logger.debug({ blockHash: block.hash }, 'Block applied');
-        } catch (error) {
-            this.logger.error({ error, blockHash: block.hash }, 'Failed to apply block');
-            throw error;
-        }
-    }
-
     /**
      * Gets the hash of the latest block.
      * @returns {string} The hash of the latest block.
@@ -394,7 +321,6 @@ export class Blockchain {
     getLatestBlockHash() {
         return this.lastBlock ? this.lastBlock.hash : "ContrastGenesisBlock";
     }
-
     /**
          * Retrieves a block by its index (height).
          * @param {number} index - The index of the block to retrieve.
@@ -415,5 +341,4 @@ export class Blockchain {
 
         return this.getBlockFromDiskByHeight(index);
     }
-
 }

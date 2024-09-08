@@ -750,7 +750,7 @@ const miningParams = {
         hashLen: 32,
     },
     nonceLength: 4,
-    maxTimeDifferenceAdjustment: 16, // in difficutly points
+    maxTimeDifferenceAdjustment: 32, // in difficutly points, affect max penalty, but max bonus is infinite
 };
 const mining = {
     /**

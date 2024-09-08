@@ -13,10 +13,6 @@ import { multiaddr } from 'multiaddr';
 import utils from './utils.mjs';
 import { lpStream } from 'it-length-prefixed-stream';
 
-/**
-* @typedef {import("./node.mjs").Node} Node
-*/
-
 const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 const MAX_MESSAGE_SIZE = 20000000;
 
@@ -35,8 +31,7 @@ class P2PNetwork extends EventEmitter {
             listenAddress: '/ip4/0.0.0.0/tcp/0',
             ...options
         };
-        /** @type {Node} */
-        this.node = null;
+        this.p2pNode = null; // Libp2pNode
         this.peers = new Map();
         this.subscriptions = new Set();
 
@@ -67,9 +62,9 @@ class P2PNetwork extends EventEmitter {
     }
     async start() {
         try {
-            this.node = await this.#createLibp2pNode();
-            await this.node.start();
-            this.logger.debug({ component: 'P2PNetwork', peerId: this.node.peerId.toString() }, `${this.options.role} node started`);
+            this.p2pNode = await this.#createLibp2pNode();
+            await this.p2pNode.start();
+            this.logger.debug({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() }, `${this.options.role} node started`);
 
             await this.#connectToBootstrapNodes();
             this.#setupEventListeners();
@@ -80,7 +75,7 @@ class P2PNetwork extends EventEmitter {
         }
     }
     async stop() {
-        if (this.node) {
+        if (this.p2pNode) {
             // Clear periodic tasks
             if (this.announceIntervalId) {
                 clearInterval(this.announceIntervalId);
@@ -92,7 +87,7 @@ class P2PNetwork extends EventEmitter {
             }
 
             // Stop the libp2p node
-            await this.node.stop();
+            await this.p2pNode.stop();
             this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
         }
     }
@@ -127,7 +122,7 @@ class P2PNetwork extends EventEmitter {
         for (const addr of this.options.bootstrapNodes) {
             try {
                 const ma = multiaddr(addr);
-                await this.node.dial(ma);
+                await this.p2pNode.dial(ma);
                 this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node');
             } catch (err) {
                 this.logger.error({ component: 'P2PNetwork', bootstrapNode: addr, error: err.message }, 'Failed to connect to bootstrap node');
@@ -135,9 +130,9 @@ class P2PNetwork extends EventEmitter {
         }
     }
     #setupEventListeners() {
-        this.node.addEventListener('peer:connect', this.#handlePeerConnect.bind(this));
-        this.node.addEventListener('peer:disconnect', this.#handlePeerDisconnect.bind(this));
-        this.node.services.pubsub.addEventListener('message', this.#handlePubsubMessage.bind(this));
+        this.p2pNode.addEventListener('peer:connect', this.#handlePeerConnect.bind(this));
+        this.p2pNode.addEventListener('peer:disconnect', this.#handlePeerDisconnect.bind(this));
+        this.p2pNode.services.pubsub.addEventListener('message', this.#handlePubsubMessage.bind(this));
     }
     #handlePeerConnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
@@ -175,8 +170,8 @@ class P2PNetwork extends EventEmitter {
     async broadcast(topic, message) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcasting message');
         try {
-            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
-            await this.node.services.pubsub.publish(topic, serialize);
+            const serialized = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+            await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
@@ -192,28 +187,24 @@ class P2PNetwork extends EventEmitter {
     async sendMessage(peerMultiaddr, message) {
         let stream;
         try {
-            const stream = await this.node.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
+            stream = await this.p2pNode.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
             const lp = lpStream(stream);
-            const serialize = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+            const serialized = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
 
-            await lp.write(serialize);
+            await lp.write(serialized);
             const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
             const response = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(res.subarray());
             // console.log('Received response:', response);
-            if (response.status === 'error') {
-                throw new Error(response.message);
-            }
+            if (response.status === 'error') { throw new Error(response.message); }
             return response;
         } catch (err) {
             console.error('Error sending message:' + SYNC_PROTOCOL, err);
             throw err;
         } finally {
-            if (stream) {
-                await stream.close().catch(console.error);
-            }
+            if (stream && stream.status === 'closed') { return; }
+            await stream.close().catch(console.error);
         }
     }
-
     /**
      * @param {string} topic
      * @param {Function} callback
@@ -221,7 +212,7 @@ class P2PNetwork extends EventEmitter {
     async subscribe(topic, callback) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Subscribing to topic');
         try {
-            await this.node.services.pubsub.subscribe(topic);
+            await this.p2pNode.services.pubsub.subscribe(topic);
             this.subscriptions.add(topic);
             //if (callback) this.on(topic, callback);
             if (callback) this.on(topic, (message) => callback(topic, message));
@@ -234,13 +225,13 @@ class P2PNetwork extends EventEmitter {
     /**
      * @param {string[]} topics
      * @param {Function} callback
-     * @returns
      */
     async subscribeMultipleTopics(topics, callback) {
         for (const topic of topics) {
             await this.subscribe(topic, callback);
         }
     }
+    /** @param {string} topic */
     async unsubscribe(topic) {
         if (!this.subscriptions.has(topic)) {
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Attempting to unsubscribe from a topic that was not subscribed to');
@@ -248,7 +239,7 @@ class P2PNetwork extends EventEmitter {
         }
 
         try {
-            await this.node.services.pubsub.unsubscribe(topic);
+            await this.p2pNode.services.pubsub.unsubscribe(topic);
             this.subscriptions.delete(topic);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Unsubscribed from topic');
         } catch (error) {
@@ -277,14 +268,14 @@ class P2PNetwork extends EventEmitter {
             blockHeight: 0,
             version: '1.1.0',
             connectionCount: this.peers.size,
-            peerId: this.node.peerId.toString(),
+            peerId: this.p2pNode.peerId.toString(),
         };
     }
     async announcePeer() {
         try {
             const topic = 'peer:announce';
             await this.subscribe(topic);
-            const data = { peerId: this.node.peerId.toString(), status: this.getStatus() };
+            const data = { peerId: this.p2pNode.peerId.toString(), status: this.getStatus() };
             //  await this.broadcast(topic, data);
             this.logger.debug({ component: 'P2PNetwork' }, 'Peer announced');
         } catch (error) {
@@ -293,7 +284,7 @@ class P2PNetwork extends EventEmitter {
     }
     async findPeer(peerId) {
         try {
-            return await this.node.peerRouting.findPeer(peerId);
+            return await this.p2pNode.peerRouting.findPeer(peerId);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', peerId, error: error.message }, 'Failed to find peer');
             return null;
@@ -306,7 +297,7 @@ class P2PNetwork extends EventEmitter {
         return Array.from(this.subscriptions);
     }
     isStarted() {
-        return this.node && this.node.status === 'started';
+        return this.p2pNode && this.p2pNode.status === 'started';
     }
 }
 
