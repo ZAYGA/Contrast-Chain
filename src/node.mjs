@@ -72,7 +72,9 @@ export class Node {
     async start() {
         await this.p2pNetwork.start();
         // Set the event listeners
-        const topicsToSubscribe = ['new_transaction', 'new_block_proposal', 'new_block_pow', 'test'];
+        const topicsToSubscribe = ['new_block_proposal', 'new_block_pow', 'test'];
+        if (this.role === 'validator') { topicsToSubscribe.push('new_transaction'); }
+
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
         await this.blockchain.init();
         await this.syncNode.start();
@@ -102,7 +104,7 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
 
                 try {
-                    await this.syncNode.syncMissingBlocks(fullAddr);
+                    await this.syncNode.syncMissingBlocks(this.utxoCache, fullAddr);
                     break; // If successful, move to next peer
                 } catch (error) {
                     console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);

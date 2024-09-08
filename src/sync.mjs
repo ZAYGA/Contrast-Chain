@@ -1,6 +1,7 @@
 import { lpStream } from 'it-length-prefixed-stream';
 import pino from 'pino';
 import utils from './utils.mjs';
+import { UtxoCache } from './utxoCache.mjs';
 
 /**
 * @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
@@ -19,7 +20,6 @@ export class SyncNode {
      * @param {Blockchain} blockchain - The blockchain instance.
      */
     constructor(p2p, blockchain) {
-        /** @type {Node} */
         this.node = null;
         /** @type {P2PNetwork} */
         this.p2p = p2p;
@@ -117,15 +117,18 @@ export class SyncNode {
 
     /**
      * Synchronizes missing blocks from a peer.
+     * @param {UtxoCache} utxoCache - The UTXO cache instance.
      * @param {string} peerMultiaddr - The multiaddress of the peer to sync with.
      * @returns {Promise<void>}
      */
-    async syncMissingBlocks(peerMultiaddr) {
+    async syncMissingBlocks(utxoCache, peerMultiaddr) {
         try {
+            const toleranceInBlock = 2;
             const peerStatus = await this.getPeerStatus(peerMultiaddr);
-            if (peerStatus.currentHeight <= this.blockchain.currentHeight) { this.logger.debug('No sync needed'); return; }
+            //if (peerStatus.currentHeight <= this.blockchain.currentHeight) { this.logger.debug('No sync needed'); return; }
+            if (peerStatus.currentHeight <= this.blockchain.currentHeight + toleranceInBlock) { this.logger.debug('No sync needed'); return; }
 
-            await this.syncBlocksFromPeer(peerMultiaddr, peerStatus.currentHeight);
+            await this.syncBlocksFromPeer(utxoCache, peerMultiaddr, peerStatus.currentHeight);
             this.logger.info('Sync completed successfully');
         } catch (error) {
             this.logger.error({ error: error.message }, 'Error during sync');
@@ -142,21 +145,21 @@ export class SyncNode {
         const peerStatusMessage = { type: 'getStatus' };
         return await this.retryOperation(() => this.p2p.sendMessage(peerMultiaddr, peerStatusMessage));
     }
-
     /**
      * Synchronizes blocks from a peer.
+     * @param {UtxoCache} utxoCache - The UTXO cache instance.
      * @param {string} peerMultiaddr - The multiaddress of the peer.
      * @param {number} peerHeight - The height of the peer's blockchain.
      * @returns {Promise<void>}
      */
-    async syncBlocksFromPeer(peerMultiaddr, peerHeight) {
+    async syncBlocksFromPeer(utxoCache, peerMultiaddr, peerHeight) {
         let currentHeight = Math.max(this.blockchain.currentHeight + 1, 0);
         while (currentHeight <= peerHeight) {
             const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerHeight);
             const blocks = await this.requestBlocksFromPeer(peerMultiaddr, currentHeight, endIndex);
             if (blocks.length === 0) break;
 
-            await this.addBlocksToChain(blocks);
+            await this.addBlocksToChain(utxoCache, blocks);
             currentHeight = endIndex + 1;
         }
     }
@@ -175,13 +178,14 @@ export class SyncNode {
     }
     /**
      * Adds blocks to the blockchain.
+     * @param {UtxoCache} utxoCache - The UTXO cache instance.
      * @param {Array} blocks - The blocks to add.
      * @returns {Promise<void>}
      */
-    async addBlocksToChain(blocks) {
+    async addBlocksToChain(utxoCache, blocks) {
         for (const block of blocks) {
             try {
-                await this.blockchain.addConfirmedBlock(block);
+                await this.blockchain.addConfirmedBlock(utxoCache, block);
                 this.logger.debug({ height: block.index }, 'Added block');
             } catch (error) {
                 this.logger.error({ height: block.index, error: error.message }, 'Failed to add block');
