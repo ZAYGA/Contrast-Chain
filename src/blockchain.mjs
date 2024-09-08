@@ -43,9 +43,6 @@ export class Blockchain {
         /** @type {ForkChoiceRule} */
         this.forkChoiceRule = new ForkChoiceRule(this.blockTree);
 
-        /** @type {UtxoCache} */
-        this.utxoCache = new UtxoCache();
-
         /** @type {SnapshotManager} */
         this.snapshotManager = new SnapshotManager();
 
@@ -168,12 +165,13 @@ export class Blockchain {
 
     /**
      * Adds a new confirmed block to the blockchain.
+     * @param {UtxoCache} utxoCache - The UTXO cache to use for the block.
      * @param {BlockData} block - The block to be added.
      * @param {boolean} [persistToDisk=true] - Whether to persist the block to disk.
      * @returns {Promise<void>}
      * @throws {Error} If the block is invalid or cannot be added.
      */
-    async addConfirmedBlock(block, persistToDisk = true) {
+    async addConfirmedBlock(utxoCache, block, persistToDisk = true) {
         this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Adding new block');
 
         try {
@@ -191,10 +189,11 @@ export class Blockchain {
                 score: this.calculateBlockScore(block)
             });
 
-            await this.applyBlock(block);
+            await this.applyBlock(utxoCache, block);
 
             if (block.index % this.snapshotInterval === 0) {
-                this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
+                //this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
+                this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
             }
 
             await this.checkAndHandleReorg();
@@ -315,17 +314,18 @@ export class Blockchain {
 
     /**
      * Checks if a chain reorganization is needed and handles it if necessary.
+     * @param {UtxoCache} utxoCache - The UTXO cache to use for the
      * @returns {Promise<void>}
      * @private
      */
-    async checkAndHandleReorg() {
+    async checkAndHandleReorg(utxoCache) {
         const currentTip = this.getLatestBlockHash();
         const newTip = this.forkChoiceRule.findBestBlock();
 
         this.logger.debug({ currentTip, newTip, currentHeight: this.currentHeight }, 'Checking for chain reorganization');
 
         if (newTip !== currentTip && this.forkChoiceRule.shouldReorg(currentTip, newTip)) {
-            await this.performChainReorg(newTip);
+            await this.performChainReorg(utxoCache, newTip);
         } else {
             this.logger.debug('No chain reorganization needed');
         }
@@ -333,11 +333,12 @@ export class Blockchain {
 
     /**
      * Performs a chain reorganization.
+     * @param {UtxoCache} utxoCache - The UTXO cache to use for the reorg.
      * @param {string} newTip - The hash of the new tip block.
      * @returns {Promise<void>}
      * @private
      */
-    async performChainReorg(newTip) {
+    async performChainReorg(utxoCache, newTip) {
         this.logger.info({ newTip }, 'Performing chain reorganization');
 
         const reorgPath = this.forkChoiceRule.getReorgPath(this.getLatestBlockHash(), newTip);
@@ -346,11 +347,12 @@ export class Blockchain {
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
         if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return; }
 
-        await this.snapshotManager.restoreSnapshot(commonAncestorHeight, this.utxoCache, this.blockTree);
+        //await this.snapshotManager.restoreSnapshot(commonAncestorHeight, this.utxoCache, this.blockTree);
+        await this.snapshotManager.restoreSnapshot(commonAncestorHeight, utxoCache, this.blockTree);
 
         for (const hash of reorgPath.apply) {
             const block = await this.getBlock(hash);
-            await this.applyBlock(block);
+            await this.applyBlock(utxoCache, block);
         }
 
         this.lastBlock = await this.getBlock(newTip);
@@ -364,15 +366,20 @@ export class Blockchain {
 
     /**
      * Applies a block to the current state.
+     * @param {UtxoCache} utxoCache - The UTXO cache to apply the block to.
      * @param {BlockData} block - The block to apply.
      * @returns {Promise<void>}
      * @private
      */
-    async applyBlock(block) {
+    async applyBlock(utxoCache, block) {
         this.logger.debug({ blockHash: block.hash }, 'Applying block');
         try {
-            await this.utxoCache.digestFinalizedBlocks([block]);
-            this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
+            // const blockDataCloneToDigest = Block.cloneBlockData(minerCandidate); // clone to avoid modification ?
+            //await this.utxoCache.digestFinalizedBlocks([block]);
+            //this.snapshotManager.takeSnapshot(block.index, this.utxoCache, this.vss);
+
+            // already digest in node.mjs
+            this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
             this.logger.debug({ blockHash: block.hash }, 'Block applied');
         } catch (error) {
             this.logger.error({ error, blockHash: block.hash }, 'Failed to apply block');

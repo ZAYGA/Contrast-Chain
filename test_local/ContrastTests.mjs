@@ -172,7 +172,7 @@ async function initMinerNode(factory, account) {
  */
 async function initValidatorNode(factory, account) {
     const validatorNode = await factory.createNode(account, 'validator');
-    await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
+    //await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
 
     validatorNode.useDevArgon2 = testParams.useDevArgon2;
     validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;

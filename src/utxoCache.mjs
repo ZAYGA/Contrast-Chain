@@ -142,9 +142,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             const totalSupply = supplyFromBlock + coinBase;
             const totalOfBalances = this.#calculateTotalOfBalances();
 
-            if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
-                throw new Error('Invalid total of balances');
-            }
+            if (totalOfBalances !== totalSupply && this.bypassValidation === false) { throw new Error('Invalid total of balances'); }
             //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
 
             this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });

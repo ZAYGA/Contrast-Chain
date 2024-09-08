@@ -43,13 +43,13 @@ export class Node {
         this.memPool = new MemPool();
         /** @type {UtxoCache} */
         this.utxoCache = new UtxoCache();
+        this.utxoCacheSnapshots = [];
         /** @type {Miner} */
         this.miner = new Miner(account, this.p2pNetwork);
 
         this.useDevArgon2 = false;
         this.considerDefinitiveAfter = 1000; // in blocks
         this.confirmedBlocks = [];
-        this.utxoCacheSnapshots = [];
         this.lastBlockData = null;
         this.syncIntervalId = null;
 
@@ -208,8 +208,8 @@ export class Node {
         console.info(`[NODE] H:${minerCandidate.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
         this.blockCandidate = await this.#createBlockCandidate();
-        await this.blockchain.addConfirmedBlock(minerCandidate);
-        await this.blockchain.checkAndHandleReorg();
+        await this.blockchain.addConfirmedBlock(this.utxoCache, minerCandidate);
+        await this.blockchain.checkAndHandleReorg(this.utxoCache);
 
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
 
