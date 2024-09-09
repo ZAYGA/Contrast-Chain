@@ -126,6 +126,7 @@ class P2PNetwork extends EventEmitter {
                 const ma = multiaddr(addr);
                 await this.p2pNode.dial(ma);
                 //console.log('Connected to bootstrap node:', addr);
+                this.updatePeer(addr, { status: 'connected' });
                 this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node');
             } catch (err) {
                 this.logger.error({ component: 'P2PNetwork', bootstrapNode: addr, error: err.message }, 'Failed to connect to bootstrap node');
@@ -165,7 +166,7 @@ class P2PNetwork extends EventEmitter {
         //this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
         //this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
     }
-    
+
     /**
      * @param {string} topic
      * @param {any} message - Can be any JavaScript object
