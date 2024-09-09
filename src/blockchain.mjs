@@ -31,7 +31,7 @@ export class Blockchain {
             logLevel = 'silent',
             snapshotInterval = 100,
         } = options;
-
+        
         /** @type {LevelUp} */
         this.db = LevelUp(LevelDown('./databases/blockchainDB' + nodeId));
         /** @type {BlockTree} */
@@ -88,7 +88,7 @@ export class Blockchain {
             for (let i = 0; i <= storedHeightInt; i++) {
                 const blockData = await this.getBlockFromDiskByHeight(i);
                 if (!blockData) { this.logger.warn({ height: i }, 'Failed to load block from disk'); break; }
-
+    
                 blocksData.push(blockData);
             }
 
@@ -124,25 +124,25 @@ export class Blockchain {
             try {
                 this.updateIndices(block);
                 this.inMemoryBlocks.set(block.hash, block);
-
+    
                 if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(); }
-
+    
                 this.blockTree.addBlock({
                     hash: block.hash,
                     prevHash: block.prevHash,
                     height: block.index,
                     score: this.calculateBlockScore(block)
                 });
-
+    
                 this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
-
+    
                 this.lastBlock = block;
                 this.currentHeight = block.index;
-
+    
                 if (persistToDisk) { await this.persistBlockToDisk(block); }
-
+    
                 await this.db.put('currentHeight', this.currentHeight.toString());
-
+    
                 this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
             } catch (error) {
                 this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
@@ -216,16 +216,9 @@ export class Blockchain {
     async persistBlockToDisk(block) {
         this.logger.debug({ blockHash: block.hash }, 'Persisting block to disk');
         try {
-            const blockJson = Block.dataAsJSON(block);
-            await this.db.put(block.hash, blockJson);
+            const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
+            await this.db.put(block.hash, compressedBlock);
             await this.db.put(`height-${block.index}`, block.hash);
-
-            /*const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
-            const blockHashUint8Array = utils.convert.hex.toUint8Array(block.hash);
-            await this.db.put(blockHashUint8Array, compressedBlock);
-
-            const referenceUint8Array = utils.convert.string.toUint8Array(`height-${block.index}`);
-            await this.db.put(referenceUint8Array, blockHashUint8Array);*/
 
             this.logger.debug({ blockHash: block.hash }, 'Block persisted to disk');
         } catch (error) {
@@ -241,18 +234,12 @@ export class Blockchain {
      */
     async getBlockFromDiskByHeight(height) {
         try {
-            const blockHashUint8 = await this.db.get(`height-${height}`);
-            const blockHash = new TextDecoder().decode(blockHashUint8);
+            const blockHashUint8Array = await this.db.get(`height-${height}`);
+            const blockHash = new TextDecoder().decode(blockHashUint8Array);
 
-            const blockJsonUint8 = await this.db.get(blockHash);
-            const blockJson = new TextDecoder().decode(blockJsonUint8);
+            const compressedBlock = await this.db.get(blockHash);
+            const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);
 
-            const blockData = Block.blockDataFromJSON(blockJson);
-
-            /*const referenceUint8Array = utils.convert.string.toUint8Array(`height-${height}`);
-            const blockHashUint8Array = await this.db.get(referenceUint8Array);
-            const compressedBlock = await this.db.get(blockHashUint8Array);
-            const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);*/
             return blockData;
         } catch (error) {
             if (error.type === 'NotFoundError') {
@@ -296,7 +283,6 @@ export class Blockchain {
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
         if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return; }
 
-        //await this.snapshotManager.restoreSnapshot(commonAncestorHeight, this.utxoCache, this.blockTree);
         await this.snapshotManager.restoreSnapshot(commonAncestorHeight, utxoCache, this.blockTree);
 
         for (const hash of reorgPath.apply) {
