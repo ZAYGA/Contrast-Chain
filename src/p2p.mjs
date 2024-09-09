@@ -21,14 +21,16 @@ class P2PNetwork extends EventEmitter {
     constructor(options = {}) {
         super();
         this.options = {
-            bootstrapNodes: [],
+            bootstrapNodes: [
+                //'/ip4/82.126.155.210/tcp/7777',
+            ],
             maxPeers: 50,
             announceInterval: 60000,
             cleanupInterval: 300000,
             peerTimeout: 600000,
             logLevel: 'info', // 'info',
             logging: true,
-            listenAddress: '/ip4/0.0.0.0/tcp/0',
+            listenAddress: '/ip4/0.0.0.0/tcp/7777',
             ...options
         };
         this.p2pNode = null; // Libp2pNode

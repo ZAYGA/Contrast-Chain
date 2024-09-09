@@ -253,8 +253,8 @@ async function nodeSpecificTest(accounts, wss) {
             });
 
             if (validatorNode.blockCandidate.index > 9 && validatorNodes.length < 2) {
-                const newValidator = await initValidatorNode(factory, accounts[10]);
-                validatorNodes.push(newValidator);
+                //const newValidator = await initValidatorNode(factory, accounts[10]);
+                //validatorNodes.push(newValidator);
             }
 
             /*const timeDiff = Date.now() - lastBlockIndexAndTime.time;
