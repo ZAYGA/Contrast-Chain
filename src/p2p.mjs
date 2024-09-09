@@ -22,7 +22,8 @@ class P2PNetwork extends EventEmitter {
         super();
         this.options = {
             bootstrapNodes: [
-                //'/ip4/82.126.155.210/tcp/7777',
+                '/ip4/82.126.155.210/tcp/7777',
+                '/ip4/141.8.119.6/tcp/7777',
             ],
             maxPeers: 50,
             announceInterval: 60000,
