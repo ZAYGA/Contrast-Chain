@@ -152,7 +152,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
                 }
                 //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
     
-                this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp });
+                this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp, posTimestamp: blockData.posTimestamp });
                 newStakesOutputs.push(...newStakesOutputsFromBlock);
             }
     

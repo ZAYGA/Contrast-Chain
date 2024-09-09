@@ -224,6 +224,7 @@ export class Validation {
 
                 if (utxoSpent[anchor]) { throw new Error('Double spending'); }
                 if (!utxosByAnchor[anchor]) { throw new Error('UTXO not found in utxoCache, already spent?'); }
+                if (utxosByAnchor[anchor].amount !== Tx.inputs[j].amount) { throw new Error('Invalid amount'); }
                 utxoSpent[anchor] = true;
             }
         }

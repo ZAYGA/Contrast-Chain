@@ -20,32 +20,27 @@ export class Miner {
         /** @type {P2PNetwork} */
         this.p2pNetwork = p2pNetwork;
 
-        this.highestBlockIndex = 0;
+        this.highestBlockIndex = -1;
         this.useDevArgon2 = false;
         /** @type {Worker[]} */
         this.workers = [];
-    }
 
+        /** @type {Object<string, number>} */
+        this.bets = {};
+        /** @type {{min: number, max: number}} */
+        this.betRange = {min: .4, max: .8}; // will bet between 40% and 80% of the expected blockTime
+        /** @type {BlockData | null} */
+        this.preshotedPowBlock = null;
+    }
     /** @param {BlockData} blockCandidate */
-    async minePow(blockCandidate) { // Will probably DEPRECATE
-        await this.prepareBlockCandidateBeforeMining(blockCandidate);
-        const { hex, bitsArrayAsString } = await Block.getMinerHash(blockCandidate, this.useDevArgon2);
-        const { conform } = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, blockCandidate);
-        if (!conform) { throw new Error('Block hash does not conform to difficulty'); }
-
-        blockCandidate.hash = hex;
-        //console.log(`[MINER] POW -> (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
-
-        return { validBlockCandidate: blockCandidate };
-    }
-
-    async prepareBlockCandidateBeforeMining(blockCandidate) {
+    async #prepareBlockCandidateBeforeMining(blockCandidate) {
         const headerNonce = utils.mining.generateRandomNonce().Hex;
         const coinbaseNonce = utils.mining.generateRandomNonce().Hex;
         blockCandidate.nonce = headerNonce;
-        blockCandidate.timestamp = Date.now();
+        blockCandidate.timestamp = Math.max(blockCandidate.posTimestamp + 1 + this.bets[blockCandidate.index], Date.now());
 
-        const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, blockCandidate.coinBase);
+        const { powReward, posReward } = Block.calculateBlockReward(blockCandidate);
+        const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, powReward);
         Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
         const signatureHex = await Block.getBlockSignature(blockCandidate);
@@ -53,24 +48,37 @@ export class Miner {
 
         return { signatureHex, nonce };
     }
-    /** @param {BlockData} blockCandidate */
-    pushCandidate(blockCandidate) {
+    /** 
+     * @param {BlockData} blockCandidate
+     * @param {boolean} useBetTimestamp
+     */
+    pushCandidate(blockCandidate, useBetTimestamp = true) {
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
 
         if (blockCandidate.index > this.highestBlockIndex) {
+            this.preshotedPowBlock = null; // reset preshoted block
+            this.bets[blockCandidate.index] = useBetTimestamp ? this.#betOnTimeToPow(blockCandidate.index) : 0; // bet on time to pow
             this.highestBlockIndex = blockCandidate.index;
-            this.cleanupCandidates();
+            this.#cleanupCandidates();
         }
         //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
         //const blockCandidateClone = Block.cloneBlockData(blockCandidate);
         this.candidates.push(blockCandidate);
     }
-    cleanupCandidates(heightTolerance = 6) {
+    #betOnTimeToPow() {
+        const targetBlockTime = utils.blockchainSettings.targetBlockTime;
+        const betBasis = targetBlockTime * this.betRange.min;
+        const betRandom = Math.random() * (this.betRange.max - this.betRange.min) * targetBlockTime;
+        const bet = betBasis + betRandom;
+        
+        return Math.floor(bet);
+    }
+    #cleanupCandidates(heightTolerance = 6) {
         // remove candidates with height tolerance, to avoid memory leak
         this.candidates = this.candidates.filter(candidate => this.highestBlockIndex - candidate.index <= heightTolerance);
     }
-    getMostLegitimateBlockCandidate() {
+    #getMostLegitimateBlockCandidate() {
         if (this.candidates.length === 0) { return null; }
 
         const filteredCandidates = this.candidates.filter(candidate => candidate.index === this.highestBlockIndex);
@@ -88,13 +96,18 @@ export class Miner {
                 try {
                     if (message.error) { throw new Error(message.error); }
                     const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
-            
-                    if (conform) { 
-                        this.p2pNetwork.broadcast('new_block_pow', message.blockCandidate); }
-                    workersStatus[message.id] = 'free';
+                    if (!conform) { workersStatus[message.id] = 'free'; return; }
+
+                    if (message.blockCandidate.timestamp <= Date.now()) { // if block is ready to be broadcasted
+                        this.p2pNetwork.broadcast('new_block_pow', message.blockCandidate);
+                    } else { // if block is not ready to be broadcasted (pre-shoted)
+                        this.preshotedPowBlock = message.blockCandidate;
+                        this.bets[message.blockCandidate.index] = 1; // avoid betting on the same block
+                    }
                 } catch (err) {
                     console.error(err);
                 }
+                workersStatus[message.id] = 'free';
             });
             worker.on('exit', (code) => { console.log(`Worker stopped with exit code ${code}`); });
 
@@ -105,16 +118,21 @@ export class Miner {
 
         while (true) {
             await new Promise((resolve) => setTimeout(resolve, 10));
-            const id = workersStatus.indexOf('free');
+            const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
+            if (preshotedPowReadyToSend) {
+                this.p2pNetwork.broadcast('new_block_pow', this.preshotedPowBlock)
+                this.preshotedPowBlock = null;
+            }
 
+            const id = workersStatus.indexOf('free');
             if (id === -1) { continue; }
 
-            const blockCandidate = this.getMostLegitimateBlockCandidate();
+            const blockCandidate = this.#getMostLegitimateBlockCandidate();
             if (!blockCandidate) { continue; }
 
             workersStatus[id] = 'busy';
 
-            const { signatureHex, nonce } = await this.prepareBlockCandidateBeforeMining(blockCandidate);
+            const { signatureHex, nonce } = await this.#prepareBlockCandidateBeforeMining(blockCandidate);
             this.workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
         }
     }

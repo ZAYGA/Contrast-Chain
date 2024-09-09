@@ -15,10 +15,7 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
             return peerCount >= 1; // We only need one connection in this test
         });
 
-        if (allNodesConnected) {
-            console.log('P2P network is ready');
-            return;
-        }
+        if (allNodesConnected) { console.log('P2P network is ready'); return; }
 
         await new Promise(resolve => setTimeout(resolve, interval));
     }
@@ -41,12 +38,11 @@ async function main() {
     validatorNode.useDevArgon2 = useDevArgon2;
     validatorNode.memPool.useDevArgon2 = useDevArgon2;
     await validatorNode.start();
+    console.log('Validator node started');
 
-    //await waitForP2PNetworkReady([validatorNode]);
+    await waitForP2PNetworkReady([validatorNode]);
     
-    while (true) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }
 }
 
 main().catch(console.error);

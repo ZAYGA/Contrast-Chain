@@ -126,7 +126,6 @@ export class Node {
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
                 console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
-
             }
             if (finalizedBlock.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex}`); return false; }
 
@@ -136,10 +135,14 @@ export class Node {
             const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, finalizedBlock);
             if (!hashConfInfo.conform) { return 'Hash not conform!'; }
 
-            // control coinBase Amount
-            const coinBaseAmount = finalizedBlock.Txs[0].outputs[0].amount;
-            const expectedCoinBase = Block.calculateNextCoinbaseReward(finalizedBlock);
-            if (coinBaseAmount !== expectedCoinBase) { return `Invalid coinbase amount: ${coinBaseAmount} - expected: ${expectedCoinBase}`; }
+            // control coinbase amount
+            const expectedCoinBase = Block.calculateNextCoinbaseReward(this.blockchain.lastBlock || finalizedBlock);
+            if (finalizedBlock.coinBase !== expectedCoinBase) { return `Invalid coinbase amount: ${finalizedBlock.coinBase} - expected: ${expectedCoinBase}`; }
+
+            // control mining rewards
+            const { powReward, posReward } = Block.calculateBlockReward(finalizedBlock);
+            if (finalizedBlock.Txs[0].outputs[0].amount !== powReward) { return `Invalid PoW reward: ${finalizedBlock.Txs[0].outputs[0].amount} - expected: ${powReward}`; }
+            if (finalizedBlock.Txs[1].outputs[0].amount !== posReward) { return `Invalid PoS reward: ${finalizedBlock.Txs[0].outputs[0].amount} - expected: ${posReward}`; }
 
             // double spend control
             Validation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
@@ -149,10 +152,7 @@ export class Node {
                 const tx = finalizedBlock.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
                 const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
-                if (!txValidation.success) {
-                    const error = txValidation;
-                    return `Invalid transaction: ${tx.id} - ${error}`;
-                }
+                if (!txValidation.success) { return `Invalid transaction: ${tx.id} - ${txValidation}`; }
             }
 
             return hashConfInfo;
@@ -235,7 +235,7 @@ export class Node {
         const signedPosFeeTx = await this.account.signTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
 
-        if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(posTimestamp - startTime)}ms`);
+        if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
 
         return blockCandidate;
     }

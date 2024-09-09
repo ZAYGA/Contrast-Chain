@@ -45,8 +45,6 @@ function newWorker(scriptPath) {
 
 const blockchainSettings = {
     targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
-    thresholdPerDiffIncrement: 5, // meaning 5% threshold for 1 diff point
-    maxDiffIncrementPerAdjustment: 16, // 16 diff points = 50% of diff
     blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
 
     blockReward: 256_000_000,
@@ -60,8 +58,6 @@ const blockchainSettings = {
 };
 /*const blockchainSettings = { // Not used ATM
     targetBlockTime: 600_000, // 10 min
-    thresholdPerDiffIncrement: 10, // meaning 10% threshold for 1 diff point
-    maxDiffIncrementPerAdjustment: 8, // 8 diff points = 50% of diff
     blocksBeforeAdjustment: 144, // ~24h
 
     blockReward: 25_600,
@@ -750,6 +746,8 @@ const miningParams = {
         hashLen: 32,
     },
     nonceLength: 4,
+    thresholdPerDiffIncrement: 3.2, // meaning 3.4% threshold for 1 diff point
+    maxDiffIncrementPerAdjustment: 32, // 32 diff points = 100% of diff
     maxTimeDifferenceAdjustment: 32, // in difficutly points, affect max penalty, but max bonus is infinite
 };
 const mining = {
@@ -779,8 +777,8 @@ const mining = {
             console.log(`Deviation: ${deviation.toFixed(4)} | Deviation percentage: ${deviationPercentage.toFixed(2)}%`);
         }
 
-        const diffAdjustment = Math.floor(Math.abs(deviationPercentage) / blockchainSettings.thresholdPerDiffIncrement);
-        const capedDiffIncrement = Math.min(diffAdjustment, blockchainSettings.maxDiffIncrementPerAdjustment);
+        const diffAdjustment = Math.floor(Math.abs(deviationPercentage) / miningParams.thresholdPerDiffIncrement);
+        const capedDiffIncrement = Math.min(diffAdjustment, miningParams.maxDiffIncrementPerAdjustment);
         const diffIncrement = deviation > 0 ? capedDiffIncrement : -capedDiffIncrement;
         const newDifficulty = Math.max(difficulty + diffIncrement, 1); // cap at 1 minimum
 
@@ -793,12 +791,12 @@ const mining = {
     },
     /** @param {BlockMiningData[]} blockMiningData */
     calculateAverageBlockTime: (blockMiningData) => {
-        const NbBlocks = Math.min(blockMiningData.length, blockchainSettings.blocksBeforeAdjustment);
+        const NbBlocks = blockchainSettings.blocksBeforeAdjustment;
         const olderBlock = blockMiningData[blockMiningData.length - NbBlocks];
         const newerBlock = blockMiningData[blockMiningData.length - 1];
-        const sum = newerBlock.timestamp - olderBlock.timestamp
+        const periodInterval = newerBlock.timestamp - olderBlock.posTimestamp;
 
-        return sum / (NbBlocks - 1);
+        return periodInterval / NbBlocks;
     },
     generateRandomNonce: (length = miningParams.nonceLength) => {
         const Uint8 = new Uint8Array(length);

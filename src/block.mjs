@@ -8,18 +8,21 @@ import { Validation } from './validation.mjs';
 * @property {number} index - The block height
 * @property {number} difficulty - The difficulty of the block
 * @property {number} timestamp - The timestamp of the block
+* @property {number} posTimestamp - The timestamp of the block's creation
 */
 /**
 * @param {number} index - The block height
 * @param {number} difficulty - The difficulty of the block
 * @param {number} timestamp - The timestamp of the block
+* @param {number} posTimestamp - The timestamp of the block's creation
 * @returns {BlockMiningData}
  */
-export const BlockMiningData = (index, difficulty, timestamp) => {
+export const BlockMiningData = (index, difficulty, timestamp, posTimestamp) => {
     return {
         index,
         difficulty,
-        timestamp
+        timestamp,
+        posTimestamp
     };
 }
 
@@ -155,6 +158,15 @@ export class Block {
 
         const totalFees = fees.reduce((a, b) => a + b, 0);
         return totalFees;
+    }
+    /** @param {BlockData} blockData */
+    static calculateBlockReward(blockData) {
+        const totalFees = Block.calculateTxsTotalFees(blockData.Txs);
+        const totalReward = totalFees + blockData.coinBase;
+        const powReward = Math.floor(totalReward / 2);
+        const posReward = totalReward - powReward;
+
+        return { powReward, posReward };
     }
     /** @param {BlockData} blockData */
     static dataAsJSON(blockData) {

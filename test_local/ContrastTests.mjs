@@ -158,8 +158,8 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initMinerNode(factory, account) {
-    const minerNode = await factory.createNode(account, 'miner');
+async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+    const minerNode = await factory.createNode(account, 'miner', { listenAddress });
     minerNode.miner.useDevArgon2 = testParams.useDevArgon2;
     minerNode.memPool.useDevArgon2 = testParams.useDevArgon2;
     await minerNode.start();
@@ -170,8 +170,8 @@ async function initMinerNode(factory, account) {
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initValidatorNode(factory, account) {
-    const validatorNode = await factory.createNode(account, 'validator');
+async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+    const validatorNode = await factory.createNode(account, 'validator', { listenAddress });
     //await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
 
     validatorNode.useDevArgon2 = testParams.useDevArgon2;

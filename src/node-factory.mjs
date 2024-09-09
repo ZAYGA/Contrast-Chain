@@ -10,7 +10,7 @@ export class NodeFactory {
 
     /**
      * @param {Account} account
-     * 
+     * @param {string} role
      * @param {Object<string, string>}
      */
     async createNode(account, role = 'validator', p2pOptions = {}) {

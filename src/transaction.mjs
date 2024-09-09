@@ -143,13 +143,14 @@ export class Transaction_Builder {
     static async createPosRewardTransaction(blockCandidate, address, posStakedAddress) {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
 
-        const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
-        if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
+        //const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
+        //if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
+        const { powReward, posReward } = Block.calculateBlockReward(blockCandidate);
 
         const posHashHex = await Block.getBlockSignature(blockCandidate, true);
         const posInput = `${posStakedAddress}:${posHashHex}`;
         const inputs = [ posInput ];
-        const posOutput = TxIO_Builder.newIO('output', blockFees, 'sig_v1', 1, address);
+        const posOutput = TxIO_Builder.newIO('output', posReward, 'sig_v1', 1, address);
         const outputs = [ posOutput ];
 
         return await this.newTransaction(inputs, outputs);

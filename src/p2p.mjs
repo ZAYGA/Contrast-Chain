@@ -10,14 +10,13 @@ import { kadDHT } from '@libp2p/kad-dht';
 import { mdns } from '@libp2p/mdns';
 import { bootstrap } from '@libp2p/bootstrap';
 import { multiaddr } from 'multiaddr';
-import utils from './utils.mjs';
 import { lpStream } from 'it-length-prefixed-stream';
+import utils from './utils.mjs';
 
 const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
 const MAX_MESSAGE_SIZE = 20000000;
 
 class P2PNetwork extends EventEmitter {
-
     constructor(options = {}) {
         super();
         this.options = {
@@ -69,8 +68,8 @@ class P2PNetwork extends EventEmitter {
             await this.p2pNode.start();
             this.logger.debug({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() }, `${this.options.role} node started`);
 
-            await this.#connectToBootstrapNodes();
             this.#setupEventListeners();
+            await this.#connectToBootstrapNodes();
             this.#startPeriodicTasks();
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to start P2P network');
@@ -126,6 +125,7 @@ class P2PNetwork extends EventEmitter {
             try {
                 const ma = multiaddr(addr);
                 await this.p2pNode.dial(ma);
+                //console.log('Connected to bootstrap node:', addr);
                 this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node');
             } catch (err) {
                 this.logger.error({ component: 'P2PNetwork', bootstrapNode: addr, error: err.message }, 'Failed to connect to bootstrap node');

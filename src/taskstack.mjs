@@ -42,7 +42,7 @@ export class TaskStack {
                     await this.node.memPool.pushTransaction(task.data.utxosByAnchor, task.data.transaction);
                     break;
                 case 'digestPowProposal':
-                    await this.node.digestFinalizedBlock(task.data);
+                    await this.node.digestFinalizedBlock(task.data, {storeAsFiles: true});
                     break;
                 case 'syncWithKnownPeers':
                     this.syncState = 'busy';
