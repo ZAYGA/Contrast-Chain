@@ -133,9 +133,9 @@ export class Blockchain {
                     height: block.index,
                     score: this.calculateBlockScore(block)
                 });
-    
+                    
                 this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
-    
+                
                 this.lastBlock = block;
                 this.currentHeight = block.index;
     
@@ -217,7 +217,8 @@ export class Blockchain {
         this.logger.debug({ blockHash: block.hash }, 'Persisting block to disk');
         try {
             const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
-            await this.db.put(block.hash, compressedBlock);
+            const buffer = Buffer.from(compressedBlock);
+            await this.db.put(block.hash, buffer);
             await this.db.put(`height-${block.index}`, block.hash);
 
             this.logger.debug({ blockHash: block.hash }, 'Block persisted to disk');
@@ -251,53 +252,73 @@ export class Blockchain {
     /**
      * Checks if a chain reorganization is needed and handles it if necessary.
      * @param {UtxoCache} utxoCache - The UTXO cache to use for the
-     * @returns {Promise<void>}
-     * @private
      */
     async checkAndHandleReorg(utxoCache) {
-        const currentTip = this.getLatestBlockHash();
+        const currentTip = this.getLatestBlockHash(); // The hash of the current tip block (the apex)
         const newTip = this.forkChoiceRule.findBestBlock();
 
         this.logger.debug({ currentTip, newTip, currentHeight: this.currentHeight }, 'Checking for chain reorganization');
 
-        if (newTip !== currentTip && this.forkChoiceRule.shouldReorg(currentTip, newTip)) {
-            await this.performChainReorg(utxoCache, newTip);
-        } else {
-            this.logger.debug('No chain reorganization needed');
+        const shouldReorg = this.forkChoiceRule.shouldReorg(currentTip, newTip);
+        if (newTip === currentTip || !shouldReorg) {
+            const tipBlock = await this.getBlock(newTip);
+            return [tipBlock];
         }
+
+        const blocksToapply = await this.#getBlocksToapply(utxoCache, newTip);
+        return blocksToapply;
     }
 
     /**
      * Performs a chain reorganization.
      * @param {UtxoCache} utxoCache - The UTXO cache to use for the reorg.
      * @param {string} newTip - The hash of the new tip block.
-     * @returns {Promise<void>}
-     * @private
      */
-    async performChainReorg(utxoCache, newTip) {
+    async #getBlocksToapply(utxoCache, newTip) {
         this.logger.info({ newTip }, 'Performing chain reorganization');
 
         const reorgPath = this.forkChoiceRule.getReorgPath(this.getLatestBlockHash(), newTip);
-        if (!reorgPath) { this.logger.error('Failed to get reorganization path'); return; }
+        if (!reorgPath) { this.logger.error('Failed to get reorganization path'); return []; }
 
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
-        if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return; }
+        if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return []; }
 
         await this.snapshotManager.restoreSnapshot(commonAncestorHeight, utxoCache, this.blockTree);
 
-        for (const hash of reorgPath.apply) {
+        /*for (const hash of reorgPath.apply) {
             const block = await this.getBlock(hash);
             await this.applyBlock(utxoCache, block);
+        }*/
+       this.lastBlock = await this.getBlock(newTip);
+       if (!this.lastBlock) { this.logger.error('Failed to get new tip block'); return false; }
+
+       this.currentHeight = this.lastBlock.index;
+       await this.db.put('currentHeight', this.currentHeight.toString());
+
+        const blocksData = [];
+        for (const hash of reorgPath.apply) {
+            const block = await this.getBlock(hash);
+            blocksData.push(block);
         }
-
-        this.lastBlock = await this.getBlock(newTip);
-        if (!this.lastBlock) { this.logger.error('Failed to get new tip block'); return; }
-
-        this.currentHeight = this.lastBlock.index;
-        await this.db.put('currentHeight', this.currentHeight.toString());
-
-        this.logger.info({ newTip, newHeight: this.currentHeight }, 'Chain reorganization complete');
+        
+        return blocksData;
+        //this.logger.info({ newTip, newHeight: this.currentHeight }, 'Chain reorganization complete'); not true
     }
+    /**
+     * @param {UtxoCache} utxoCache
+     * @param {Vss} vss
+     * @param {BlockData[]} blocksData
+     */
+    async applyChainReorg(utxoCache, vss, blocksData) {
+        for (const block of blocksData) {
+            const blockDataCloneToDigest = Block.cloneBlockData(block); // clone to avoid modification
+            const newStakesOutputs = await utxoCache.digestFinalizedBlocks([blockDataCloneToDigest]);
+            if (!newStakesOutputs) { continue; }
+
+            vss.newStakes(newStakesOutputs);
+        }
+    }
+
     /**
      * Gets the hash of the latest block.
      * @returns {string} The hash of the latest block.

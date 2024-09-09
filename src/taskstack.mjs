@@ -46,9 +46,9 @@ export class TaskStack {
                     break;
                 case 'syncWithKnownPeers':
                     this.syncState = 'busy';
-                    console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting... lastBlockData.index: ${this.node.lastBlockData === null ? 0 : this.node.lastBlockData.index}`);
+                    console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting... lastBlockData.index: ${this.node.blockchain.lastBlock === null ? 0 : this.node.blockchain.lastBlock.index}`);
                     await this.node.syncWithKnownPeers();
-                    console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting done, lastBlockData.index: ${this.node.lastBlockData === null ? 0 : this.node.lastBlockData.index}`);
+                    console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting done, lastBlockData.index: ${this.node.blockchain.lastBlock === null ? 0 : this.node.blockchain.lastBlock.index}`);
                     break;
                 default:
                     console.error(`[TASKSTACK] Unknown task type: ${task.type}`);

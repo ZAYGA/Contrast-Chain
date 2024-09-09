@@ -4,6 +4,7 @@ import utils from './utils.mjs';
 /**
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
  * @typedef {import('./callstack.mjs').TaskStack} TaskStack
+ * @typedef {import('./block.mjs').BlockData} BlockData
  */
 
 export class MemPool { // Store transactions that are not yet included in a block
@@ -125,22 +126,25 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     }
     /**
      * - Remove the transactions included in the block from the mempool
-     * @param {Transaction[]} Txs
+     * @param {BlockData[]} blocksData
      */
-    digestFinalizedBlockTransactions(Txs) {
-        if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
-
-        // remove the transactions included in the block that collide with the mempool
-        for (let i = 0; i < Txs.length; i++) {
-            if (Transaction_Builder.isCoinBaseOrFeeTransaction(Txs[i], i)) { continue; }
-
-            const confirmedTx = Txs[i];
-            const collidingTx = this.#caughtTransactionsUTXOCollision(confirmedTx);
-            if (!collidingTx) { continue; }
-            
-            if (confirmedTx.id === collidingTx.id) {
-                console.log(`[MEMPOOL] transaction: ${confirmedTx.id} confirmed!`); }
-            this.#removeMempoolTransaction(collidingTx);
+    digestFinalizedBlocksTransactions(blocksData) {
+        for (const blockData of blocksData) {
+            const Txs = blockData.Txs;
+            if (!Array.isArray(Txs)) { throw new Error('Txs is not an array'); }
+    
+            // remove the transactions included in the block that collide with the mempool
+            for (let i = 0; i < Txs.length; i++) {
+                if (Transaction_Builder.isCoinBaseOrFeeTransaction(Txs[i], i)) { continue; }
+    
+                const confirmedTx = Txs[i];
+                const collidingTx = this.#caughtTransactionsUTXOCollision(confirmedTx);
+                if (!collidingTx) { continue; }
+                
+                if (confirmedTx.id === collidingTx.id) {
+                    console.log(`[MEMPOOL] transaction: ${confirmedTx.id} confirmed!`); }
+                this.#removeMempoolTransaction(collidingTx);
+            }
         }
     }
     /** @param {Transaction} transaction */

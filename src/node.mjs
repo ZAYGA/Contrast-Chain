@@ -45,21 +45,19 @@ export class Node {
         this.utxoCacheSnapshots = [];
         /** @type {Miner} */
         this.miner = new Miner(account, this.p2pNetwork);
-
         this.useDevArgon2 = false;
-        this.lastBlockData = null;
-
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
         /** @type {SyncNode} */
         this.syncNode = new SyncNode(this.blockchain);
+
     }
 
     async start() {
         await this.blockchain.init();
         const loadedBlocks = await this.blockchain.recoverBlocksFromStorage();
         for (const block of loadedBlocks) {
-            await this.digestFinalizedBlock(block, false, false);
+            await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
         }
 
         await this.p2pNetwork.start();
@@ -101,7 +99,7 @@ export class Node {
                     if (!blocks) { continue; }
 
                     for (const block of blocks) {
-                        await this.digestFinalizedBlock(block, false);
+                        await this.digestFinalizedBlock(block, { broadcastNewCandidate: false, storeAsFiles: true });
                     }
 
                     break; // If successful, move to next peer
@@ -123,7 +121,8 @@ export class Node {
     async #validateBlockProposal(finalizedBlock) {
         try {
             // verify the height
-            const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1;
+            //const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1; / /DEPRECATED
+            const lastBlockIndex = this.blockchain.currentHeight;
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
                 console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
@@ -162,42 +161,48 @@ export class Node {
             return false;
         }
     }
-    /** @param {BlockData} finalizedBlock */
-    async digestFinalizedBlock(finalizedBlock, broadcastNewCandidate = true, persistToDisk = true) {
+    /**
+     * @param {BlockData} finalizedBlock
+     * @param {Object} [options] - Configuration options for the blockchain.
+     * @param {boolean} [options.skipValidation] - default: false
+     * @param {boolean} [options.broadcastNewCandidate] - default: true
+     * @param {boolean} [options.persistToDisk] - default: true
+     * @param {boolean} [options.storeAsFiles] - default: false
+     */
+    async digestFinalizedBlock(finalizedBlock, options = {}) {
+        const {
+            skipValidation = false,
+            broadcastNewCandidate = true,
+            persistToDisk = true,
+            storeAsFiles = false
+        } = options;
+
+        const startTime = Date.now();
         if (!finalizedBlock) { throw new Error('Invalid block candidate'); }
         if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
 
-        //console.log(`[NODE] Processing PoW block: ${finalizedBlock.index} | ${finalizedBlock.hash}`);
-        const startTime = Date.now();
-
-        const hashConfInfo = await this.#validateBlockProposal(finalizedBlock);
-        if (!hashConfInfo.conform) { return false; }
-
-        const blockDataCloneToDigest = Block.cloneBlockData(finalizedBlock); // clone to avoid modification
-        try {
-            const newStakesOutputs = await this.utxoCache.digestFinalizedBlocks([blockDataCloneToDigest]);
-            //console.log(`[NODE -- VALIDATOR] digestPowProposal accepted: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}`);
-            if (newStakesOutputs.length > 0) { this.vss.newStakes(newStakesOutputs); }
-        } catch (error) {
-            if (error.message !== "Invalid total of balances") { throw error; }
-            console.warn(`[NODE-${this.id.slice(0, 6)}] digestPowProposal rejected: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}
-----------------------
-|| ${error.message} || ==> Rollback UTXO cache
-----------------------`);
-            return false;
-        }
-
-        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
-        this.memPool.digestFinalizedBlockTransactions(blockDataCloneToDigest.Txs);
-
-        this.lastBlockData = Block.cloneBlockData(finalizedBlock);
-        this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
+        const hashConfInfo = skipValidation ? false : await this.#validateBlockProposal(finalizedBlock);
+        if (!skipValidation && (!hashConfInfo || !hashConfInfo.conform)) { return false; }
 
         await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock], persistToDisk);
-        await this.blockchain.checkAndHandleReorg(this.utxoCache);
+        const blocksData = await this.blockchain.checkAndHandleReorg(this.utxoCache);
+        if (!blocksData) { throw new Error('Failed to handle reorg'); }
+        await this.blockchain.applyChainReorg(this.utxoCache, this.vss, blocksData);
+        
+        this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
+        this.memPool.digestFinalizedBlocksTransactions(blocksData);
+
+        if (storeAsFiles) this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
         const timeBetweenPosPow = ((finalizedBlock.timestamp - finalizedBlock.posTimestamp) / 1000).toFixed(2);
-        console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        const isSynchronization = !broadcastNewCandidate && !skipValidation;
+        if (skipValidation) {
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> loaded block from storage | processProposal: ${(Date.now() - startTime)}ms`);
+        } else if (isSynchronization) {
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} (sync) -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${(Date.now() - startTime)}ms`);
+        } else {
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        }
 
         if (!broadcastNewCandidate) { return true; }
 
@@ -206,6 +211,34 @@ export class Node {
 
         return true;
     }
+    /** Aggregates transactions from mempool, creates a new block candidate, signs it and returns it */
+    async #createBlockCandidate() {
+        const startTime = Date.now();
+        const Txs = this.memPool.getMostLucrativeTransactionsBatch();
+        const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
+
+        // Create the block candidate, genesis block if no lastBlockData
+        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 0, 'ContrastGenesisBlock', Txs, posTimestamp);
+        if (this.blockchain.lastBlock) {
+            await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
+            const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
+            if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
+
+            const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
+            const clone = Block.cloneBlockData(this.blockchain.lastBlock);
+            const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
+            blockCandidate = BlockData(this.blockchain.lastBlock.index + 1, clone.supply + clone.coinBase, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, posTimestamp);
+        }
+
+        // Sign the block candidate
+        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.account.address, this.account.address);
+        const signedPosFeeTx = await this.account.signTransaction(posFeeTx);
+        blockCandidate.Txs.unshift(signedPosFeeTx);
+
+        if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(posTimestamp - startTime)}ms`);
+
+        return blockCandidate;
+    }
     /** @param {BlockData} blockData */
     #storeConfirmedBlock(blockData) {
         if (blockData.index >= 1000) { return; }
@@ -213,32 +246,7 @@ export class Node {
         const clone = Block.cloneBlockData(blockData); // clone to avoid modification
         localStorage_v1.saveBlockDataLocally(this.id, clone, 'json');
         localStorage_v1.saveBlockDataLocally(this.id, clone, 'bin');
-    }
-    async #createBlockCandidate() {
-        const startTime = Date.now();
-        const Txs = this.memPool.getMostLucrativeTransactionsBatch();
-
-        // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 0, 'ContrastGenesisBlock', Txs, Date.now());
-        if (this.lastBlockData) {
-            await this.vss.calculateRoundLegitimacies(this.lastBlockData.hash);
-            const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
-            if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
-
-            const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
-            const clone = Block.cloneBlockData(this.lastBlockData);
-            const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
-            blockCandidate = BlockData(this.lastBlockData.index + 1, clone.supply + clone.coinBase, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, Date.now());
-        }
-
-        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.account.address, this.account.address);
-        const signedPosFeeTx = await this.account.signTransaction(posFeeTx);
-        blockCandidate.Txs.unshift(signedPosFeeTx);
-
-        if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
-
-        return blockCandidate;
-    }
+    } // Used by developer to check the block data manually
 
     /**
      * @param {string} topic
@@ -261,10 +269,10 @@ export class Node {
                     break;
                 case 'new_block_pow':
                     if (this.role !== 'validator') { break; }
-                    /*const rnd = Math.floor(Math.random() * 51);
-                    if (rnd === 50) { console.warn(`[NODE-${this.id.slice(0,6)}] incomming new_block_pow rejected`); break; }*/
-                    const lastBlockIndex = this.lastBlockData === null ? 0 : this.lastBlockData.index;
-                    if (data.index === 0 || lastBlockIndex + 1 >= data.index) { this.taskStack.push('digestPowProposal', data); break; }
+                    const lastBlockIndex = this.blockchain.currentHeight;
+                    const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
+                    if (isSynchronized) {
+                        this.taskStack.push('digestPowProposal', data); break; }
 
                     // if we are late, we ask for the missing blocks by p2p streaming
                     this.taskStack.push('syncWithKnownPeers', null, true);

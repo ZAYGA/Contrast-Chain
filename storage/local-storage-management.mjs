@@ -101,7 +101,7 @@ async function loadBlockchainLocally(node, saveBlocksInfo = false) {
         const newStakesOutputs = await node.utxoCache.digestFinalizedBlocks(chainPart);
         if (newStakesOutputs.length > 0) { node.vss.newStakes(newStakesOutputs); }
 
-        node.lastBlockData = chainPart[chainPart.length - 1];
+        node.blockchain.lastBlock = chainPart[chainPart.length - 1];
 
         blockLoadedCount += chainPart.length;
         progressLogger.logProgress(blockLoadedCount);
