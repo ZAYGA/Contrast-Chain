@@ -10,7 +10,7 @@ import { Miner } from './miner.mjs';
 import P2PNetwork from './p2p.mjs';
 import utils from './utils.mjs';
 import { Blockchain } from './blockchain.mjs';
-import { SyncNode } from './sync.mjs';
+import { SyncHandler } from './sync.mjs';
 /**
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
@@ -48,8 +48,8 @@ export class Node {
         this.useDevArgon2 = false;
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
-        /** @type {SyncNode} */
-        this.syncNode = new SyncNode(this.blockchain);
+        /** @type {SyncHandler} */
+        this.syncHandler = new SyncHandler(this.blockchain);
 
     }
 
@@ -66,7 +66,7 @@ export class Node {
         const minersTopics = ['new_block_proposal', 'test'];
         const topicsToSubscribe = this.role === 'validator' ? validatorsTopics : minersTopics;
 
-        await this.syncNode.start(this.p2pNetwork);
+        await this.syncHandler.start(this.p2pNetwork);
         await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
 
         console.info(`Node ${this.id.toString()}, ${this.role.toString()} started - ${loadedBlocks.length} blocks loaded`);
@@ -95,7 +95,7 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
 
                 try {
-                    const blocks = await this.syncNode.getMissingBlocks(this.p2pNetwork, fullAddr);
+                    const blocks = await this.syncHandler.getMissingBlocks(this.p2pNetwork, fullAddr);
                     if (!blocks) { continue; }
 
                     for (const block of blocks) {

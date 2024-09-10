@@ -1,11 +1,11 @@
 import { expect } from 'chai';
-import { SyncNode } from '../../src/sync.mjs';
+import { SyncHandler } from '../../src/sync.mjs';
 import { multiaddr } from 'multiaddr';
 import sinon from 'sinon';
 import { NodeFactory } from '../../src/node-factory.mjs';
 import { Wallet } from '../../src/wallet.mjs';
 
-describe('SyncNode', function () {
+describe('SyncHandler', function () {
     this.timeout(120000); // Increase timeout for longer tests
 
     const NUM_NODES = 5; // Increased number of nodes for more complex scenarios
