@@ -1,10 +1,10 @@
 import localStorage_v1 from '../storage/local-storage-management.mjs';
-import { Validation } from './validation.mjs';
-import { TaskStack } from './taskstack.mjs';
+import { txValidation, blockValidation } from './validation.mjs';
+import { TaskQueue } from './taskQueue.mjs';
 import { Vss } from './vss.mjs';
 import { MemPool } from './memPool.mjs';
 import { UtxoCache } from './utxoCache.mjs';
-import { BlockData, Block } from './block.mjs';
+import { BlockData, BlockUtils } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { Miner } from './miner.mjs';
 import P2PNetwork from './p2p.mjs';
@@ -23,8 +23,8 @@ export class Node {
         this.id = account.address;
         /** @type {string} */
         this.role = role; // 'miner' or 'validator'
-        /** @type {TaskStack} */
-        this.taskStack = TaskStack.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
+        /** @type {TaskQueue} */
+        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
         /** @type {P2PNetwork} */
         this.p2pNetwork = new P2PNetwork({
             role: this.role,
@@ -130,29 +130,27 @@ export class Node {
             if (finalizedBlock.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex}`); return false; }
 
             // verify the hash
-            const { hex, bitsArrayAsString } = await Block.getMinerHash(finalizedBlock, this.useDevArgon2);
+            const { hex, bitsArrayAsString } = await BlockUtils.getMinerHash(finalizedBlock, this.useDevArgon2);
             if (finalizedBlock.hash !== hex) { return 'Hash invalid!'; }
             const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, finalizedBlock);
             if (!hashConfInfo.conform) { return 'Hash not conform!'; }
 
             // control coinbase amount
-            const expectedCoinBase = Block.calculateNextCoinbaseRewardFib(this.blockchain.lastBlock || finalizedBlock);
+            const expectedCoinBase = utils.mining.calculateNextCoinbaseReward(this.blockchain.lastBlock || finalizedBlock);
             if (finalizedBlock.coinBase !== expectedCoinBase) { return `Invalid coinbase amount: ${finalizedBlock.coinBase} - expected: ${expectedCoinBase}`; }
 
             // control mining rewards
-            const { powReward, posReward } = Block.calculateBlockReward(finalizedBlock);
-            if (finalizedBlock.Txs[0].outputs[0].amount !== powReward) { return `Invalid PoW reward: ${finalizedBlock.Txs[0].outputs[0].amount} - expected: ${powReward}`; }
-            if (finalizedBlock.Txs[1].outputs[0].amount !== posReward) { return `Invalid PoS reward: ${finalizedBlock.Txs[0].outputs[0].amount} - expected: ${posReward}`; }
+            blockValidation.areExpectedRewards(finalizedBlock);
 
             // double spend control
-            Validation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
+            blockValidation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
 
             // verify the transactions
             for (let i = 0; i < finalizedBlock.Txs.length; i++) {
                 const tx = finalizedBlock.Txs[i];
                 const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
-                const txValidation = await Validation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
-                if (!txValidation.success) { return `Invalid transaction: ${tx.id} - ${txValidation}`; }
+                const { fee, success } = await txValidation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
+                if (!success) { return `Invalid transaction: ${tx.id} - ${txValidation}`; }
             }
 
             return hashConfInfo;
@@ -218,16 +216,15 @@ export class Node {
         const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
 
         // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.blockchainSettings.blockReward, 1, 0, 'ContrastGenesisBlock', Txs, posTimestamp);
+        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 1, 0, 'ContrastGenesisBlock', Txs, posTimestamp);
         if (this.blockchain.lastBlock) {
             await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
             if (myLegitimacy === undefined) { throw new Error(`No legitimacy for ${this.account.address}, can't create a candidate`); }
 
             const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
-            const clone = Block.cloneBlockData(this.blockchain.lastBlock);
-            const coinBaseReward = Block.calculateNextCoinbaseRewardFib(clone);
-            blockCandidate = BlockData(this.blockchain.lastBlock.index + 1, clone.supply + clone.coinBase, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, posTimestamp);
+            const coinBaseReward = utils.mining.calculateNextCoinbaseReward(this.blockchain.lastBlock);
+            blockCandidate = BlockData(this.blockchain.lastBlock.index + 1, this.blockchain.lastBlock.supply + this.blockchain.lastBlock.coinBase, coinBaseReward, newDifficulty, myLegitimacy, this.blockchain.lastBlock.hash, Txs, posTimestamp);
         }
 
         // Sign the block candidate
@@ -243,7 +240,7 @@ export class Node {
     #storeConfirmedBlock(blockData) {
         if (blockData.index >= 1000) { return; }
         // save the block in local storage definitively
-        const clone = Block.cloneBlockData(blockData); // clone to avoid modification
+        const clone = BlockUtils.cloneBlockData(blockData); // clone to avoid modification
         localStorage_v1.saveBlockDataLocally(this.id, clone, 'json');
         localStorage_v1.saveBlockDataLocally(this.id, clone, 'bin');
     } // Used by developer to check the block data manually
@@ -258,7 +255,7 @@ export class Node {
             switch (topic) {
                 case 'new_transaction':
                     if (this.role !== 'validator') { break; }
-                    this.taskStack.push('pushTransaction', {
+                    this.taskQueue.push('pushTransaction', {
                         utxosByAnchor: this.utxoCache.utxosByAnchor,
                         transaction: data // signedTransaction
                     });
@@ -272,10 +269,10 @@ export class Node {
                     const lastBlockIndex = this.blockchain.currentHeight;
                     const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
                     if (isSynchronized) {
-                        this.taskStack.push('digestPowProposal', data); break; }
+                        this.taskQueue.push('digestPowProposal', data); break; }
 
                     // if we are late, we ask for the missing blocks by p2p streaming
-                    this.taskStack.push('syncWithKnownPeers', null, true);
+                    this.taskQueue.push('syncWithKnownPeers', null, true);
                     break;
                 case 'test':
                     console.warn(`[TEST] heavy msg bytes: ${new Uint8Array(Object.values(data)).length}`);

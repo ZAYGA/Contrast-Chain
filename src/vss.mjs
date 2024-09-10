@@ -102,7 +102,7 @@ export class Vss {
         } else {
             const lastUpperBound = spectrumFunctions.getHighestUpperBound(this.spectrum);
             // TODO: manage this case even if it's impossible to reach
-            if (lastUpperBound + amount >= utils.blockchainSettings.maxSupply) { throw new Error('VSS: Max supply reached.'); }
+            if (lastUpperBound + amount >= utils.SETTINGS.maxSupply) { throw new Error('VSS: Max supply reached.'); }
             this.spectrum[lastUpperBound + amount] = StakeReference(address, anchor);
         }
     }

@@ -1,9 +1,8 @@
-import { Validation } from './validation.mjs';
+import { txValidation } from './validation.mjs';
 import { Transaction_Builder, Transaction, TransactionIO } from './transaction.mjs';
 import utils from './utils.mjs';
 /**
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
- * @typedef {import('./callstack.mjs').TaskStack} TaskStack
  * @typedef {import('./block.mjs').BlockData} BlockData
  */
 
@@ -97,7 +96,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     }
     // -------------------------------------
     getMostLucrativeTransactionsBatch() {
-        const maxTotalBytes = utils.blockchainSettings.maxBlockSize;
+        const maxTotalBytes = utils.SETTINGS.maxBlockSize;
         const totalBytesTrigger = maxTotalBytes * 0.98;
         const transactions = [];
         let totalBytes = 0;
@@ -186,10 +185,10 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         }
 
         // First control format of : amount, address, rule, version, TxID
-        Validation.isConformTransaction(transaction, false);
+        txValidation.isConformTransaction(transaction, false);
 
         // Second control : input > output
-        const fee = Validation.calculateRemainingAmount(transaction, false);
+        const fee = txValidation.calculateRemainingAmount(transaction, false);
 
         // Calculate fee per byte
         transaction.byteWeight = Transaction_Builder.getWeightOfTransaction(transaction);
@@ -199,16 +198,16 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         timings.first = Date.now() - timings.start;
 
         // Third validation: medium computation cost.
-        await Validation.controlTransactionHash(transaction);
+        await txValidation.controlTransactionHash(transaction);
 
         // Fourth validation: low computation cost.
-        await Validation.controlTransactionOutputsRulesConditions(transaction);
+        await txValidation.controlTransactionOutputsRulesConditions(transaction);
 
         // Fifth validation: medium computation cost.
-        await Validation.controlAllWitnessesSignatures(transaction);
+        await txValidation.controlAllWitnessesSignatures(transaction);
         
         // Sixth validation: high computation cost. | this.knownPubKeysAddresses will be filled with new known pubKeys:address
-        await Validation.addressOwnershipConfirmation(utxosByAnchor, transaction, this.knownPubKeysAddresses, this.useDevArgon2);
+        await txValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, this.knownPubKeysAddresses, this.useDevArgon2);
         timings.second = Date.now() - timings.start;
         //console.log(`[MEMPOOL] transaction: ${transaction.id} accepted in ${timings.second}ms (first: ${timings.first}ms)`);
 

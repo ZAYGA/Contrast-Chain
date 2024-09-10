@@ -1,6 +1,6 @@
 'use strict';
 
-import { BlockData, Block } from "../src/block.mjs";
+import { BlockData, BlockUtils } from "../src/block.mjs";
 import utils from '../src/utils.mjs';
 
 /**
@@ -192,7 +192,7 @@ function loadBlockDataJSON(blockIndexStr, blocksFolderPath) {
     const blockFileName = `${blockIndexStr}.json`;
     const filePath = path.join(blocksFolderPath, blockFileName);
     const blockContent = fs.readFileSync(filePath, 'utf8');
-    const blockData = Block.blockDataFromJSON(blockContent);
+    const blockData = BlockUtils.blockDataFromJSON(blockContent);
     
     return blockData;
 }
@@ -262,7 +262,7 @@ function saveBlockDataJSON(blockData, blocksFolderPath) {
  * @param {string} blocksFolderPath
  */
 function saveBlockDataBinary_v1(blockData, blocksFolderPath) {
-    //const cloneOfBlockData = Block.cloneBlockData(blockData);
+    //const cloneOfBlockData = BlockUtils.cloneBlockData(blockData);
     const timings = { start: Date.now() };
     const compressed = utils.compression.msgpack_Zlib.finalizedBlock.toBinary_v1(blockData, true);
     timings.compressed = Date.now() - timings.start;

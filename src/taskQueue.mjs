@@ -1,10 +1,10 @@
 /**
-* @typedef {import("../src/node.mjs").Node} Node
+* @typedef {import("./node.mjs").Node} Node
 */
 
 // Simple task manager, used to avoid vars overwriting in the callstack
 // we also use multithreading when we can group uncolisionning tasks
-export class TaskStack {
+export class TaskQueue {
     /** @type {Node} */
     node = null;
     /** @type {object[]} */
@@ -14,7 +14,7 @@ export class TaskStack {
     syncState = 'idle';
 
     static buildNewStack(node, errorSkippingLogArray = []) {
-        const newCallStack = new TaskStack();
+        const newCallStack = new TaskQueue();
         newCallStack.node = node;
         newCallStack.errorSkippingLogArray = errorSkippingLogArray;
         newCallStack.stackLoop();
@@ -51,7 +51,7 @@ export class TaskStack {
                     console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting done, lastBlockData.index: ${this.node.blockchain.lastBlock === null ? 0 : this.node.blockchain.lastBlock.index}`);
                     break;
                 default:
-                    console.error(`[TASKSTACK] Unknown task type: ${task.type}`);
+                    console.error(`[TaskQueue] Unknown task type: ${task.type}`);
             }
         } catch (error) {
             for (let i = 0; i < this.errorSkippingLogArray.length; i++) {

@@ -1,20 +1,12 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
-import { Validation } from './validation.mjs';
-import { Block } from './block.mjs';
+import { txValidation } from './validation.mjs';
+import { BlockUtils } from './block.mjs';
 
 /**
  * @typedef {import('./account.mjs').Account} Account
  * @typedef {import('./block.mjs').BlockData} BlockData
  */
-
-export const uxtoRulesGlossary = {
-    sig: { description: 'Simple signature verification' },
-    sigOrSlash: { description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
-    lockUntilBlock: { description: 'UTXO locked until block height', lockUntilBlock: 0 },
-    multiSigCreate: { description: 'Multi-signature creation' },
-    p2pExchange: { description: 'Peer-to-peer exchange' }
-}
 
 /**
  * @typedef {Object} TransactionIO
@@ -53,12 +45,9 @@ export class TxIO_Builder {
      * @param {number | undefined} vout - input only
      */
     static newIO(type, amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) {
-        const ruleName = rule.split('_')[0];
-        if (uxtoRulesGlossary[ruleName] === undefined) { throw new Error('Invalid rule name'); }
-
         const anchor = utils.anchor.fromReferences(utxoBlockHeight, utxoTxID, vout);
         const newTxIO = TransactionIO(amount, rule, version, address, anchor);
-        Validation.isValidTransactionIO(newTxIO, type);
+        txValidation.isValidTransactionIO(newTxIO, type);
 
         // delte all undefined properties
         for (const key in newTxIO) {
@@ -143,11 +132,11 @@ export class Transaction_Builder {
     static async createPosRewardTransaction(blockCandidate, address, posStakedAddress) {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
 
-        //const blockFees = Block.calculateTxsTotalFees(blockCandidate.Txs);
+        //const blockFees = BlockUtils.calculateTxsTotalFees(blockCandidate.Txs);
         //if (typeof blockFees !== 'number') { throw new Error('Invalid blockFees'); }
-        const { powReward, posReward } = Block.calculateBlockReward(blockCandidate);
+        const { powReward, posReward } = BlockUtils.calculateBlockReward(blockCandidate);
 
-        const posHashHex = await Block.getBlockSignature(blockCandidate, true);
+        const posHashHex = await BlockUtils.getBlockSignature(blockCandidate, true);
         const posInput = `${posStakedAddress}:${posHashHex}`;
         const inputs = [ posInput ];
         const posOutput = TxIO_Builder.newIO('output', posReward, 'sig_v1', 1, address);
@@ -268,7 +257,7 @@ export class Transaction_Builder {
      * @param {number} feeSupplement
      */
     static calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte, feeSupplement = 0) {
-        if (feePerByte < utils.blockchainSettings.minTransactionFeePerByte) { throw new Error(`Invalid feePerByte: ${feePerByte}`); }
+        if (feePerByte < utils.SETTINGS.minTransactionFeePerByte) { throw new Error(`Invalid feePerByte: ${feePerByte}`); }
         const totalInputAmount = UTXOs.reduce((a, b) => a + b.amount, 0);
 
         const remainingAmount = totalInputAmount - totalSpent;

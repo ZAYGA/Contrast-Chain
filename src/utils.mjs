@@ -36,39 +36,51 @@ async function getArgon2Lib() {
 
 const WorkerModule = isNode ? (await import('worker_threads')).Worker : Worker;
 function newWorker(scriptPath) {
-    if (utils.isNode) {
+    if (isNode) {
         return new WorkerModule(new URL(scriptPath, import.meta.url));
     } else {
         return new WorkerModule(scriptPath, { workerData: { password } });
     }
 }
 
-/*const blockchainSettings = {
-    targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
-    blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
-
-    blockReward: 256_000_000,
-    minBlockReward: 1_000_000,
-    halvingInterval: 52_960, // 1/5 year at 2 min per block
-    maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
-
-    minTransactionFeePerByte: 1,
-    //maxBlockSize: 1_000_000, // 1MB
-    maxBlockSize: 200_000, // 200KB
-};*/
-const blockchainSettings = { // The Fibonacci based distribution
+const SETTINGS = { // The Fibonacci based distribution
+    // BLOCK
     targetBlockTime: 10_000, // 120_000, // 2 min
-    blocksBeforeAdjustment: 30, // ~120sec * 30 = ~3600 sec = ~1 hour
+    maxBlockSize: 200_000, // ~200KB
 
-    rewardMagicNb1: 102_334_155,
-    rewardMagicNb2: 63_245_986,
-    blockReward: 102_334_155 - 63_245_986, // 39_088_169
+    // DISTRIBUTION
+    rewardMagicNb1: 102_334_155, // Fibonacci n+2
+    rewardMagicNb2: 63_245_986, // Fibonacci n+1
+    blockReward: 102_334_155 - 63_245_986, // Fibonacci n = 39_088_169
     minBlockReward: 1,
-    halvingInterval: 10, // 262_980, // 1 year at 2 min per block
+    halvingInterval: 262_980, // 1 year at 2 min per block
     maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
 
+    // TRANSACTION
     minTransactionFeePerByte: 1,
-    maxBlockSize: 200_000, // ~200KB
+};
+const UTXO_RULES_GLOSSARY = {
+    sig: { description: 'Simple signature verification' },
+    sigOrSlash: { description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
+    lockUntilBlock: { description: 'UTXO locked until block height', lockUntilBlock: 0 },
+    multiSigCreate: { description: 'Multi-signature creation' },
+    p2pExchange: { description: 'Peer-to-peer exchange' }
+}
+const MINING_PARAMS = {
+    // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
+    // a difference of 1 difficulty means 3.125% harder to find a valid hash
+    argon2: {
+        time: 1,
+        mem: 2 ** 18,
+        parallelism: 1,
+        type: 2,
+        hashLen: 32,
+    },
+    nonceLength: 4,
+    blocksBeforeAdjustment: 30, // ~120sec * 30 = ~3600 sec = ~1 hour
+    thresholdPerDiffIncrement: 3.2, // meaning 3.4% threshold for 1 diff point
+    maxDiffIncrementPerAdjustment: 32, // 32 diff points = 100% of diff
+    maxTimeDifferenceAdjustment: 32, // in difficutly points, affect max penalty, but max bonus is infinite
 };
 
 class ProgressLogger {
@@ -122,7 +134,7 @@ const addressUtils = {
         }
 
         const hex = argon2hash.hex;
-        const addressBase58 = utils.convert.hex.toBase58(hex).substring(0, 20);
+        const addressBase58 = convert.hex.toBase58(hex).substring(0, 20);
 
         return addressBase58;
     },
@@ -155,11 +167,11 @@ const addressUtils = {
         const addressTypeInfo = addressUtils.glossary[firstChar];
         if (addressTypeInfo === undefined) { throw new Error(`Invalid address firstChar: ${firstChar}`); }
 
-        const addressBase58Hex = utils.convert.base58.toHex(addressBase58);
-        const concatedUint8 = utils.convert.hex.toUint8Array(`${addressBase58Hex}${pubKeyHex}`);
-        const arrayBuffer = await utils.cryptoLib.subtle.digest('SHA-256', concatedUint8);
+        const addressBase58Hex = convert.base58.toHex(addressBase58);
+        const concatedUint8 = convert.hex.toUint8Array(`${addressBase58Hex}${pubKeyHex}`);
+        const arrayBuffer = await cryptoLib.subtle.digest('SHA-256', concatedUint8);
         const uint8Array = new Uint8Array(arrayBuffer);
-        const addressPubKeyHashHex = utils.convert.uint8Array.toHex(uint8Array);
+        const addressPubKeyHashHex = convert.uint8Array.toHex(uint8Array);
 
         const bitsArray = convert.hex.toBits(addressPubKeyHashHex);
         if (!bitsArray) { throw new Error('Failed to convert the public key to bits'); }
@@ -625,16 +637,16 @@ const compression = {
                 if (typeValidation.hex(tx.id) === false) {
                     throw new Error('Invalid tx.id');
                 }
-                tx.id = utils.convert.hex.toUint8Array(tx.id); // safe type: hex
+                tx.id = convert.hex.toUint8Array(tx.id); // safe type: hex
                 for (let i = 0; i < tx.witnesses.length; i++) {
                     const signature = tx.witnesses[i].split(':')[0];
                     const publicKey = tx.witnesses[i].split(':')[1];
-                    tx.witnesses[i] = [utils.convert.hex.toUint8Array(signature), utils.convert.hex.toUint8Array(publicKey)]; // safe type: hex
+                    tx.witnesses[i] = [convert.hex.toUint8Array(signature), convert.hex.toUint8Array(publicKey)]; // safe type: hex
                 }
                 for (let j = 0; j < tx.inputs.length; j++) {
                     const input = tx.inputs[j];
                     if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
-                        tx.inputs[j] = utils.typeValidation.hex(input) ? utils.convert.hex.toUint8Array(input) : input;
+                        tx.inputs[j] = typeValidation.hex(input) ? convert.hex.toUint8Array(input) : input;
                         continue;
                     }
 
@@ -650,10 +662,10 @@ const compression = {
             /** @param {Transaction} decodedTx */
             fromBinary_v1(decodedTx) {
                 const tx = decodedTx;
-                tx.id = utils.convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
+                tx.id = convert.uint8Array.toHex(tx.id); // safe type: uint8 -> hex
                 for (let i = 0; i < tx.witnesses.length; i++) {
-                    const signature = utils.convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
-                    const publicKey = utils.convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
+                    const signature = convert.uint8Array.toHex(tx.witnesses[i][0]); // safe type: uint8 -> hex
+                    const publicKey = convert.uint8Array.toHex(tx.witnesses[i][1]); // safe type: uint8 -> hex
                     tx.witnesses[i] = `${signature}:${publicKey}`;
                 }
                 for (let j = 0; j < tx.inputs.length; j++) {
@@ -661,8 +673,8 @@ const compression = {
                     if (typeof input === 'string') {
                         continue;
                     }
-                    if (utils.typeValidation.uint8Array(input)) {
-                        tx.inputs[j] = utils.convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
+                    if (typeValidation.uint8Array(input)) {
+                        tx.inputs[j] = convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                         continue;
                     }
                 };
@@ -674,7 +686,7 @@ const compression = {
             /** @param {BlockData} blockData */
             toBinary_v1(blockData) {
                 // first block prevHash isn't Hex
-                blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
+                blockData.prevHash = blockData.index !== 0 ? convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
                 };
@@ -691,7 +703,7 @@ const compression = {
                 const decoded = msgpack.decode(decompressed);
 
                 // first block prevHash isn't Hex
-                decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
+                decoded.prevHash = decoded.index !== 0 ? convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
                 for (let i = 0; i < decoded.Txs.length; i++) {
                     decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
                 };
@@ -704,9 +716,9 @@ const compression = {
              * @param {BlockData} blockData */
             toBinary_v1(blockData, compress = false) {
                 // first block prevHash isn't Hex
-                blockData.prevHash = blockData.index !== 0 ? utils.convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
-                blockData.hash = utils.convert.hex.toUint8Array(blockData.hash); // safe type: hex
-                blockData.nonce = utils.convert.hex.toUint8Array(blockData.nonce); // safe type: hex
+                blockData.prevHash = blockData.index !== 0 ? convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
+                blockData.hash = convert.hex.toUint8Array(blockData.hash); // safe type: hex
+                blockData.nonce = convert.hex.toUint8Array(blockData.nonce); // safe type: hex
 
                 for (let i = 0; i < blockData.Txs.length; i++) {
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
@@ -725,9 +737,9 @@ const compression = {
                 const decoded = msgpack.decode(readyToDecode);
 
                 // first block prevHash isn't Hex
-                decoded.prevHash = decoded.index !== 0 ? utils.convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
-                decoded.hash = utils.convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
-                decoded.nonce = utils.convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
+                decoded.prevHash = decoded.index !== 0 ? convert.uint8Array.toHex(decoded.prevHash) : decoded.prevHash;
+                decoded.hash = convert.uint8Array.toHex(decoded.hash); // safe type: uint8 -> hex
+                decoded.nonce = convert.uint8Array.toHex(decoded.nonce); // safe type: uint8 -> hex
 
                 for (let i = 0; i < decoded.Txs.length; i++) {
                     decoded.Txs[i] = compression.msgpack_Zlib.prepareTransaction.fromBinary_v1(decoded.Txs[i]);
@@ -739,21 +751,6 @@ const compression = {
     }
 };
 
-const miningParams = {
-    // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
-    // a difference of 1 difficulty means 3.125% harder to find a valid hash
-    argon2: {
-        time: 1,
-        mem: 2 ** 18,
-        parallelism: 1,
-        type: 2,
-        hashLen: 32,
-    },
-    nonceLength: 4,
-    thresholdPerDiffIncrement: 3.2, // meaning 3.4% threshold for 1 diff point
-    maxDiffIncrementPerAdjustment: 32, // 32 diff points = 100% of diff
-    maxTimeDifferenceAdjustment: 32, // in difficutly points, affect max penalty, but max bonus is infinite
-};
 const mining = {
     /**
     * @param {BlockMiningData[]} blockMiningData
@@ -770,10 +767,10 @@ const mining = {
         if (typeof blockIndex !== 'number') { console.error('Invalid blockIndex'); return difficulty; }
         if (blockIndex === 0) { return difficulty; }
 
-        if (blockIndex % blockchainSettings.blocksBeforeAdjustment !== 0) { return difficulty; }
+        if (blockIndex % MINING_PARAMS.blocksBeforeAdjustment !== 0) { return difficulty; }
 
         const averageBlockTimeMS = mining.calculateAverageBlockTime(blockMiningData);
-        const deviation = 1 - (averageBlockTimeMS / blockchainSettings.targetBlockTime);
+        const deviation = 1 - (averageBlockTimeMS / SETTINGS.targetBlockTime);
         const deviationPercentage = deviation * 100; // over zero = too fast / under zero = too slow
 
         if (logs) {
@@ -781,8 +778,8 @@ const mining = {
             console.log(`Deviation: ${deviation.toFixed(4)} | Deviation percentage: ${deviationPercentage.toFixed(2)}%`);
         }
 
-        const diffAdjustment = Math.floor(Math.abs(deviationPercentage) / miningParams.thresholdPerDiffIncrement);
-        const capedDiffIncrement = Math.min(diffAdjustment, miningParams.maxDiffIncrementPerAdjustment);
+        const diffAdjustment = Math.floor(Math.abs(deviationPercentage) / MINING_PARAMS.thresholdPerDiffIncrement);
+        const capedDiffIncrement = Math.min(diffAdjustment, MINING_PARAMS.maxDiffIncrementPerAdjustment);
         const diffIncrement = deviation > 0 ? capedDiffIncrement : -capedDiffIncrement;
         const newDifficulty = Math.max(difficulty + diffIncrement, 1); // cap at 1 minimum
 
@@ -793,16 +790,30 @@ const mining = {
 
         return newDifficulty;
     },
+    /** @param {BlockData} blockData - undefined if genesis block */
+    calculateNextCoinbaseReward(blockData) {
+        if (!blockData) { throw new Error('Invalid blockData'); }
+
+        const halvings = Math.floor( (blockData.index + 1) / SETTINGS.halvingInterval );
+        const coinBases = [SETTINGS.rewardMagicNb1, SETTINGS.rewardMagicNb2];
+        for (let i = 0; i < halvings + 1; i++) {
+            coinBases.push(coinBases[coinBases.length - 2] - coinBases[coinBases.length - 1]);
+        }
+
+        const coinBase = Math.max(coinBases[coinBases.length - 1], SETTINGS.minBlockReward);
+        const maxSupplyWillBeReached = blockData.supply + coinBase >= SETTINGS.maxSupply;
+        return maxSupplyWillBeReached ? SETTINGS.maxSupply - blockData.supply : coinBase;
+    },
     /** @param {BlockMiningData[]} blockMiningData */
     calculateAverageBlockTime: (blockMiningData) => {
-        const NbBlocks = blockchainSettings.blocksBeforeAdjustment;
+        const NbBlocks = MINING_PARAMS.blocksBeforeAdjustment;
         const olderBlock = blockMiningData[blockMiningData.length - NbBlocks];
         const newerBlock = blockMiningData[blockMiningData.length - 1];
         const periodInterval = newerBlock.timestamp - olderBlock.posTimestamp;
 
         return periodInterval / NbBlocks;
     },
-    generateRandomNonce: (length = miningParams.nonceLength) => {
+    generateRandomNonce: (length = MINING_PARAMS.nonceLength) => {
         const Uint8 = new Uint8Array(length);
         crypto.getRandomValues(Uint8);
 
@@ -820,7 +831,7 @@ const mining = {
      *@param {string} nonce - Nonce to hash
     */
     hashBlockSignature: async (argon2HashFunction, blockSignature = '', nonce = '') => {
-        const { time, mem, parallelism, type, hashLen } = miningParams.argon2;
+        const { time, mem, parallelism, type, hashLen } = MINING_PARAMS.argon2;
         const newBlockHash = await argon2HashFunction(blockSignature, nonce, time, mem, parallelism, type, hashLen);
         if (!newBlockHash) { return false; }
 
@@ -832,8 +843,8 @@ const mining = {
         if (!typeValidation.numberIsPositiveInteger(posTimestamp)) { throw new Error('Invalid posTimestamp'); }
         if (!typeValidation.numberIsPositiveInteger(timestamp)) { throw new Error('Invalid timestamp'); }
 
-        const differenceRatio = (timestamp - posTimestamp) / blockchainSettings.targetBlockTime;
-        const timeDiffAdjustment = miningParams.maxTimeDifferenceAdjustment - Math.round(differenceRatio * miningParams.maxTimeDifferenceAdjustment);
+        const differenceRatio = (timestamp - posTimestamp) / SETTINGS.targetBlockTime;
+        const timeDiffAdjustment = MINING_PARAMS.maxTimeDifferenceAdjustment - Math.round(differenceRatio * MINING_PARAMS.maxTimeDifferenceAdjustment);
         
         const finalDifficulty = Math.max(difficulty + timeDiffAdjustment + legitimacy, 1); // cap at 1 minimum
 
@@ -923,13 +934,14 @@ const utils = {
     cryptoLib,
     argon2: argon2Lib,
     newWorker,
-    blockchainSettings,
+    SETTINGS,
     ProgressLogger,
     addressUtils,
     typeValidation,
     convert,
     compression,
     conditionnals,
+    UTXO_RULES_GLOSSARY,
     mining,
     anchor,
     devParams

@@ -1,4 +1,4 @@
-import { BlockData, Block } from './block.mjs';
+import { BlockData, BlockUtils } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
 
@@ -39,11 +39,11 @@ export class Miner {
         blockCandidate.nonce = headerNonce;
         blockCandidate.timestamp = Math.max(blockCandidate.posTimestamp + 1 + this.bets[blockCandidate.index], Date.now());
 
-        const { powReward, posReward } = Block.calculateBlockReward(blockCandidate);
+        const { powReward, posReward } = BlockUtils.calculateBlockReward(blockCandidate);
         const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, powReward);
-        Block.setCoinbaseTransaction(blockCandidate, coinbaseTx);
+        BlockUtils.setCoinbaseTransaction(blockCandidate, coinbaseTx);
 
-        const signatureHex = await Block.getBlockSignature(blockCandidate);
+        const signatureHex = await BlockUtils.getBlockSignature(blockCandidate);
         const nonce = `${headerNonce}${coinbaseNonce}`;
 
         return { signatureHex, nonce };
@@ -63,11 +63,11 @@ export class Miner {
             this.#cleanupCandidates();
         }
         //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
-        //const blockCandidateClone = Block.cloneBlockData(blockCandidate);
+        //const blockCandidateClone = BlockUtils.cloneBlockData(blockCandidate);
         this.candidates.push(blockCandidate);
     }
     #betOnTimeToPow() {
-        const targetBlockTime = utils.blockchainSettings.targetBlockTime;
+        const targetBlockTime = utils.SETTINGS.targetBlockTime;
         const betBasis = targetBlockTime * this.betRange.min;
         const betRandom = Math.random() * (this.betRange.max - this.betRange.min) * targetBlockTime;
         const bet = betBasis + betRandom;

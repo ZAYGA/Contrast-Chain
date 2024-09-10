@@ -1,7 +1,7 @@
 import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData } from './block.mjs';
 import utils from './utils.mjs';
-import { Validation } from './validation.mjs';
+import { txValidation } from './validation.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockData} BlockData
@@ -102,7 +102,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
             if (output.rule === "sigOrSlash") {
                 if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
-                if (Validation.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
+                if (txValidation.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
                 newStakesOutputs.push(output); // for now we only create new range
             }
         }

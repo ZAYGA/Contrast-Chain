@@ -2,7 +2,7 @@
 import utils from './utils.mjs';
 import localStorage_v1 from '../storage/local-storage-management.mjs';
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
-import { BlockData, Block } from './block.mjs';
+import { BlockData, BlockUtils } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { Account } from './account.mjs';
 import { Wallet } from './wallet.mjs';
@@ -15,7 +15,7 @@ const contrast = {
     AsymetricFunctions,
 
     BlockData,
-    Block,
+    BlockUtils,
     Transaction_Builder,
     Wallet,
     Account,

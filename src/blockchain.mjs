@@ -4,7 +4,7 @@ import pino from 'pino';
 import { BlockTree } from './block-tree.mjs';
 import { ForkChoiceRule } from './fork-rule.mjs';
 import { UtxoCache } from './utxoCache.mjs';
-import { Block, BlockData } from './block.mjs';
+import { BlockUtils, BlockData } from './block.mjs';
 import { SnapshotManager } from './snapshot-system.mjs';
 import { Vss } from './vss.mjs';
 import utils from './utils.mjs';
@@ -311,7 +311,7 @@ export class Blockchain {
      */
     async applyChainReorg(utxoCache, vss, blocksData) {
         for (const block of blocksData) {
-            const blockDataCloneToDigest = Block.cloneBlockData(block); // clone to avoid modification
+            const blockDataCloneToDigest = BlockUtils.cloneBlockData(block); // clone to avoid modification
             const newStakesOutputs = await utxoCache.digestFinalizedBlocks([blockDataCloneToDigest]);
             if (!newStakesOutputs) { continue; }
 
