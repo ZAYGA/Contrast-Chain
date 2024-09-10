@@ -1,15 +1,17 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Blockchain } from '../src/blockchain.mjs';
-import { BlockData } from '../src/block.mjs';
+import { BlockData, BlockUtils } from '../src/block.mjs';
+import { UtxoCache } from '../src/utxoCache.mjs';
 import utils from '../src/utils.mjs';
-import LevelUp from 'levelup';
-import MemDown from 'memdown';
+import { Vss } from '../src/vss.mjs';
+
 
 describe('Blockchain Save and Load Tests', function () {
     let blockchain;
-    let mockP2P;
+    let utxoCache;
     let dbPath;
+    let vss;
 
     function generateRandomHex(length) {
         return Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -17,9 +19,8 @@ describe('Blockchain Save and Load Tests', function () {
 
     beforeEach(function () {
         dbPath = './test-db' + Math.random();
-        mockP2P = {
-            // Add any necessary mock methods
-        };
+        utxoCache = new UtxoCache();
+        vss = new Vss();
     });
 
     afterEach(async function () {
@@ -29,12 +30,34 @@ describe('Blockchain Save and Load Tests', function () {
         sinon.restore();
     });
 
+    function createGenesisBlock() {
+        const timestamp = Date.now();
+        const coinbaseTxId = generateRandomHex(8);
+        const coinbaseReward = utils.SETTINGS.blockReward;
+        const transactions = [
+            {
+                id: coinbaseTxId,
+                inputs: [generateRandomHex(64)],
+                outputs: [
+                    {
+                        amount: coinbaseReward,
+                        address: "genesisAddress",
+                        rule: "sig_v1",
+                        anchor: utils.anchor.fromReferences(0, coinbaseTxId, 0)
+                    }
+                ],
+                witnesses: []
+            }
+        ];
+
+        return BlockData(0, 0, coinbaseReward, 1, 0, "ContrastGenesisBlock", transactions, timestamp, timestamp, generateRandomHex(64), "0");
+    }
+
     function createValidBlock(index, prevHash, prevSupply) {
         const timestamp = Date.now();
         const coinbaseTxId = generateRandomHex(8);
         const coinbaseReward = utils.SETTINGS.blockReward / Math.pow(2, Math.floor(index / utils.SETTINGS.halvingInterval));
         const newSupply = prevSupply + coinbaseReward;
-        const anchor = utils.anchor.fromReferences(index, coinbaseTxId, 0);
         const transactions = [
             {
                 id: coinbaseTxId,
@@ -44,23 +67,22 @@ describe('Blockchain Save and Load Tests', function () {
                         amount: coinbaseReward,
                         address: "testAddress",
                         rule: "sig_v1",
-                        version: 1,
-                        anchor: anchor
+                        anchor: utils.anchor.fromReferences(index, coinbaseTxId, 0)
                     }
                 ],
                 witnesses: []
             }
         ];
 
-        return BlockData(index, prevSupply, coinbaseReward, 1, 0, prevHash, transactions, timestamp, timestamp, `block${index}Hash`, index.toString());
-        // Should be ? :
-        //return BlockData(index, newSupply, coinbaseReward, 1, 0, prevHash, transactions, timestamp, timestamp, `block${index}Hash`, index.toString());
+        return BlockData(index, newSupply, coinbaseReward, 1, 0, prevHash, transactions, timestamp, timestamp, generateRandomHex(64), index.toString());
     }
 
     describe('Initialization and Genesis Block', function () {
-        it('should initialize with genesis block when not loading from disk', async function () {
-            blockchain = new Blockchain(dbPath, mockP2P, { loadFromDisk: false });
+        it('should initialize with genesis block', async function () {
+            const genesisBlock = createGenesisBlock();
+            blockchain = new Blockchain('testNodeId');
             await blockchain.init();
+            await blockchain.addConfirmedBlocks(utxoCache, [genesisBlock]);
 
             expect(blockchain.currentHeight).to.equal(0);
             expect(blockchain.lastBlock).to.not.be.null;
@@ -70,17 +92,16 @@ describe('Blockchain Save and Load Tests', function () {
 
     describe('Save and Load Functionality', function () {
         it('should save blocks to disk', async function () {
-            blockchain = new Blockchain(dbPath, mockP2P, { loadFromDisk: false });
+            const genesisBlock = createGenesisBlock();
+            blockchain = new Blockchain('testNodeId');
             await blockchain.init();
+            await blockchain.addConfirmedBlocks(utxoCache, [genesisBlock]);
 
-            const genesisSupply = blockchain.lastBlock.supply;
-            const block1 = createValidBlock(1, blockchain.lastBlock.hash, genesisSupply);
-            const block2 = createValidBlock(2, block1.hash, genesisSupply + block1.coinBase);
+            const block1 = createValidBlock(1, genesisBlock.hash, genesisBlock.supply);
+            const block2 = createValidBlock(2, block1.hash, genesisBlock.supply + block1.coinBase);
 
-            await blockchain.addConfirmedBlock(block1);
-            await blockchain.addConfirmedBlock(block2);
+            await blockchain.addConfirmedBlocks(utxoCache, [block1, block2]);
 
-            // Use getBlock instead of getBlockFromDisk
             const savedBlock1 = await blockchain.getBlock(block1.hash);
             const savedBlock2 = await blockchain.getBlock(block2.hash);
 
@@ -88,33 +109,31 @@ describe('Blockchain Save and Load Tests', function () {
             expect(savedBlock2.index).to.equal(block2.index);
         });
 
-
-
         it('should load blockchain from disk', async function () {
             // First, create and save some blocks
-            blockchain = new Blockchain(dbPath, mockP2P, { loadFromDisk: false });
+            const genesisBlock = createGenesisBlock();
+            blockchain = new Blockchain('testNodeId');
             await blockchain.init();
+            await blockchain.addConfirmedBlocks(utxoCache, [genesisBlock]);
 
-            const genesisSupply = blockchain.lastBlock.supply;
-            const block1 = createValidBlock(1, blockchain.lastBlock.hash, genesisSupply);
-            const block2 = createValidBlock(2, block1.hash, genesisSupply + block1.coinBase);
+            const block1 = createValidBlock(1, genesisBlock.hash, genesisBlock.supply);
+            const block2 = createValidBlock(2, block1.hash, genesisBlock.supply + block1.coinBase);
 
-            await blockchain.addConfirmedBlock(block1);
-            await blockchain.addConfirmedBlock(block2);
-
+            await blockchain.addConfirmedBlocks(utxoCache, [block1, block2]);
+            const blocks = await blockchain.checkAndHandleReorg(utxoCache);
+            await blockchain.applyChainReorg(utxoCache, vss, blocks);
             // Close the first blockchain instance
             await blockchain.close();
 
             // Now, create a new blockchain instance and load from disk
-            const loadedBlockchain = new Blockchain(dbPath, mockP2P, { loadFromDisk: true });
+            const loadedBlockchain = new Blockchain('testNodeId');
             await loadedBlockchain.init();
-
-            await new Promise((resolve) => setTimeout(resolve, 6000));
+            const loadedBlocks = await loadedBlockchain.recoverBlocksFromStorage();
 
             expect(loadedBlockchain.currentHeight).to.equal(2);
             expect(loadedBlockchain.lastBlock.index).to.equal(2);
 
-            const loadedBlock1 = await loadedBlockchain.getBlock(block1.hash);
+            const loadedBlock1 = loadedBlocks[1];
             expect(loadedBlock1.index).to.equal(block1.index);
 
             // Close the loaded blockchain instance
@@ -122,24 +141,5 @@ describe('Blockchain Save and Load Tests', function () {
         });
     });
 
-    return;
 
-    describe('Error Handling', function () {
-        it('should handle errors when loading from disk fails', async function () {
-            const db = LevelUp(MemDown());
-            sinon.stub(db, 'get').rejects(new Error('Database error'));
-            sinon.stub(LevelUp, 'prototype').returns(db);
-
-            blockchain = new Blockchain(dbPath, mockP2P, { loadFromDisk: true });
-
-            await blockchain.init();
-
-            expect(blockchain.currentHeight).to.equal(0);
-            expect(blockchain.lastBlock).to.not.be.null;
-            expect(blockchain.lastBlock.index).to.equal(0);
-
-            // Close the blockchain instance
-            await blockchain.close();
-        });
-    });
 });

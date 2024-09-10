@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Blockchain } from '../src/blockchain.mjs';
+import { Blockchain } from '../../src/blockchain.mjs';
 
 describe('Blockchain', function () {
     let blockchain;

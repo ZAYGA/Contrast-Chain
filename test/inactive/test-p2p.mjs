@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { P2PNetwork } from '../src/p2p.mjs';  // Adjust the import path as needed
+import { P2PNetwork } from '../../src/p2p.mjs';  // Adjust the import path as needed
 
 describe('P2PNetwork', function () {
   this.timeout(30000);  // Increase timeout for network operations
