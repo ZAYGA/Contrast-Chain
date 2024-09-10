@@ -70,7 +70,6 @@ class P2PNetwork extends EventEmitter {
 
             this.#setupEventListeners();
             await this.#connectToBootstrapNodes();
-            this.#startPeriodicTasks();
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to start P2P network');
             throw error;
@@ -78,16 +77,6 @@ class P2PNetwork extends EventEmitter {
     }
     async stop() {
         if (this.p2pNode) {
-            // Clear periodic tasks
-            if (this.announceIntervalId) {
-                clearInterval(this.announceIntervalId);
-                this.announceIntervalId = null;
-            }
-            if (this.cleanupIntervalId) {
-                clearInterval(this.cleanupIntervalId);
-                this.cleanupIntervalId = null;
-            }
-
             // Stop the libp2p node
             await this.p2pNode.stop();
             this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
@@ -141,12 +130,10 @@ class P2PNetwork extends EventEmitter {
     #handlePeerConnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
         this.updatePeer(peerId.toString(), { status: 'connected' });
-        this.emit('peer:connect', peerId.toString());
     }
     #handlePeerDisconnect = ({ detail: peerId }) => {
         this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
         this.peers.delete(peerId.toString());
-        this.emit('peer:disconnect', peerId.toString());
     }
     /**
      * @param {Object} detail
@@ -161,10 +148,6 @@ class P2PNetwork extends EventEmitter {
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
-    }
-    #startPeriodicTasks() {
-        //this.announceIntervalId = setInterval(() => this.announcePeer(), this.options.announceInterval);
-        //this.cleanupIntervalId = setInterval(() => this.cleanupPeers(), this.options.cleanupInterval);
     }
 
     /**
@@ -254,15 +237,7 @@ class P2PNetwork extends EventEmitter {
         this.logger.debug({ component: 'P2PNetwork', peerId, data }, 'Peer updated');
         this.emit('peer:updated', peerId, data);
     }
-    cleanupPeers() {
-        const now = Date.now();
-        for (const [peerId, peerData] of this.peers.entries()) {
-            if (now - peerData.lastSeen > this.options.peerTimeout) {
-                this.peers.delete(peerId);
-                this.emit('peer:removed', peerId);
-            }
-        }
-    }
+
     getStatus() {
         return {
             isSyncing: false,
@@ -271,25 +246,6 @@ class P2PNetwork extends EventEmitter {
             connectionCount: this.peers.size,
             peerId: this.p2pNode.peerId.toString(),
         };
-    }
-    async announcePeer() {
-        try {
-            const topic = 'peer:announce';
-            await this.subscribe(topic);
-            const data = { peerId: this.p2pNode.peerId.toString(), status: this.getStatus() };
-            //  await this.broadcast(topic, data);
-            this.logger.debug({ component: 'P2PNetwork' }, 'Peer announced');
-        } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to announce peer');
-        }
-    }
-    async findPeer(peerId) {
-        try {
-            return await this.p2pNode.peerRouting.findPeer(peerId);
-        } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', peerId, error: error.message }, 'Failed to find peer');
-            return null;
-        }
     }
     getConnectedPeers() {
         return Array.from(this.peers.keys());
