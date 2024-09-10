@@ -12,7 +12,7 @@ const MAX_BLOCKS_PER_REQUEST = 10000;
 const RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000; // 1 second
 
-export class SyncNode {
+export class SyncHandler {
     /** @type {Blockchain} */
     constructor(blockchain) {
         this.p2pNetworkMaxMessageSize = 0;
@@ -132,11 +132,11 @@ export class SyncNode {
             const blocks = await this.#requestBlocksFromPeer(p2pNetwork, peerMultiaddr, currentHeight, endIndex);
             this.logger.info('Sync => successfully fetch blocks from peer');
             return blocks;
-            
+
             //await this.syncBlocksFromPeer(utxoCache, peerMultiaddr, peerStatus.currentHeight); => FUNCTION DELETED
             //await this.addBlocksToChain(utxoCache, blocks); => FUNCTION DELETED
             //await this.blockchain.addConfirmedBlocks(utxoCache, blocks);
-            
+
         } catch (error) {
             this.logger.error({ error: error.message }, 'Error during sync');
             throw error;

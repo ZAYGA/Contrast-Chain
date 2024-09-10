@@ -3,7 +3,7 @@ import sinon from 'sinon';
 import { NodeFactory } from '../../src/node-factory.mjs';
 import { Transaction_Builder } from '../../src/transaction.mjs';
 import { Wallet } from '../../src/wallet.mjs';
-import { SyncNode } from '../../src/sync.mjs';
+import { SyncHandler } from '../../src/sync.mjs';
 
 describe('Comprehensive Sync System Test', function () {
     this.timeout(3600000); // 1 hour
