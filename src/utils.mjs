@@ -43,7 +43,7 @@ function newWorker(scriptPath) {
     }
 }
 
-const blockchainSettings = {
+/*const blockchainSettings = {
     targetBlockTime: 10_000, // 10 sec ||| // 120_000, // 2 min
     blocksBeforeAdjustment: 50, // ~10sec * 50 = ~500 sec = ~8.3 min
 
@@ -55,17 +55,21 @@ const blockchainSettings = {
     minTransactionFeePerByte: 1,
     //maxBlockSize: 1_000_000, // 1MB
     maxBlockSize: 200_000, // 200KB
-};
-/*const blockchainSettings = { // Not used ATM
-    targetBlockTime: 600_000, // 10 min
-    blocksBeforeAdjustment: 144, // ~24h
-
-    blockReward: 25_600,
-    minBlockReward: 100,
-    halvingInterval: 52_960, // 1 year at 10 min per block
-    maxSupply: 27_000_000_00, // last 2 zeros are considered as decimals
-};
 };*/
+const blockchainSettings = { // The Fibonacci based distribution
+    targetBlockTime: 10_000, // 120_000, // 2 min
+    blocksBeforeAdjustment: 30, // ~120sec * 30 = ~3600 sec = ~1 hour
+
+    rewardMagicNb1: 102_334_155,
+    rewardMagicNb2: 63_245_986,
+    blockReward: 102_334_155 - 63_245_986, // 39_088_169
+    minBlockReward: 1,
+    halvingInterval: 10, // 262_980, // 1 year at 2 min per block
+    maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
+
+    minTransactionFeePerByte: 1,
+    maxBlockSize: 200_000, // ~200KB
+};
 
 class ProgressLogger {
     constructor(total) {

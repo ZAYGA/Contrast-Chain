@@ -33,7 +33,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 0, receiverAc
     const senderAccount = accounts[senderAccountIndex];
     const receiverAddress = accounts[receiverAccountIndex].address;
 
-    const amountToSend = 1_000_000;
+    const amountToSend = 100_000;
     const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
     if (signedTx) {
         //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${signedTx.id}`);
@@ -87,7 +87,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 0) {
         const transfers = [];
         for (let i = 0; i < accounts.length; i++) {
             if (i === senderAccountIndex) { continue; }
-            const amount = Math.floor(Math.random() * (1_000_000) + 1_100_000);
+            const amount = Math.floor(Math.random() * (100_000) + 100_000); // from 100k to 200k
             const transfer = { recipientAddress: accounts[i].address, amount };
             transfers.push(transfer);
         }
@@ -112,7 +112,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 0) {
  * @param {number} senderAccountIndex
  * @param {number} amountToStake
  */
-async function userStakeInVSS(node, accounts, senderAccountIndex = 0, amountToStake = 1_000_000) {
+async function userStakeInVSS(node, accounts, senderAccountIndex = 0, amountToStake = 100_000) {
     const senderAccount = accounts[senderAccountIndex];
     const stakingAddress = senderAccount.address;
 

@@ -137,12 +137,26 @@ export class Block {
         if (firstTx && Transaction_Builder.isCoinBaseOrFeeTransaction(firstTx, 0)) { blockData.Txs.shift(); }
     }
     /** @param {BlockData} blockData - undefined if genesis block */
-    static calculateNextCoinbaseReward(blockData) {
+    static calculateNextCoinbaseReward(blockData) { // DEPRECATED
         if (!blockData) { throw new Error('Invalid blockData'); }
 
         const halvings = Math.floor( (blockData.index + 1) / utils.blockchainSettings.halvingInterval );
         const coinBase = Math.max( utils.blockchainSettings.blockReward / Math.pow(2, halvings), utils.blockchainSettings.minBlockReward );
 
+        const maxSupplyWillBeReached = blockData.supply + coinBase >= utils.blockchainSettings.maxSupply;
+        return maxSupplyWillBeReached ? utils.blockchainSettings.maxSupply - blockData.supply : coinBase;
+    }
+    /** @param {BlockData} blockData - undefined if genesis block */
+    static calculateNextCoinbaseRewardFib(blockData) { // DEPRECATED
+        if (!blockData) { throw new Error('Invalid blockData'); }
+
+        const halvings = Math.floor( (blockData.index + 1) / utils.blockchainSettings.halvingInterval );
+        const coinBases = [utils.blockchainSettings.rewardMagicNb1, utils.blockchainSettings.rewardMagicNb2];
+        for (let i = 0; i < halvings + 1; i++) {
+            coinBases.push(coinBases[coinBases.length - 2] - coinBases[coinBases.length - 1]);
+        }
+
+        const coinBase = Math.max(coinBases[coinBases.length - 1], utils.blockchainSettings.minBlockReward);
         const maxSupplyWillBeReached = blockData.supply + coinBase >= utils.blockchainSettings.maxSupply;
         return maxSupplyWillBeReached ? utils.blockchainSettings.maxSupply - blockData.supply : coinBase;
     }

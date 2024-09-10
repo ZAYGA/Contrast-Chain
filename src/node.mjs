@@ -136,7 +136,7 @@ export class Node {
             if (!hashConfInfo.conform) { return 'Hash not conform!'; }
 
             // control coinbase amount
-            const expectedCoinBase = Block.calculateNextCoinbaseReward(this.blockchain.lastBlock || finalizedBlock);
+            const expectedCoinBase = Block.calculateNextCoinbaseRewardFib(this.blockchain.lastBlock || finalizedBlock);
             if (finalizedBlock.coinBase !== expectedCoinBase) { return `Invalid coinbase amount: ${finalizedBlock.coinBase} - expected: ${expectedCoinBase}`; }
 
             // control mining rewards
@@ -226,7 +226,7 @@ export class Node {
 
             const newDifficulty = utils.mining.difficultyAdjustment(this.utxoCache.blockMiningData);
             const clone = Block.cloneBlockData(this.blockchain.lastBlock);
-            const coinBaseReward = Block.calculateNextCoinbaseReward(clone);
+            const coinBaseReward = Block.calculateNextCoinbaseRewardFib(clone);
             blockCandidate = BlockData(this.blockchain.lastBlock.index + 1, clone.supply + clone.coinBase, coinBaseReward, newDifficulty, myLegitimacy, clone.hash, Txs, posTimestamp);
         }
 

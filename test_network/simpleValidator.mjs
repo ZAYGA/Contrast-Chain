@@ -7,15 +7,16 @@ import { NodeFactory } from '../src/node-factory.mjs';
 */
 
 /** @param {Node[]} nodes */
-async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) {
+async function waitForP2PNetworkReady(nodes, maxAttempts = 10, interval = 500) {
     console.log('Waiting for P2P network to initialize...');
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const allNodesConnected = nodes.every(node => {
             const peerCount = node.p2pNetwork.getConnectedPeers().length;
-            return peerCount >= 1; // We only need one connection in this test
+            return peerCount >= 2; // We only need one connection in this test
         });
 
-        if (allNodesConnected) { console.log('P2P network is ready'); return; }
+        if (allNodesConnected) { 
+            console.log('P2P network is ready'); return; }
 
         await new Promise(resolve => setTimeout(resolve, interval));
     }
@@ -34,6 +35,7 @@ async function main() {
     wallet.saveAccounts();
     
     const factory = new NodeFactory();
+    //const validatorNode = await factory.createNode(derivedAccounts[0], 'validator', { listenAddress: '/ip4/0.0.0.0/tcp/0' });
     const validatorNode = await factory.createNode(derivedAccounts[0], 'validator');
     validatorNode.useDevArgon2 = useDevArgon2;
     validatorNode.memPool.useDevArgon2 = useDevArgon2;
@@ -41,6 +43,10 @@ async function main() {
     console.log('Validator node started');
 
     await waitForP2PNetworkReady([validatorNode]);
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    await validatorNode.createBlockCandidateAndBroadcast();
     
     while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }
 }

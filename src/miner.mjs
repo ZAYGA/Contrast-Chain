@@ -90,7 +90,6 @@ export class Miner {
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
         for (let i = 0; i < nbOfWorkers; i++) {
-
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
                 try {
