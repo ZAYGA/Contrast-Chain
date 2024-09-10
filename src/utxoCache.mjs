@@ -137,25 +137,22 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
                 const blockData = blocksData[i];
                 const Txs = blockData.Txs;
                 const newStakesOutputsFromBlock = this.#digestFinalizedBlockTransactions(blockData.index, Txs);
-    
+
                 const supplyFromBlock = blockData.supply;
                 const coinBase = blockData.coinBase;
                 const totalSupply = supplyFromBlock + coinBase;
                 const totalOfBalances = this.#calculateTotalOfBalances();
-    
-                if (totalOfBalances !== totalSupply && this.bypassValidation === false) { 
-                    console.warn(`[NODE-${this.id.slice(0, 6)}] digestPowProposal rejected: blockIndex: ${finalizedBlock.index} | legitimacy: ${finalizedBlock.legitimacy}
-----------------------
-|| ${error.message} || ==> Rollback UTXO cache
-----------------------`);
+
+                if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
+                    console.warn(`digestPowProposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy}`);
                     return false;
                 }
                 //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
-    
+
                 this.blockMiningData.push({ index: blockData.index, difficulty: blockData.difficulty, timestamp: blockData.timestamp, posTimestamp: blockData.posTimestamp });
                 newStakesOutputs.push(...newStakesOutputsFromBlock);
             }
-    
+
             return newStakesOutputs;
         } catch (error) {
             console.error(error);
