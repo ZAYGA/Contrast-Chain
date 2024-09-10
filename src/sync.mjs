@@ -166,22 +166,6 @@ export class SyncHandler {
     }
 
     /**
-     * Connects to a peer.
-     * @param {P2PNetwork} p2pNetwork - The P2P network instance.
-     * @param {string} peerMultiaddr - The multiaddress of the peer to connect to.
-     * @returns {Promise<void>}
-     */
-    async #connect(p2pNetwork, peerMultiaddr) {
-        try {
-            await p2pNetwork.p2pNode.dial(peerMultiaddr);
-            this.logger.info({ peerMultiaddr }, 'Connected to peer');
-        } catch (error) {
-            this.logger.error({ peerMultiaddr, error: error.message }, 'Failed to connect to peer');
-            throw error;
-        }
-    } // USELESS ?
-
-    /**
      * Retries an operation with exponential backoff.
      * @param {Function} operation - The operation to retry.
      * @returns {Promise<any>} The result of the operation.
