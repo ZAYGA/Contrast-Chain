@@ -15,9 +15,6 @@ parentPort.on('message', async (task) => {
 				// First control format of : amount, address, rule, version, TxID, available UTXOs
 				txValidation.isConformTransaction(utxosByAnchor, transaction, false);
 
-				// Third validation: medium computation cost.
-				await txValidation.controlTransactionHash(transaction);
-
 				// Fourth validation: low computation cost.
 				await txValidation.controlTransactionOutputsRulesConditions(transaction);
 

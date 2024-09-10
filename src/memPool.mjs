@@ -184,9 +184,6 @@ export class MemPool { // Store transactions that are not yet included in a bloc
 
         timings.first = Date.now() - timings.start;
 
-        // Third validation: medium computation cost.
-        await txValidation.controlTransactionHash(transaction);
-
         // Fourth validation: low computation cost.
         await txValidation.controlTransactionOutputsRulesConditions(transaction);
 

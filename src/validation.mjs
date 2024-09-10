@@ -94,16 +94,6 @@ export class txValidation {
         return fee;
     }
 
-    /** ==> Third validation, low computation cost.
-     * 
-     * - control the transaction hash (SHA256)
-     * @param {Transaction} transaction
-     */
-    static async controlTransactionHash(transaction) {
-        const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
-        if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
-    } // WILL BE REDONDANT WITH THE FIFTH VALIDATION
-
     /** ==> Fourth validation, low computation cost.
      * 
      * - control the right to create outputs using the rule
@@ -130,10 +120,11 @@ export class txValidation {
         const startTime = Date.now();
         if (!Array.isArray(transaction.witnesses)) { throw new Error(`Invalid witnesses: ${transaction.witnesses} !== array`); }
             
-        const message = await Transaction_Builder.hashTxToGetID(transaction);
+        const TxID = await Transaction_Builder.hashTxToGetID(transaction);
+        if (TxID !== transaction.id) { throw new Error('Invalid transaction hash'); }
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const { signature, pubKeyHex } = txValidation.#decomposeWitnessOrThrow(transaction.witnesses[i]);
-            AsymetricFunctions.verifySignature(signature, message, pubKeyHex); // will throw an error if the signature is invalid
+            AsymetricFunctions.verifySignature(signature, TxID, pubKeyHex); // will throw an error if the signature is invalid
         }
 
         //console.log(`[VALIDATION] .controlAllWitnessesSignatures() took ${Date.now() - startTime} ms`);
@@ -213,7 +204,6 @@ export class txValidation {
     static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, isCoinBase, useDevArgon2 = false) {
         txValidation.isConformTransaction(utxosByAnchor, transaction, isCoinBase);
         const fee = txValidation.calculateRemainingAmount(transaction, isCoinBase);
-        await txValidation.controlTransactionHash(transaction);
         await txValidation.controlAllWitnessesSignatures(transaction);
         if (isCoinBase) { return { fee, success: true }; }
         
@@ -222,6 +212,13 @@ export class txValidation {
         return { fee, success: true };
     }
 
+    /** - control the transaction hash (SHA256)
+     * @param {Transaction} transaction
+     */
+    static async controlTransactionHash(transaction) {
+        const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
+        if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
+    }
 }
 
 export class blockValidation {
