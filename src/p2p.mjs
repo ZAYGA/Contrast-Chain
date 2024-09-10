@@ -177,10 +177,7 @@ class P2PNetwork extends EventEmitter {
             const serialized = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
             await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
-        } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
-            throw error;
-        }
+        } catch (error) { this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error'); }
     }
     /**
      * Sends a message to a peer.
