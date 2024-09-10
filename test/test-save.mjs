@@ -1,8 +1,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Blockchain } from '../src/blockchain.mjs';
-import { Block, BlockData } from '../src/block.mjs';
-import { Transaction, TransactionIO } from '../src/transaction.mjs';
+import { BlockData } from '../src/block.mjs';
 import utils from '../src/utils.mjs';
 import LevelUp from 'levelup';
 import MemDown from 'memdown';
@@ -33,7 +32,7 @@ describe('Blockchain Save and Load Tests', function () {
     function createValidBlock(index, prevHash, prevSupply) {
         const timestamp = Date.now();
         const coinbaseTxId = generateRandomHex(8);
-        const coinbaseReward = utils.blockchainSettings.blockReward / Math.pow(2, Math.floor(index / utils.blockchainSettings.halvingInterval));
+        const coinbaseReward = utils.SETTINGS.blockReward / Math.pow(2, Math.floor(index / utils.SETTINGS.halvingInterval));
         const newSupply = prevSupply + coinbaseReward;
         const anchor = utils.anchor.fromReferences(index, coinbaseTxId, 0);
         const transactions = [

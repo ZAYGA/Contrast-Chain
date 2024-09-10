@@ -1,7 +1,7 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
 import { Transaction_Builder } from './transaction.mjs';
-import { Validation } from './validation.mjs';
+import { txValidation } from './validation.mjs';
 
 /**
 * @typedef {Object} BlockMiningData
@@ -72,7 +72,7 @@ export const BlockData = (index, supply, coinBase, difficulty, legitimacy, prevH
         Txs
     };
 }
-export class Block {
+export class BlockUtils {
     /** 
      * @param {BlockData} blockData
      * @param {boolean} excludeCoinbaseAndPos
@@ -94,7 +94,7 @@ export class Block {
      * @returns {Promise<string>} signature Hex
      */
     static async getBlockSignature(blockData, isPosHash = false) {
-        const txsHash = await Block.getBlockTxsHash(blockData, isPosHash);
+        const txsHash = await this.getBlockTxsHash(blockData, isPosHash);
         const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp } = blockData;
         let signatureStr = `${index}${supply}${coinBase}${difficulty}${legitimacy}${prevHash}${posTimestamp}${txsHash}`;
         if (!isPosHash) { signatureStr += blockData.timestamp; }
@@ -104,7 +104,7 @@ export class Block {
     /** @param {BlockData} blockData */
     static async getMinerHash(blockData, useDevArgon2 = false) {
         if (typeof blockData.Txs[0].inputs[0] !== 'string') { throw new Error('Invalid coinbase nonce'); }
-        const signatureHex = await Block.getBlockSignature(blockData);
+        const signatureHex = await this.getBlockSignature(blockData);
 
         const headerNonce = blockData.nonce;
         const coinbaseNonce = blockData.Txs[0].inputs[0];
@@ -123,7 +123,7 @@ export class Block {
     static setCoinbaseTransaction(blockData, coinbaseTx) {
         if (Transaction_Builder.isCoinBaseOrFeeTransaction(coinbaseTx, 0) === false) { console.error('Invalid coinbase transaction'); return false; }
 
-        Block.removeExistingCoinbaseTransaction(blockData);
+        this.removeExistingCoinbaseTransaction(blockData);
         blockData.Txs.unshift(coinbaseTx);
     }
     /** @param {BlockData} blockData */
@@ -136,36 +136,12 @@ export class Block {
         const firstTx = blockData.Txs[0];
         if (firstTx && Transaction_Builder.isCoinBaseOrFeeTransaction(firstTx, 0)) { blockData.Txs.shift(); }
     }
-    /** @param {BlockData} blockData - undefined if genesis block */
-    static calculateNextCoinbaseReward(blockData) { // DEPRECATED
-        if (!blockData) { throw new Error('Invalid blockData'); }
-
-        const halvings = Math.floor( (blockData.index + 1) / utils.blockchainSettings.halvingInterval );
-        const coinBase = Math.max( utils.blockchainSettings.blockReward / Math.pow(2, halvings), utils.blockchainSettings.minBlockReward );
-
-        const maxSupplyWillBeReached = blockData.supply + coinBase >= utils.blockchainSettings.maxSupply;
-        return maxSupplyWillBeReached ? utils.blockchainSettings.maxSupply - blockData.supply : coinBase;
-    }
-    /** @param {BlockData} blockData - undefined if genesis block */
-    static calculateNextCoinbaseRewardFib(blockData) { // DEPRECATED
-        if (!blockData) { throw new Error('Invalid blockData'); }
-
-        const halvings = Math.floor( (blockData.index + 1) / utils.blockchainSettings.halvingInterval );
-        const coinBases = [utils.blockchainSettings.rewardMagicNb1, utils.blockchainSettings.rewardMagicNb2];
-        for (let i = 0; i < halvings + 1; i++) {
-            coinBases.push(coinBases[coinBases.length - 2] - coinBases[coinBases.length - 1]);
-        }
-
-        const coinBase = Math.max(coinBases[coinBases.length - 1], utils.blockchainSettings.minBlockReward);
-        const maxSupplyWillBeReached = blockData.supply + coinBase >= utils.blockchainSettings.maxSupply;
-        return maxSupplyWillBeReached ? utils.blockchainSettings.maxSupply - blockData.supply : coinBase;
-    }
     /** @param {Transaction[]} Txs */
     static calculateTxsTotalFees(Txs) {
         const fees = [];
         for (let i = 0; i < Txs.length; i++) {
             const Tx = Txs[i];
-            const fee = Validation.calculateRemainingAmount(Tx, Transaction_Builder.isCoinBaseOrFeeTransaction(Tx, i));
+            const fee = txValidation.calculateRemainingAmount(Tx, Transaction_Builder.isCoinBaseOrFeeTransaction(Tx, i));
 
             fees.push(fee);
         }
@@ -175,7 +151,7 @@ export class Block {
     }
     /** @param {BlockData} blockData */
     static calculateBlockReward(blockData) {
-        const totalFees = Block.calculateTxsTotalFees(blockData.Txs);
+        const totalFees = this.calculateTxsTotalFees(blockData.Txs);
         const totalReward = totalFees + blockData.coinBase;
         const powReward = Math.floor(totalReward / 2);
         const posReward = totalReward - powReward;
@@ -197,7 +173,7 @@ export class Block {
     }
     /** @param {BlockData} blockData */
     static cloneBlockData(blockData) {
-        const JSON = Block.dataAsJSON(blockData);
-        return Block.blockDataFromJSON(JSON);
+        const JSON = this.dataAsJSON(blockData);
+        return this.blockDataFromJSON(JSON);
     }
 }
