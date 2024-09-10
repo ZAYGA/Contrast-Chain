@@ -2,7 +2,7 @@ import { LRUCache } from 'lru-cache';
 import pino from 'pino';
 
 /**
-* @typedef {Object} treeBlockData
+* @typedef {Object} TreeNode
 * @property {string} hash
 * @property {string} prevHash
 * @property {number} height
@@ -14,9 +14,9 @@ import pino from 'pino';
  * @param {string} prevHash
  * @param {number} height
  * @param {number} score
- * @returns {treeBlockData}
+ * @returns {TreeNode}
  */
-const treeBlockData = (hash, prevHash, height, score) => {
+const TreeNode = (hash, prevHash, height, score) => {
     return { hash, prevHash, height, score };
 };
 
@@ -46,7 +46,7 @@ class BlockTree {
             score: 0
         });
     }
-    /** @param {treeBlockData} block */
+    /** @param {TreeNode} block */
     addBlock(block) {
 
         if (block.hash === block.prevHash) {
@@ -253,4 +253,4 @@ class BlockTree {
     }
 }
 
-export { BlockTree, treeBlockData };
+export { BlockTree, TreeNode };

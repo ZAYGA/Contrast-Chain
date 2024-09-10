@@ -10,7 +10,7 @@ import { Vss } from './vss.mjs';
 import utils from './utils.mjs';
 
 /**
-* @typedef {import("../src/block-tree.mjs").treeBlockData} treeBlockData
+* @typedef {import("../src/block-tree.mjs").TreeNode} TreeNode
 */
 
 /**
