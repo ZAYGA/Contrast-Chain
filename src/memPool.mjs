@@ -13,7 +13,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         /** @type {TransactionsByFeePerByte} */
         this.transactionsByFeePerByte = {};
         /** @type {Object<string, Transaction>} */
-        this.transactionByPath = {};
+        this.transactionByAnchor = {};
 
         this.maxPubKeysToRemember = 1_000_000; // ~45MB
         this.knownPubKeysAddresses = {}; // used to avoid excessive address ownership confirmation
@@ -35,7 +35,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         // sorted by anchor
         for (let i = 0; i < transaction.inputs.length; i++) {
             const anchor = transaction.inputs[i].anchor;
-            this.transactionByPath[anchor] = transaction;
+            this.transactionByAnchor[anchor] = transaction;
         }
 
         // sorted by transaction ID
@@ -59,8 +59,8 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         const collidingTx = this.#caughtTransactionsUTXOCollision(transaction);
         for (let i = 0; i < collidingTx.inputs.length; i++) {
             const anchor = collidingTx.inputs[i].anchor;
-            if (!this.transactionByPath[anchor]) { throw new Error(`Transaction not found in mempool: ${anchor}`); }
-            delete this.transactionByPath[anchor];
+            if (!this.transactionByAnchor[anchor]) { throw new Error(`Transaction not found in mempool: ${anchor}`); }
+            delete this.transactionByAnchor[anchor];
         }
 
         // remove from: sorted by transaction ID
@@ -73,14 +73,14 @@ export class MemPool { // Store transactions that are not yet included in a bloc
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      */
     clearTransactionsWhoUTXOsAreSpent(utxosByAnchor) {
-        const knownAnchors = Object.keys(this.transactionByPath);
+        const knownAnchors = Object.keys(this.transactionByAnchor);
         
         for (let i = 0; i < knownAnchors.length; i++) {
             const anchor = knownAnchors[i];
-            if (!this.transactionByPath[anchor]) { continue; } // already removed
+            if (!this.transactionByAnchor[anchor]) { continue; } // already removed
             if (utxosByAnchor[anchor]) { continue; } // not spent
 
-            const transaction = this.transactionByPath[anchor];
+            const transaction = this.transactionByAnchor[anchor];
             this.#removeMempoolTransaction(transaction);
         }
     }
@@ -151,24 +151,12 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         for (let i = 0; i < transaction.inputs.length; i++) {
             const anchor = transaction.inputs[i].anchor;
             if (anchor === undefined) { throw new Error('Invalid UTXO'); }
-            if (!this.transactionByPath[anchor]) { continue; }
+            if (!this.transactionByAnchor[anchor]) { continue; }
 
-            return this.transactionByPath[anchor];
+            return this.transactionByAnchor[anchor];
         }
 
         return false;
-    }
-    /** 
-     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
-     * @param {Transaction} transaction
-     */
-    static transactionUTXOsAreNotSpent(utxosByAnchor, transaction) {
-        for (let i = 0; i < transaction.inputs.length; i++) {
-            if (!utils.anchor.isValid(transaction.inputs[i].anchor)) { throw new Error('Invalid UTXO'); }
-            if (!utxosByAnchor[transaction.inputs[i].anchor]) { return false; }
-        }
-
-        return true;
     }
     /**
      * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
@@ -184,8 +172,8 @@ export class MemPool { // Store transactions that are not yet included in a bloc
             //if (transaction.feePerByte <= collidingTx.feePerByte) { throw new Error('New transaction fee is not higher than the existing one'); }
         }
 
-        // First control format of : amount, address, rule, version, TxID
-        txValidation.isConformTransaction(transaction, false);
+        // First control format of : amount, address, rule, version, TxID, available UTXOs
+        txValidation.isConformTransaction(utxosByAnchor, transaction, false);
 
         // Second control : input > output
         const fee = txValidation.calculateRemainingAmount(transaction, false);
@@ -194,7 +182,6 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         transaction.byteWeight = Transaction_Builder.getWeightOfTransaction(transaction);
         transaction.feePerByte = (fee / transaction.byteWeight).toFixed(6);
 
-        if (!MemPool.transactionUTXOsAreNotSpent(utxosByAnchor, transaction)) { throw new Error('UTXOs(one at least) are spent'); }
         timings.first = Date.now() - timings.start;
 
         // Third validation: medium computation cost.

@@ -12,7 +12,7 @@ export class Miner {
      * @param {Account} minerAccount
      * @param {P2PNetwork} p2pNetwork
      */
-    constructor(minerAccount, p2pNetwork) {
+    constructor(minerAccount, p2pNetwork, roles = ['miner']) {
         /** @type {Account} */
         this.minerAccount = minerAccount;
         /** @type {BlockData[]} */
@@ -31,6 +31,9 @@ export class Miner {
         this.betRange = {min: .4, max: .8}; // will bet between 40% and 80% of the expected blockTime
         /** @type {BlockData | null} */
         this.preshotedPowBlock = null;
+
+        this.roles = roles;
+        this.canProceedMining = true; 
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
@@ -116,7 +119,8 @@ export class Miner {
         }
 
         while (true) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            const delayBetweenMining = this.roles.includes('validator') ? 10 : 1;
+            await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
             if (preshotedPowReadyToSend) {
                 this.p2pNetwork.broadcast('new_block_pow', this.preshotedPowBlock)

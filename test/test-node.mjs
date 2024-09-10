@@ -31,7 +31,7 @@ describe('Comprehensive Sync System Test', function () {
 
         // Create and start nodes
         for (let i = 0; i < NUM_NODES; i++) {
-            const role = 'validator';
+            const role = ['validator'];
             const node = await factory.createNode(derivedAccounts[i], role);
             nodes.push(node);
             node.start();

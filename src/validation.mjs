@@ -10,13 +10,17 @@ import utils from './utils.mjs';
 export class txValidation {
     /** ==> First validation, low computation cost.
      * 
-     * - control format of : amount, address, rule, version, TxID
+     * - control format of : amount, address, rule, version, TxID, available UTXOs
+     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
-    static isConformTransaction(transaction, isCoinBase) {
+    static isConformTransaction(utxosByAnchor, transaction, isCoinBase) {
         if (!transaction) { throw new Error('Invalid transaction'); }
         if (typeof transaction.id !== 'string') { throw new Error('Invalid transaction ID'); }
+        if (typeof transaction.version !== 'number') { throw new Error('Invalid version !== number'); }
+        if (transaction.version <= 0) { throw new Error('Invalid version value: <= 0'); }
+
         if (!Array.isArray(transaction.inputs)) { throw new Error('Invalid transaction inputs'); }
         if (!Array.isArray(transaction.outputs)) { throw new Error('Invalid transaction outputs'); }
         if (!Array.isArray(transaction.witnesses)) { throw new Error('Invalid transaction witnesses'); }
@@ -27,6 +31,12 @@ export class txValidation {
             if (isCoinBase && typeof transaction.inputs[i] !== 'string') { throw new Error('Invalid coinbase input'); }
             if (isCoinBase) { continue; }
             txValidation.isValidTransactionIO(transaction.inputs[i], 'input');
+            /** @type {TransactionIO} */
+            const correspondingUtxo = utxosByAnchor[transaction.inputs[i].anchor];
+            if (!correspondingUtxo) { 
+                throw new Error(`Invalid transaction: UTXO not found in utxoCache: ${transaction.inputs[i].anchor}`); }
+            if (correspondingUtxo.amount !== transaction.inputs[i].amount) { 
+                throw new Error(`Invalid input/utxo amount: ${correspondingUtxo.amount} !== ${transaction.inputs[i].amount}`); }
         }
 
         for (let i = 0; i < transaction.outputs.length; i++) {
@@ -53,9 +63,6 @@ export class txValidation {
         if (typeof TxIO.rule !== 'string') { throw new Error('Invalid rule !== string'); }
         const ruleName = TxIO.rule.split('_')[0]; // rule format : 'ruleName_version'
         if (utils.UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
-
-        if (typeof TxIO.version !== 'number') { throw new Error('Invalid version !== number'); }
-        if (TxIO.version <= 0) { throw new Error('Invalid version value: <= 0'); }
 
         if (type === 'input' && !utils.anchor.isValid(TxIO.anchor)) { throw new Error('Invalid anchor'); }
 
@@ -204,7 +211,7 @@ export class txValidation {
      * @param {boolean} isCoinBase
      */
     static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, isCoinBase, useDevArgon2 = false) {
-        txValidation.isConformTransaction(transaction, isCoinBase);
+        txValidation.isConformTransaction(utxosByAnchor, transaction, isCoinBase);
         const fee = txValidation.calculateRemainingAmount(transaction, isCoinBase);
         await txValidation.controlTransactionHash(transaction);
         await txValidation.controlAllWitnessesSignatures(transaction);

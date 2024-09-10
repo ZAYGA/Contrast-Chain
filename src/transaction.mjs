@@ -20,15 +20,13 @@ import { BlockUtils } from './block.mjs';
  * @param {number} amount - the amount of microConts
  * @param {string | undefined} address - output only
  * @param {string} rule - the unlocking rule
- * @param {number} version - the transaction version
  * @param {string | undefined} anchor - input only - the path to the UTXO blockHeight:txID:vout
  * @returns {TransactionIO}
  **/
-export const TransactionIO = (amount, rule, version, address, anchor) => {
+export const TransactionIO = (amount, rule, address, anchor) => {
     return {
         amount,
         rule,
-        version,
         address,
         anchor
     };
@@ -44,9 +42,9 @@ export class TxIO_Builder {
      * @param {string | undefined} utxoTxID - input only
      * @param {number | undefined} vout - input only
      */
-    static newIO(type, amount, rule, version, address, utxoBlockHeight, utxoTxID, vout) {
+    static newIO(type, amount, rule, address, utxoBlockHeight, utxoTxID, vout) {
         const anchor = utils.anchor.fromReferences(utxoBlockHeight, utxoTxID, vout);
-        const newTxIO = TransactionIO(amount, rule, version, address, anchor);
+        const newTxIO = TransactionIO(amount, rule, address, anchor);
         txValidation.isValidTransactionIO(newTxIO, type);
 
         // delte all undefined properties
@@ -85,10 +83,11 @@ export class TxIO_Builder {
 
 /**
  * @typedef {Object} Transaction
- * @property {TransactionIO[]} inputs
- * @property {TransactionIO[]} outputs
  * @property {string} id
  * @property {string[]} witnesses
+ * @property {number} version
+ * @property {TransactionIO[]} inputs
+ * @property {TransactionIO[]} outputs
  * @property {number | undefined} feePerByte - only in mempool
  * @property {number | undefined} byteWeight - only in mempool
  */
@@ -97,12 +96,14 @@ export class TxIO_Builder {
  * @param {TransactionIO[]} outputs
  * @param {string} id
  * @param {string[]} witnesses
+ * @param {number} version
  * @returns {Transaction}
  */
-export const Transaction = (inputs, outputs, id = '', witnesses = []) => {
+export const Transaction = (inputs, outputs, id = '', witnesses = [], version = 1) => {
     return {
         id,
         witnesses,
+        version,
         inputs,
         outputs
     };
@@ -118,7 +119,7 @@ export class Transaction_Builder {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
 
-        const coinbaseOutput = TxIO_Builder.newIO('output', amount, 'sig_v1', 1, address);
+        const coinbaseOutput = TxIO_Builder.newIO('output', amount, 'sig_v1', address);
         const inputs = [ nonceHex ];
         const outputs = [ coinbaseOutput ];
 
@@ -139,7 +140,7 @@ export class Transaction_Builder {
         const posHashHex = await BlockUtils.getBlockSignature(blockCandidate, true);
         const posInput = `${posStakedAddress}:${posHashHex}`;
         const inputs = [ posInput ];
-        const posOutput = TxIO_Builder.newIO('output', posReward, 'sig_v1', 1, address);
+        const posOutput = TxIO_Builder.newIO('output', posReward, 'sig_v1', address);
         const outputs = [ posOutput ];
 
         return await this.newTransaction(inputs, outputs);
@@ -164,7 +165,7 @@ export class Transaction_Builder {
         //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
-            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
+            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', senderAddress);
             outputs.push(changeOutput);
         }
 
@@ -193,7 +194,7 @@ export class Transaction_Builder {
         //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
-            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, senderAddress);
+            const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', senderAddress);
             outputs.push(changeOutput);
         }
 
@@ -208,6 +209,7 @@ export class Transaction_Builder {
     static async newTransaction(inputs, outputs) {
         const transaction = Transaction(inputs, outputs);
         transaction.id = await Transaction_Builder.hashTxToGetID(transaction);
+
         return transaction;
     }
     /**
@@ -216,7 +218,7 @@ export class Transaction_Builder {
      */
     static simulateTransactionToEstimateWeight(UTXOs, outputs) {
         const change = 26_152_659_654_321;
-        const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 1, 'Cv6XXKBTALRPSCzuU6k4');
+        const changeOutput = TxIO_Builder.newIO("output", change, 'sig_v1', 'Cv6XXKBTALRPSCzuU6k4');
         const outputsClone = TxIO_Builder.cloneTxIO(outputs);
         outputsClone.push(changeOutput);
         
@@ -236,13 +238,13 @@ export class Transaction_Builder {
      * @param {string} rule
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], rule = 'sig_v1', version = 1) {
+    static buildOutputsFrom(transfers = [{recipientAddress: 'recipientAddress', amount: 1}], rule = 'sig_v1') {
         const outputs = [];
         let totalSpent = 0;
 
         for (let i = 0; i < transfers.length; i++) {
             const { recipientAddress, amount} = transfers[i];
-            const output = TxIO_Builder.newIO('output', amount, rule, version, recipientAddress);
+            const output = TxIO_Builder.newIO('output', amount, rule, recipientAddress);
             outputs.push(output);
             totalSpent += amount;
         }
@@ -281,9 +283,11 @@ export class Transaction_Builder {
     static async hashTxToGetID(transaction, hashHexLength = 8) {
         const inputsStr = JSON.stringify(transaction.inputs);
         const outputsStr = JSON.stringify(transaction.outputs);
+        const versionStr = JSON.stringify(transaction.version);
 
-        const message = utils.convert.string.toHex(`${inputsStr}${outputsStr}`);
-        const hashHex = await HashFunctions.SHA256(message);
+        //const message = utils.convert.string.toHex(`${inputsStr}${outputsStr}`);
+        //const hashHex = await HashFunctions.SHA256(message);
+        const hashHex = await HashFunctions.SHA256(`${inputsStr}${outputsStr}${versionStr}`);
         return hashHex.slice(0, hashHexLength);
     }
     /** 
@@ -307,7 +311,7 @@ export class Transaction_Builder {
         const outputs = TxIO_Builder.cloneTxIO(transaction.outputs);
         const witnesses = transaction.witnesses.slice();
 
-        return Transaction(inputs, outputs, transaction.id, witnesses);
+        return Transaction(inputs, outputs, transaction.id, witnesses, transaction.version);
     }
 
     // Multi-functions methods

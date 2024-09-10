@@ -12,8 +12,8 @@ parentPort.on('message', async (task) => {
 				const useDevArgon2 = task.useDevArgon2;
 				const utxosByAnchor = task.utxosByAnchor;
 
-				// First control format of : amount, address, rule, version, TxID
-				txValidation.isConformTransaction(transaction, false);
+				// First control format of : amount, address, rule, version, TxID, available UTXOs
+				txValidation.isConformTransaction(utxosByAnchor, transaction, false);
 
 				// Third validation: medium computation cost.
 				await txValidation.controlTransactionHash(transaction);

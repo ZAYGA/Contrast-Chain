@@ -21,13 +21,15 @@ export class TaskQueue {
         return newCallStack;
     }
     /** @param {number} delayMS */
-    async stackLoop(delayMS = 20) {
+    async stackLoop(delayMS = 10) {
         while (true) {
             if (this.tasks.length === 0) {
-                await new Promise(resolve => setTimeout(resolve, delayMS)); 
+                await new Promise(resolve => setTimeout(resolve, delayMS));
+                this.node.miner.canProceedMining = true;
                 continue;
             }
 
+            this.node.miner.canProceedMining = false;
             await new Promise(resolve => setImmediate(resolve));
             await this.#executeNextTask();
         }

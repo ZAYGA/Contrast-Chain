@@ -18,16 +18,16 @@ import { SyncNode } from './sync.mjs';
 
 export class Node {
     /** @param {Account} account */
-    constructor(account, role = 'validator', p2pOptions = {}) {
+    constructor(account, roles = ['validator'], p2pOptions = {}) {
         /** @type {string} */
         this.id = account.address;
-        /** @type {string} */
-        this.role = role; // 'miner' or 'validator'
+        /** @type {string[]} */
+        this.roles = roles; // 'miner', 'validator', ...
         /** @type {TaskQueue} */
-        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'UTXOs(one at least) are spent']);
+        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
         /** @type {P2PNetwork} */
         this.p2pNetwork = new P2PNetwork({
-            role: this.role,
+            role: this.roles.join('_'),
             ...p2pOptions
         });
 
@@ -44,7 +44,7 @@ export class Node {
         this.utxoCache = new UtxoCache();
         this.utxoCacheSnapshots = [];
         /** @type {Miner} */
-        this.miner = new Miner(account, this.p2pNetwork);
+        this.miner = new Miner(account, this.p2pNetwork, this.roles);
         this.useDevArgon2 = false;
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
@@ -62,21 +62,25 @@ export class Node {
 
         await this.p2pNetwork.start();
         // Set the event listeners
-        const validatorsTopics = ['new_transaction', 'new_block_pow', 'test'];
-        const minersTopics = ['new_block_proposal', 'test'];
-        const topicsToSubscribe = this.role === 'validator' ? validatorsTopics : minersTopics;
+        const rolesTopics = { 
+            validator: ['new_transaction', 'new_block_pow', 'test'],
+            miner: ['new_block_proposal', 'test']
+        }
+        const topicsToSubscribe = [];
+        for (const role of this.roles) { topicsToSubscribe.push(...rolesTopics[role]); }
+        const uniqueTopics = [...new Set(topicsToSubscribe)];
 
         await this.syncNode.start(this.p2pNetwork);
-        await this.p2pNetwork.subscribeMultipleTopics(topicsToSubscribe, this.p2pHandler.bind(this));
+        await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
 
-        console.info(`Node ${this.id.toString()}, ${this.role.toString()} started - ${loadedBlocks.length} blocks loaded`);
+        console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
     }
     async stop() {
         await this.p2pNetwork.stop();
         if (this.miner) { this.miner.terminate(); }
         await this.blockchain.close();
 
-        console.log(`Node ${this.id} (${this.role}) => stopped`);
+        console.log(`Node ${this.id} (${this.roles.join('_')}) => stopped`);
     }
     async syncWithKnownPeers() {
         const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
@@ -111,10 +115,10 @@ export class Node {
     }
 
     async createBlockCandidateAndBroadcast() {
-        if (this.role === 'validator') {
-            this.blockCandidate = await this.#createBlockCandidate();
-            await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
-        }
+        if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
+
+        this.blockCandidate = await this.#createBlockCandidate();
+        await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
     } // Work as a "init"
 
     /** @param {BlockData} finalizedBlock */
@@ -177,7 +181,7 @@ export class Node {
 
         const startTime = Date.now();
         if (!finalizedBlock) { throw new Error('Invalid block candidate'); }
-        if (this.role !== 'validator') { throw new Error('Only validator can process PoW block'); }
+        if (!this.roles.includes('validator')) { throw new Error('Only validator can process PoW block'); }
 
         const hashConfInfo = skipValidation ? false : await this.#validateBlockProposal(finalizedBlock);
         if (!skipValidation && (!hashConfInfo || !hashConfInfo.conform)) { return false; }
@@ -249,23 +253,23 @@ export class Node {
      * @param {string} topic
      * @param {object} message
      */
-    async p2pHandler(topic, message) { // TODO: optimize this by using specific compression serialization
+    async p2pHandler(topic, message) {
         const data = message;
         try {
             switch (topic) {
                 case 'new_transaction':
-                    if (this.role !== 'validator') { break; }
+                    if (!this.roles.includes('validator')) { break; }
                     this.taskQueue.push('pushTransaction', {
                         utxosByAnchor: this.utxoCache.utxosByAnchor,
                         transaction: data // signedTransaction
                     });
                     break;
                 case 'new_block_proposal':
-                    if (this.role !== 'miner') { break; }
+                    if (!this.roles.includes('miner')) { break; }
                     this.miner.pushCandidate(data);
                     break;
                 case 'new_block_pow':
-                    if (this.role !== 'validator') { break; }
+                    if (!this.roles.includes('validator')) { break; }
                     const lastBlockIndex = this.blockchain.currentHeight;
                     const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
                     if (isSynchronized) {
@@ -295,7 +299,7 @@ export class Node {
     getStatus() {
         return {
             id: this.id,
-            role: this.role,
+            role: this.roles.join('_'),
             currentBlockHeight: this.blockchain.currentHeight,
             memPoolSize: Object.keys(this.memPool.transactionsByID).length,
             peerCount: this.p2pNetwork.getConnectedPeers().length,
