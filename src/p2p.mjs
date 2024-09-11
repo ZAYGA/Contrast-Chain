@@ -21,8 +21,8 @@ class P2PNetwork extends EventEmitter {
         super();
         this.options = {
             bootstrapNodes: [
-                /*'/ip4/82.126.155.210/tcp/7777',
-                '/ip4/141.8.119.6/tcp/7777',*/
+                '/ip4/82.126.155.210/tcp/7777',
+                '/ip4/141.8.119.6/tcp/7777',
             ],
             maxPeers: 50,
             announceInterval: 60000,
@@ -114,8 +114,9 @@ class P2PNetwork extends EventEmitter {
             try {
                 const ma = multiaddr(addr);
                 await this.p2pNode.dial(ma);
+
                 //console.log('Connected to bootstrap node:', addr);
-                //this.updatePeer(addr, { status: 'connected' });
+                this.updatePeer(addr, { status: 'connected' });
                 this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node');
             } catch (err) {
                 this.logger.error({ component: 'P2PNetwork', bootstrapNode: addr, error: err.message }, 'Failed to connect to bootstrap node');

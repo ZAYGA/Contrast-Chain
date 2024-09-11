@@ -13,8 +13,8 @@ const testParams = {
     addressType: 'W',
 
     nbOfMiners: 1,
-    nbOfValidators: 1,
-    nbOfMultiNodes: 0,
+    nbOfValidators: 0,
+    nbOfMultiNodes: 1,
 
     txsSeqs: {
         userSendToAllOthers: { active: false, start: 5, end: 100000, interval: 4},
@@ -215,13 +215,15 @@ async function nodeSpecificTest(accounts, wss) {
 
     const nodes = await Promise.all(nodesPromises);
 
-    ///await waitForP2PNetworkReady(nodes);
+    await waitForP2PNetworkReady(nodes);
 
     let minerNode;
     let validatorNode;
     for (const node of nodes) {
-        if (node.roles.includes('miner')) { if (!minerNode) { minerNode = node; } }
-        if (node.roles.includes('validator')) { if (!validatorNode) { validatorNode = node; } }
+        //if (node.roles.includes('miner')) { if (!minerNode) { minerNode = node; } }
+        //if (node.roles.includes('validator')) { if (!validatorNode) { validatorNode = node; } }
+        if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
+        if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
     }
 
     console.log('[TEST] Nodes Initialized. - start mining');

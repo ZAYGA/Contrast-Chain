@@ -54,7 +54,7 @@ export class Node {
 
     async start() {
         await this.blockchain.init();
-        const loadedBlocks = await this.blockchain.recoverBlocksFromStorage();
+        const loadedBlocks = this.roles.includes('validator') ? await this.blockchain.recoverBlocksFromStorage() : [];
         for (const block of loadedBlocks) {
             await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
         }
@@ -72,14 +72,14 @@ export class Node {
         await this.syncHandler.start(this.p2pNetwork);
         await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
         
-        if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
+        /*if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
 
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
         if (!await this.#waitSomePeers(1, 60)) { this.stop(); return; }
         console.log('P2P network is ready - we are connected baby!');
         await this.syncWithKnownPeers();
 
-        if (this.roles.includes('validator')) { await this.createBlockCandidateAndBroadcast(); }
+        if (this.roles.includes('validator')) { await this.createBlockCandidateAndBroadcast(); }*/
         this.#controlPeersConnection();
     }
     async stop() {
@@ -135,7 +135,7 @@ export class Node {
         while (true) {
             await new Promise(resolve => setTimeout(resolve, 5000));
             const nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
-            if (nbOfConnectedPeers > 1) { continue; }
+            if (nbOfConnectedPeers >= 1) { continue; }
 
             await this.stop();
             await this.start();
