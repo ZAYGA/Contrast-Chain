@@ -38,15 +38,16 @@ describe('Comprehensive Consensus Test', function () {
         // Create and start nodes
         for (let i = 0; i < NUM_NODES; i++) {
             const role = i < NUM_MINERS ? 'miner' : 'validator';
-            const node = await factory.createNode(derivedAccounts[i], role);
+            const listenAddress = '/ip4/0.0.0.0/tcp/0';
+            const node = await factory.createNode(derivedAccounts[i], [role], { listenAddress });
             nodes.push(node);
-            await factory.startNode(node.id);
+            factory.startNode(node.id);
         }
 
         await waitForP2PNetworkReady(nodes);
 
         // Start mining on all miner nodes
-        nodes.filter(node => node.role === 'miner').forEach(node => node.miner.startWithWorker());
+        nodes.filter(node => node.roles.includes('miner')).forEach(node => node.miner.startWithWorker());
     });
 
     after(async function () {
@@ -58,7 +59,7 @@ describe('Comprehensive Consensus Test', function () {
     });
 
     it('should maintain consensus with various transaction scenarios', async function () {
-        const validatorNode = nodes.find(node => node.role === 'validator');
+        const validatorNode = nodes.find(node => node.roles.includes('validator'));
         await validatorNode.createBlockCandidateAndBroadcast();
 
         const minerWithBalance = await waitForMinerWithBalance(nodes, INITIAL_MINER_BALANCE);
@@ -230,6 +231,7 @@ describe('Comprehensive Consensus Test', function () {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const allNodesConnected = nodes.every(node => {
                 const peerCount = node.p2pNetwork.getConnectedPeers().length;
+                console.debug(`Node ${node.id} has ${peerCount} peers`);
                 return peerCount >= Math.min(NUM_NODES - 1, node.p2pNetwork.options.maxPeers);
             });
 
@@ -237,6 +239,7 @@ describe('Comprehensive Consensus Test', function () {
                 console.info('P2P network is ready');
                 return;
             }
+            console.info(`Waiting for P2P network to initialize. Attempt ${attempt + 1}/${maxAttempts}`);
 
             await new Promise(resolve => setTimeout(resolve, interval));
         }
@@ -245,8 +248,8 @@ describe('Comprehensive Consensus Test', function () {
     }
 
     async function waitForMinerWithBalance(nodes, minBalance, maxAttempts = 60, interval = 5000) {
-        const miners = nodes.filter(node => node.role === 'miner');
-        const randomValidator = nodes.find(node => node.role === 'validator');
+        const miners = nodes.filter(node => node.roles.includes('miner'));
+        const randomValidator = nodes.find(node => node.roles.includes('validator'));
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             for (const miner of miners) {
                 console.debug(`Checking balance for miner ${miner.id}`);
