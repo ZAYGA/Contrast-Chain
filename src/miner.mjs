@@ -137,7 +137,7 @@ export class Miner {
         }
 
         while (true) {
-            const delayBetweenMining = this.roles.includes('validator') ? 10 : 1;
+            const delayBetweenMining = this.roles.includes('validator') ? 20 : 10;
             await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
             if (preshotedPowReadyToSend) {

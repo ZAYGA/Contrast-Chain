@@ -13,8 +13,8 @@ const testParams = {
     addressType: 'W',
 
     nbOfMiners: 1,
-    nbOfValidators: 0,
-    nbOfMultiNodes: 1,
+    nbOfValidators: 1,
+    nbOfMultiNodes: 0,
 
     txsSeqs: {
         userSendToAllOthers: { active: false, start: 5, end: 100000, interval: 4},
