@@ -57,6 +57,8 @@ export class Wallet {
     }
     async deriveAccounts(nbOfAccounts = 1, addressPrefix = "C") {
         const nbOfExistingAccounts = this.accounts[addressPrefix].length;
+        const accountToGenerate = nbOfAccounts - nbOfExistingAccounts;
+        const progressLogger = new utils.ProgressLogger(accountToGenerate, '[WALLET] deriving accounts');
         const iterationsPerAccount = []; // used for control
 
         for (let i = nbOfExistingAccounts; i < nbOfAccounts; i++) {
@@ -75,6 +77,7 @@ export class Wallet {
 
             iterationsPerAccount.push(iterations);
             this.accounts[addressPrefix].push(account);
+            progressLogger.logProgress(this.accounts[addressPrefix].length - nbOfExistingAccounts);
         }
 
         const derivedAccounts = this.accounts[addressPrefix].slice(nbOfExistingAccounts);

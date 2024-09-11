@@ -84,8 +84,9 @@ const MINING_PARAMS = {
 };
 
 class ProgressLogger {
-    constructor(total) {
+    constructor(total, msgPrefix = '[LOADING] digestChain') {
         this.total = total;
+        this.msgPrefix = msgPrefix;
         this.stepSizePercent = 10;
         this.lastLoggedStep = 0;
     }
@@ -94,7 +95,7 @@ class ProgressLogger {
         const progress = current === this.total - 1 ? 100 : (current / this.total) * 100;
         //const currentStep = Math.floor(progress / this.stepSizePercent);
 
-        console.log(`[LOADING] digestChain : ${progress.toFixed(1)}% (${current}/${this.total})`);
+        console.log(`${this.msgPrefix} : ${progress.toFixed(1)}% (${current}/${this.total})`);
     }
 }
 class AddressTypeInfo {

@@ -158,7 +158,7 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { //ip4/0.0.0.0/tcp/0 - /ip4/0.0.0.0/tcp/7777
     const minerNode = await factory.createNode(account, 'miner', { listenAddress });
     minerNode.miner.useDevArgon2 = testParams.useDevArgon2;
     minerNode.memPool.useDevArgon2 = testParams.useDevArgon2;
@@ -170,7 +170,7 @@ async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { // /ip4/0.0.0.0/tcp/0
     const validatorNode = await factory.createNode(account, 'validator', { listenAddress });
     //await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
 
@@ -201,10 +201,15 @@ async function nodeSpecificTest(accounts, wss) {
         const validatorNode = await initValidatorNode(factory, accounts[i]);
         validatorNodes.push(validatorNode);
     }
-
+    
+    // MultiNode test
+    /*const multiCode = await factory.createNode(accounts[0], ['validator', 'miner'], { listenAddress: '/ip4/0.0.0.0/tcp/0' });
+    await multiCode.start();
+    minerNodes.push(multiCode);
+    validatorNodes.push(multiCode);*/
+    
     const allNodes = [...minerNodes, ...validatorNodes];
     await waitForP2PNetworkReady(allNodes);
-
     for (const node of minerNodes) { node.miner.startWithWorker(); }
     for (const node of validatorNodes) { await node.createBlockCandidateAndBroadcast(); }
 
@@ -215,6 +220,10 @@ async function nodeSpecificTest(accounts, wss) {
     //#endregion
 
     await new Promise(resolve => setTimeout(resolve, 1000));
+
+    while (true) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     
     /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
     let msgWeight = 1_000;
@@ -328,7 +337,7 @@ async function nodeSpecificTest(accounts, wss) {
 export async function test(wss) {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
-    const wallet = new contrast.Wallet("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
+    const wallet = new contrast.Wallet("00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
     const restored = await wallet.restore();
     if (!restored) { console.error('Failed to restore wallet.'); return; }
     timings.walletRestore = Date.now() - timings.checkPoint; timings.checkPoint = Date.now();

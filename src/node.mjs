@@ -198,12 +198,13 @@ export class Node {
 
         const timeBetweenPosPow = ((finalizedBlock.timestamp - finalizedBlock.posTimestamp) / 1000).toFixed(2);
         const isSynchronization = !broadcastNewCandidate && !skipValidation;
+        const minerId = finalizedBlock.Txs[0].outputs[0].address.slice(0, 6);
         if (skipValidation) {
             console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> loaded block from storage | processProposal: ${(Date.now() - startTime)}ms`);
         } else if (isSynchronization) {
             console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} (sync) -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${(Date.now() - startTime)}ms`);
         } else {
-            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> Miner:${minerId} ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         }
 
         if (!broadcastNewCandidate) { return true; }
