@@ -14,7 +14,7 @@ const testParams = {
 
     nbOfMiners: 0,
     nbOfValidators: 0,
-    nbOfMultiNodes: 2,
+    nbOfMultiNodes: 1,
 
     txsSeqs: {
         userSendToAllOthers: { start: 5, end: 100000, interval: 4},
@@ -185,7 +185,7 @@ async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initMultiNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+async function initMultiNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/7777') {
     const multiNode = await factory.createNode(account, ['validator', 'miner'], { listenAddress });
     await multiNode.start();
 
@@ -217,7 +217,7 @@ async function nodeSpecificTest(accounts, wss) {
 
     let minerNode;
     let validatorNode;
-    for (const node of nodes) { 
+    for (const node of nodes) {
         if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
         if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
     }

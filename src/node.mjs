@@ -131,8 +131,8 @@ export class Node {
             if (finalizedBlock.index > lastBlockIndex + 1) {
                 console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
             }
-            if (finalizedBlock.index <= lastBlockIndex) { console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex}`); return false; }
-
+            if (finalizedBlock.index <= lastBlockIndex) {
+                console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0,6)}`); return false; }
             // verify the hash
             const { hex, bitsArrayAsString } = await BlockUtils.getMinerHash(finalizedBlock, this.useDevArgon2);
             if (finalizedBlock.hash !== hex) { return 'Hash invalid!'; }
