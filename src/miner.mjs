@@ -37,19 +37,22 @@ export class Miner {
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
+        const clonedCandidate = BlockUtils.cloneBlockData(blockCandidate);
+
         const headerNonce = utils.mining.generateRandomNonce().Hex;
         const coinbaseNonce = utils.mining.generateRandomNonce().Hex;
-        blockCandidate.nonce = headerNonce;
-        blockCandidate.timestamp = Math.max(blockCandidate.posTimestamp + 1 + this.bets[blockCandidate.index], Date.now());
+        clonedCandidate.nonce = headerNonce;
+        clonedCandidate.timestamp = Math.max(clonedCandidate.posTimestamp + 1 + this.bets[clonedCandidate.index], Date.now());
 
-        const { powReward, posReward } = BlockUtils.calculateBlockReward(blockCandidate);
+        const powReward = blockCandidate.powReward;
+        delete clonedCandidate.powReward;
         const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, powReward);
-        BlockUtils.setCoinbaseTransaction(blockCandidate, coinbaseTx);
+        BlockUtils.setCoinbaseTransaction(clonedCandidate, coinbaseTx);
 
-        const signatureHex = await BlockUtils.getBlockSignature(blockCandidate);
+        const signatureHex = await BlockUtils.getBlockSignature(clonedCandidate);
         const nonce = `${headerNonce}${coinbaseNonce}`;
 
-        return { signatureHex, nonce };
+        return { signatureHex, nonce, clonedCandidate };
     }
     /** 
      * @param {BlockData} blockCandidate
@@ -59,6 +62,13 @@ export class Miner {
         const index = this.candidates.findIndex(candidate => candidate.index === blockCandidate.index && candidate.legitimacy === blockCandidate.legitimacy);
         if (index !== -1) { return; }
 
+        // check if powReward is coherent
+        const posReward = blockCandidate.Txs[0].outputs[0].amount;
+        const powReward = blockCandidate.powReward;
+        if (!posReward || !powReward) { console.info(`[MINER] Invalid block candidate pushed (Height: ${blockCandidate.index}) | posReward = ${posReward} | powReward = ${powReward}`); return; }
+        if (Math.abs(posReward - powReward) > 1) { console.info(`[MINER] Invalid block candidate pushed (Height: ${blockCandidate.index}) | posReward = ${posReward} | powReward = ${powReward} | Math.abs(posReward - powReward) > 1`); return; }
+
+        // check if block is higher than the highest block
         if (blockCandidate.index > this.highestBlockIndex) {
             this.preshotedPowBlock = null; // reset preshoted block
             this.bets[blockCandidate.index] = useBetTimestamp ? this.#betOnTimeToPow(blockCandidate.index) : 0; // bet on time to pow
@@ -135,8 +145,8 @@ export class Miner {
 
             workersStatus[id] = 'busy';
 
-            const { signatureHex, nonce } = await this.#prepareBlockCandidateBeforeMining(blockCandidate);
-            this.workers[id].postMessage({ type: 'mine', blockCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
+            const { signatureHex, nonce, clonedCandidate } = await this.#prepareBlockCandidateBeforeMining(blockCandidate);
+            this.workers[id].postMessage({ type: 'mine', blockCandidate: clonedCandidate, signatureHex, nonce, id, useDevArgon2: this.useDevArgon2 });
         }
     }
     terminate() {

@@ -1,5 +1,5 @@
 import { HashFunctions, AsymetricFunctions } from './conCrypto.mjs';
-import { Transaction, TransactionIO, Transaction_Builder } from './transaction.mjs';
+import { Transaction, TxOutput, TxInput, UTXO, Transaction_Builder } from './transaction.mjs';
 import { BlockUtils } from './block.mjs';
 import utils from './utils.mjs';
 
@@ -7,11 +7,11 @@ import utils from './utils.mjs';
  * @typedef {import("./block.mjs").BlockData} BlockData
  */
 
-export class txValidation {
+export class TxValidation {
     /** ==> First validation, low computation cost.
      * 
      * - control format of : amount, address, rule, version, TxID, available UTXOs
-     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
+     * @param {Object<string, UTXO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
@@ -30,65 +30,76 @@ export class txValidation {
         for (let i = 0; i < transaction.inputs.length; i++) {
             if (isCoinBase && typeof transaction.inputs[i] !== 'string') { throw new Error('Invalid coinbase input'); }
             if (isCoinBase) { continue; }
-            txValidation.isValidTransactionIO(transaction.inputs[i], 'input');
-            /** @type {TransactionIO} */
-            const correspondingUtxo = utxosByAnchor[transaction.inputs[i].anchor];
-            if (!correspondingUtxo) { 
-                throw new Error(`Invalid transaction: UTXO not found in utxoCache: ${transaction.inputs[i].anchor}`); }
-            if (correspondingUtxo.amount !== transaction.inputs[i].amount) { 
-                throw new Error(`Invalid input/utxo amount: ${correspondingUtxo.amount} !== ${transaction.inputs[i].amount}`); }
+
+            const anchor = transaction.inputs[i];
+            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
+            if (!utxosByAnchor[anchor]) { throw new Error(`Invalid transaction: UTXO not found in utxoCache: ${anchor}`); }
         }
 
         for (let i = 0; i < transaction.outputs.length; i++) {
             const output = transaction.outputs[i];
-            txValidation.isValidTransactionIO(output, 'output');
+            TxValidation.isValidTxOutput(output);
 
             if (output.rule === "sigOrSlash") {
                 if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
-                if (this.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
+                if (this.calculateRemainingAmount(utxosByAnchor, transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
             }
         }
     }
-    /**
-     * @param {TransactionIO} TxIO - transaction input/output
-     * @param {string} type - 'input' | 'output'
-     */
-    static isValidTransactionIO(TxIO, type) { // type: 'input' | 'output'
-        if (typeof TxIO.amount !== 'number') { throw new Error('Invalid amount !== number'); }
+    /** @param {TxOutput} txOutput */
+    static isValidTxOutput(txOutput) {
+        if (typeof txOutput.amount !== 'number') { throw new Error('Invalid amount !== number'); }
+        if (txOutput.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
+        if (txOutput.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
-        if (TxIO.amount < 0) { throw new Error('Invalid amount value: < 0'); }
-        if (type === 'input' && TxIO.amount === 0) { throw new Error('Invalid amount value: = 0'); }
-        if (TxIO.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
-
-        if (typeof TxIO.rule !== 'string') { throw new Error('Invalid rule !== string'); }
-        const ruleName = TxIO.rule.split('_')[0]; // rule format : 'ruleName_version'
+        if (typeof txOutput.rule !== 'string') { throw new Error('Invalid rule !== string'); }
+        const ruleName = txOutput.rule.split('_')[0]; // rule format : 'ruleName_version'
         if (utils.UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
 
-        if (type === 'input' && !utils.anchor.isValid(TxIO.anchor)) { throw new Error('Invalid anchor'); }
+        if (typeof txOutput.address !== 'string') { throw new Error('Invalid address !== string'); }
+        utils.addressUtils.conformityCheck(txOutput.address);
+    }
+    /** @param {TxInput} txInput */
+    static isValidTxInput(txInput) {
+        if (!utils.anchor.isValid(txInput)) { throw new Error('Invalid anchor'); }
+    }
+    /** @param {UTXO} utxo */
+    static isValidUTXO(utxo) {
+        if (typeof utxo.amount !== 'number') { throw new Error('Invalid amount !== number'); }
+        if (utxo.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
+        if (utxo.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
-        if (type === 'output' && typeof TxIO.address !== 'string') { throw new Error('Invalid address !== string'); }
-        if (type === 'output') { utils.addressUtils.conformityCheck(TxIO.address) }
+        if (typeof utxo.rule !== 'string') { throw new Error('Invalid rule !== string'); }
+        const ruleName = utxo.rule.split('_')[0]; // rule format : 'ruleName_version'
+        if (utils.UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
+
+        if (typeof utxo.address !== 'string') { throw new Error('Invalid address !== string'); }
+        utils.addressUtils.conformityCheck(utxo.address);
+
+        if (!utils.anchor.isValid(utxo.anchor)) { throw new Error('Invalid anchor'); }
     }
 
     /** ==> Second validation, low computation cost.
      * 
-     * - control : input > output
+     * --- ONLY PASS CONFORM TRANSACTION ---
      * 
+     * --- NO COINBASE OR FEE TRANSACTION ---
+     * - control : input > output
      * - control the fee > 0 or = 0 for miner's txs
+     * @param {Object<string, UTXO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
-     * @param {boolean} isCoinBaseOrFeeTx
      * @returns {number} - the fee
      */
-    static calculateRemainingAmount(transaction, isCoinBaseOrFeeTx) {
-        const inputsAmount = transaction.inputs.reduce((a, b) => a + b.amount, 0);
+    static calculateRemainingAmount(utxosByAnchor, transaction) {
+        // AT THIS STAGE WE HAVE ENSURED THAT THE TRANSACTION IS CONFORM
+
+        const utxosAmounts = transaction.inputs.map(anchor => utxosByAnchor[anchor].amount); // throw if not found
+        const inputsAmount = utxosAmounts.reduce((a, b) => a + b, 0);
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
-        if (isCoinBaseOrFeeTx && !isNaN(inputsAmount)) { throw new Error('Invalid coinbase transaction'); }
-        if (isCoinBaseOrFeeTx) { return 0; }
 
         const fee = inputsAmount - outputsAmount;
         if (fee < 0) { throw new Error('Negative transaction'); }
-        if (!isCoinBaseOrFeeTx && fee === 0) {
-            throw new Error('Invalid transaction: fee = 0'); }
+        if (fee === 0) { throw new Error('Invalid transaction: fee = 0'); }
         if (fee % 1 !== 0) { throw new Error('Invalid fee: not integer'); }
 
         return fee;
@@ -123,7 +134,7 @@ export class txValidation {
         const TxID = await Transaction_Builder.hashTxToGetID(transaction);
         if (TxID !== transaction.id) { throw new Error('Invalid transaction hash'); }
         for (let i = 0; i < transaction.witnesses.length; i++) {
-            const { signature, pubKeyHex } = txValidation.#decomposeWitnessOrThrow(transaction.witnesses[i]);
+            const { signature, pubKeyHex } = TxValidation.#decomposeWitnessOrThrow(transaction.witnesses[i]);
             AsymetricFunctions.verifySignature(signature, TxID, pubKeyHex); // will throw an error if the signature is invalid
         }
 
@@ -147,7 +158,7 @@ export class txValidation {
     /** ==> Sixth validation, high computation cost.
      * 
      * - control the inputAddresses/witnessesPubKeys correspondence
-     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
+     * @param {Object<string, UTXO>} utxosByAnchor - from utxoCache
      * @param {Transaction} transaction
      * @param {Object<string, string>} witnessesPubKeysAddress - will be filled
      * @param {boolean} useDevArgon2
@@ -180,10 +191,7 @@ export class txValidation {
 
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
-            const anchor = transaction.inputs[i].anchor;
-            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
-
-            const referencedUTXO = utxosByAnchor[anchor];
+            const referencedUTXO = utxosByAnchor[transaction.inputs[i]];
             if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
 
             if (!transactionWitnessesAddresses.includes(referencedUTXO.address)) {
@@ -196,18 +204,18 @@ export class txValidation {
     }
 
     /** ==> Sequencially call the full set of validations
-     * @param {Object<string, TransactionIO>} utxosByAnchor - from utxoCache
+     * @param {Object<string, UTXO>} utxosByAnchor - from utxoCache
      * @param {Object<string, string>} knownPubKeysAddresses - will be filled
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
     static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, isCoinBase, useDevArgon2 = false) {
-        txValidation.isConformTransaction(utxosByAnchor, transaction, isCoinBase);
-        const fee = txValidation.calculateRemainingAmount(transaction, isCoinBase);
-        await txValidation.controlAllWitnessesSignatures(transaction);
-        if (isCoinBase) { return { fee, success: true }; }
+        TxValidation.isConformTransaction(utxosByAnchor, transaction, isCoinBase);
+        await TxValidation.controlAllWitnessesSignatures(transaction);
+        if (isCoinBase) { return { fee: 0, success: true }; }
         
-        await txValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, knownPubKeysAddresses, useDevArgon2);
+        const fee = TxValidation.calculateRemainingAmount(utxosByAnchor, transaction);
+        await TxValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, knownPubKeysAddresses, useDevArgon2);
 
         return { fee, success: true };
     }
@@ -221,7 +229,7 @@ export class txValidation {
     }
 }
 
-export class blockValidation {
+export class BlockValidation {
     /**
      * @param {BlockData} blockData
      * @param {BlockData} prevBlockData
@@ -230,15 +238,18 @@ export class blockValidation {
         if (blockData.posTimestamp <= prevBlockData.timestamp) { throw new Error(`Invalid PoS timestamp: ${blockData.posTimestamp} <= ${prevBlockData.timestamp}`); }
         if (blockData.timestamp > Date.now()) { throw new Error('Invalid timestamp'); }
     }
-    /** @param {BlockData} blockData */
-    static areExpectedRewards(blockData) {
-        const { powReward, posReward } = BlockUtils.calculateBlockReward(blockData);
+    /** 
+     * @param {Object<string, UTXO>} utxosByAnchor
+     * @param {BlockData} blockData
+     */
+    static areExpectedRewards(utxosByAnchor, blockData) {
+        const { powReward, posReward } = BlockUtils.calculateBlockReward(utxosByAnchor, blockData);
         if (blockData.Txs[0].outputs[0].amount !== powReward) { throw new Error(`Invalid PoW reward: ${blockData.Txs[0].outputs[0].amount} - expected: ${powReward}`); }
         if (blockData.Txs[1].outputs[0].amount !== posReward) { throw new Error(`Invalid PoS reward: ${blockData.Txs[0].outputs[0].amount} - expected: ${posReward}`); }
     }
 
     /**
-     * @param {Object<string, TransactionIO>} utxosByAnchor
+     * @param {Object<string, UTXO>} utxosByAnchor
      * @param {BlockData} blockData
      */
     static isFinalizedBlockDoubleSpending(utxosByAnchor, blockData) {
@@ -248,15 +259,15 @@ export class blockValidation {
             
             const Tx = blockData.Txs[i];
             const utxoSpentInTx = {};
-            for (let j = 0; j < Tx.inputs.length; j++) {
-                const anchor = Tx.inputs[j].anchor;
-    
+            for (const input of Tx.inputs) {
+                const anchor = input;
+
                 if (utxoSpentInTx[anchor]) { continue; } // we can see the same anchor multiple times in the same Tx
                 utxoSpentInTx[anchor] = true;
-    
                 if (utxoSpent[anchor]) { throw new Error('Double spending'); }
-                if (!utxosByAnchor[anchor]) { throw new Error('UTXO not found in utxoCache, already spent?'); }
-                if (utxosByAnchor[anchor].amount !== Tx.inputs[j].amount) { throw new Error('Invalid amount'); }
+
+                const utxo = utxosByAnchor[anchor];
+                if (!utxo) { throw new Error('UTXO not found in utxoCache, already spent?'); }
                 utxoSpent[anchor] = true;
             }
         }

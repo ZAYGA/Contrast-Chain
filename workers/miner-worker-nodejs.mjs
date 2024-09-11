@@ -22,7 +22,6 @@ parentPort.on('message', async (task) => {
 				response.bitsArrayAsString = blockHash.bitsArray.join('');
 			  } catch (err) {
 				response.error = err.message;
-				return;
 			  }
             break;
 		case 'terminate':

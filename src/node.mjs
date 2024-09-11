@@ -1,5 +1,5 @@
 import localStorage_v1 from '../storage/local-storage-management.mjs';
-import { txValidation, blockValidation } from './validation.mjs';
+import { TxValidation, BlockValidation } from './validation.mjs';
 import { TaskQueue } from './taskQueue.mjs';
 import { Vss } from './vss.mjs';
 import { MemPool } from './memPool.mjs';
@@ -118,6 +118,7 @@ export class Node {
         if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
 
         this.blockCandidate = await this.#createBlockCandidate();
+        if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
     } // Work as a "init"
 
@@ -144,17 +145,16 @@ export class Node {
             if (finalizedBlock.coinBase !== expectedCoinBase) { return `Invalid coinbase amount: ${finalizedBlock.coinBase} - expected: ${expectedCoinBase}`; }
 
             // control mining rewards
-            blockValidation.areExpectedRewards(finalizedBlock);
+            BlockValidation.areExpectedRewards(this.utxoCache.utxosByAnchor, finalizedBlock);
 
             // double spend control
-            blockValidation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
+            BlockValidation.isFinalizedBlockDoubleSpending(this.utxoCache.utxosByAnchor, finalizedBlock);
 
             // verify the transactions
-            for (let i = 0; i < finalizedBlock.Txs.length; i++) {
-                const tx = finalizedBlock.Txs[i];
-                const isCoinBase = Transaction_Builder.isCoinBaseOrFeeTransaction(tx, i);
-                const { fee, success } = await txValidation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
-                if (!success) { return `Invalid transaction: ${tx.id} - ${txValidation}`; }
+            for (const tx of finalizedBlock.Txs) {
+                const isCoinBase = Transaction_Builder.isMinerOrValidatorTx(tx);
+                const { fee, success } = await TxValidation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
+                if (!success) { return `Invalid transaction: ${tx.id} - ${TxValidation}`; }
             }
 
             return hashConfInfo;
@@ -204,12 +204,13 @@ export class Node {
         } else if (isSynchronization) {
             console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} (sync) -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${(Date.now() - startTime)}ms`);
         } else {
-            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> Miner:${minerId} ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> [MINER-${minerId}] ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         }
 
         if (!broadcastNewCandidate) { return true; }
 
         this.blockCandidate = await this.#createBlockCandidate();
+        if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
 
         return true;
@@ -233,9 +234,11 @@ export class Node {
         }
 
         // Sign the block candidate
-        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(blockCandidate, this.account.address, this.account.address);
+        const { powReward, posReward } = BlockUtils.calculateBlockReward(this.utxoCache.utxosByAnchor, blockCandidate);
+        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(posReward, blockCandidate, this.account.address, this.account.address);
         const signedPosFeeTx = await this.account.signTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
+        blockCandidate.powReward = powReward; // for the miner
 
         if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
 

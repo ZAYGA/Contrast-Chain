@@ -1,5 +1,5 @@
 import { HashFunctions } from "./conCrypto.mjs";
-import { TransactionIO } from "./transaction.mjs";
+import { UTXO } from "./transaction.mjs";
 import utils from "./utils.mjs";
 
 /**
@@ -89,13 +89,13 @@ export class Vss {
     }
 
     /**
-     * @param {TransactionIO} UTXO
+     * @param {UTXO} utxo
      * @param {number | undefined} upperBound
      */
-    newStake(UTXO, upperBound) {
-        const address = UTXO.address;
-        const anchor = UTXO.anchor;
-        const amount = UTXO.amount;
+    newStake(utxo, upperBound) {
+        const address = utxo.address;
+        const anchor = utxo.anchor;
+        const amount = utxo.amount;
         
         if (upperBound) {
             
@@ -106,11 +106,9 @@ export class Vss {
             this.spectrum[lastUpperBound + amount] = StakeReference(address, anchor);
         }
     }
-
-    newStakes(UTXOs) {
-        for (let i = 0; i < UTXOs.length; i++) {
-            this.newStake(UTXOs[i]);
-        }
+    /** @param {UTXO[]} utxos */
+    newStakes(utxos) {
+        for (const utxo of utxos) { this.newStake(utxo); }
     }
 
     /**

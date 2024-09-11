@@ -1,4 +1,4 @@
-import { txValidation } from "../src/validation.mjs";
+import { TxValidation } from "../src/validation.mjs";
 
 // ABORTED FILE !
 
@@ -13,16 +13,16 @@ parentPort.on('message', async (task) => {
 				const utxosByAnchor = task.utxosByAnchor;
 
 				// First control format of : amount, address, rule, version, TxID, available UTXOs
-				txValidation.isConformTransaction(utxosByAnchor, transaction, false);
+				TxValidation.isConformTransaction(utxosByAnchor, transaction, false);
 
 				// Fourth validation: low computation cost.
-				await txValidation.controlTransactionOutputsRulesConditions(transaction);
+				await TxValidation.controlTransactionOutputsRulesConditions(transaction);
 
 				// Fifth validation: medium computation cost.
-				await txValidation.controlAllWitnessesSignatures(transaction);
+				await TxValidation.controlAllWitnessesSignatures(transaction);
 
 				// Sixth validation: high computation cost.
-				const witnessesPubKeysAddress = await txValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2);
+				const witnessesPubKeysAddress = await TxValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, useDevArgon2);
 
 				response.transaction = transaction;
 				response.pubKeysAddress = witnessesPubKeysAddress;

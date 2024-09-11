@@ -17,7 +17,6 @@ app.use(express.static(__dirname));
 app.get('/', (req, res) => { res.sendFile(__dirname + '/test-front.html'); });
 
 const server = app.listen(3000, () => { console.log('Server running on http://localhost:3000'); });
-
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', function connection(ws) {

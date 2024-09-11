@@ -1,7 +1,7 @@
 import utils from './utils.mjs';
 import { HashFunctions } from './conCrypto.mjs';
 import { Transaction_Builder } from './transaction.mjs';
-import { txValidation } from './validation.mjs';
+import { TxValidation } from './validation.mjs';
 
 /**
 * @typedef {Object} BlockMiningData
@@ -39,6 +39,7 @@ export const BlockMiningData = (index, difficulty, timestamp, posTimestamp) => {
 * @property {number | undefined} timestamp - The timestamp of the block
 * @property {string | undefined} hash - The hash of the block
 * @property {number | undefined} nonce - The nonce of the block
+* @property {number | undefined} powReward - The reward for the proof of work (only in candidate)
 */
 /**
  * @param {number} index - The index of the block
@@ -80,9 +81,9 @@ export class BlockUtils {
     static async getBlockTxsHash(blockData, excludeCoinbaseAndPos = false) {
         const txsIDStrArray = blockData.Txs.map(tx => tx.id).filter(id => id);
 
-        let firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isCoinBaseOrFeeTransaction(blockData.Txs[0], 0) : false;
+        let firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isMinerOrValidatorTx(blockData.Txs[0]) : false;
         if (excludeCoinbaseAndPos && firstTxIsCoinbase) { txsIDStrArray.shift(); }
-        firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isCoinBaseOrFeeTransaction(blockData.Txs[0], 0) : false;
+        firstTxIsCoinbase = blockData.Txs[0] ? Transaction_Builder.isMinerOrValidatorTx(blockData.Txs[0]) : false;
         if (excludeCoinbaseAndPos && firstTxIsCoinbase) { txsIDStrArray.shift(); }
 
         const txsIDStr = txsIDStrArray.join('');
@@ -121,7 +122,7 @@ export class BlockUtils {
      * @param {Transaction} coinbaseTx
      */
     static setCoinbaseTransaction(blockData, coinbaseTx) {
-        if (Transaction_Builder.isCoinBaseOrFeeTransaction(coinbaseTx, 0) === false) { console.error('Invalid coinbase transaction'); return false; }
+        if (Transaction_Builder.isMinerOrValidatorTx(coinbaseTx) === false) { console.error('Invalid coinbase transaction'); return false; }
 
         this.removeExistingCoinbaseTransaction(blockData);
         blockData.Txs.unshift(coinbaseTx);
@@ -131,27 +132,34 @@ export class BlockUtils {
         if (blockData.Txs.length === 0) { return; }
 
         const secondTx = blockData.Txs[1]; // if second tx isn't fee Tx : there is no coinbase
-        if (!secondTx || !Transaction_Builder.isCoinBaseOrFeeTransaction(secondTx, 1)) { return; }
+        if (!secondTx || !Transaction_Builder.isMinerOrValidatorTx(secondTx)) { return; }
 
         const firstTx = blockData.Txs[0];
-        if (firstTx && Transaction_Builder.isCoinBaseOrFeeTransaction(firstTx, 0)) { blockData.Txs.shift(); }
+        if (firstTx && Transaction_Builder.isMinerOrValidatorTx(firstTx)) { blockData.Txs.shift(); }
     }
-    /** @param {Transaction[]} Txs */
-    static calculateTxsTotalFees(Txs) {
+    /**
+     * @param {Object<string, UTXO>} utxosByAnchor
+     * @param {Transaction[]} Txs 
+     */
+    static calculateTxsTotalFees(utxosByAnchor, Txs) {
         const fees = [];
         for (let i = 0; i < Txs.length; i++) {
             const Tx = Txs[i];
-            const fee = txValidation.calculateRemainingAmount(Tx, Transaction_Builder.isCoinBaseOrFeeTransaction(Tx, i));
+            if (Transaction_Builder.isMinerOrValidatorTx(Tx)) { continue; }
 
+            const fee = TxValidation.calculateRemainingAmount(utxosByAnchor, Tx);
             fees.push(fee);
         }
 
         const totalFees = fees.reduce((a, b) => a + b, 0);
         return totalFees;
     }
-    /** @param {BlockData} blockData */
-    static calculateBlockReward(blockData) {
-        const totalFees = this.calculateTxsTotalFees(blockData.Txs);
+    /** 
+     * @param {Object<string, UTXO>} utxosByAnchor
+     * @param {BlockData} blockData
+     */
+    static calculateBlockReward(utxosByAnchor, blockData) {
+        const totalFees = this.calculateTxsTotalFees(utxosByAnchor, blockData.Txs);
         const totalReward = totalFees + blockData.coinBase;
         const powReward = Math.floor(totalReward / 2);
         const posReward = totalReward - powReward;

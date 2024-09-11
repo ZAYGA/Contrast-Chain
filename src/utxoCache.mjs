@@ -1,7 +1,7 @@
-import { Transaction, TransactionIO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
+import { Transaction, UTXO, Transaction_Builder, TxIO_Builder } from './transaction.mjs';
 import { BlockMiningData } from './block.mjs';
 import utils from './utils.mjs';
-import { txValidation } from './validation.mjs';
+import { TxValidation } from './validation.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockData} BlockData
@@ -10,11 +10,11 @@ import { txValidation } from './validation.mjs';
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     constructor(addressesUTXOs = {}, addressesBalances = {}, utxosByAnchor = {}, blockMiningData = []) {
         this.bypassValidation = false;
-        /** @type {Object<string, TransactionIO[]>} */
-        this.addressesUTXOs = addressesUTXOs;
+        /** @type {Object<string, UTXO[]>} */
+        this.addressesUTXOs = addressesUTXOs; // this object contain an array of UTXOs for each address that can be sent to the network
         /** @type {Object<string, number>} */
         this.addressesBalances = addressesBalances;
-        /** @type {Object<string, TransactionIO>} */
+        /** @type {Object<string, UTXO>} */
         this.utxosByAnchor = utxosByAnchor; // UTXO by anchor
 
         /** @type {BlockMiningData[]} */
@@ -43,16 +43,13 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
      * @param {number} TxIndexInTheBlock
      */
     #digestTransactionInputs(transaction, TxIndexInTheBlock) {
-        if (Transaction_Builder.isCoinBaseOrFeeTransaction(transaction, TxIndexInTheBlock)) { return } // coinbase -> no input
+        if (Transaction_Builder.isMinerOrValidatorTx(transaction, TxIndexInTheBlock)) { return }
 
-        const TxInputs = transaction.inputs;
-        TxIO_Builder.checkMalformedAnchors(TxInputs);
-        TxIO_Builder.checkDuplicateAnchors(TxInputs);
-
-        for (let i = 0; i < TxInputs.length; i++) {
-            const anchor = TxInputs[i].anchor;
+        for (const input of transaction.inputs) {
+            const anchor = input;
+            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
+            
             const { address, amount } = this.utxosByAnchor[anchor];
-
             this.#removeUTXO(address, anchor);
             this.#changeBalance(address, -amount);
         }
@@ -86,24 +83,25 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
             const output = TxOutputs[i];
-            const { address, amount } = output;
-            if (amount === 0) { continue; } // no need to add UTXO with 0 amount
+            TxValidation.isValidTxOutput(output); // throw if invalid
 
-            // UXTO would be used as input, then we set (blockIndex, utxoTxID, and vout) => anchor
+            const { address, amount, rule } = output;
             const anchor = utils.anchor.fromReferences(blockIndex, TxID, i);
             if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
-            output.anchor = anchor;
+            const utxo = TxIO_Builder.newUTXO(anchor, amount, rule, address);
+            if (!utxo) { throw new Error('Invalid UTXO'); }
 
             if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
-            this.addressesUTXOs[address].push(output);
-            this.utxosByAnchor[anchor] = output;
+            this.addressesUTXOs[address].push(utxo);
+            this.utxosByAnchor[anchor] = utxo;
             this.#changeBalance(address, amount);
 
-            if (output.rule === "sigOrSlash") {
+            if (rule === "sigOrSlash") {
                 if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
-                if (txValidation.calculateRemainingAmount(transaction) < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
-                newStakesOutputs.push(output); // for now we only create new range
+                const remainingAmount = TxValidation.calculateRemainingAmount(this.utxosByAnchor, transaction);
+                if (remainingAmount < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
+                newStakesOutputs.push(utxo); // for now we only create new range
             }
         }
 
@@ -133,10 +131,12 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     async digestFinalizedBlocks(blocksData) {
         try {
             const newStakesOutputs = [];
-            for (let i = 0; i < blocksData.length; i++) {
-                const blockData = blocksData[i];
+            //for (let i = 0; i < blocksData.length; i++) {
+                //const blockData = blocksData[i];
+            for (const blockData of blocksData) {
                 const Txs = blockData.Txs;
                 const newStakesOutputsFromBlock = this.#digestFinalizedBlockTransactions(blockData.index, Txs);
+                if (newStakesOutputsFromBlock === false) { return false; }
 
                 const supplyFromBlock = blockData.supply;
                 const coinBase = blockData.coinBase;
@@ -144,7 +144,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
                 const totalOfBalances = this.#calculateTotalOfBalances();
 
                 if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
-                    console.warn(`digestPowProposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy}`);
+                    console.warn(`digestPowProposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy} | supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
                     return false;
                 }
                 //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);

@@ -221,9 +221,7 @@ async function nodeSpecificTest(accounts, wss) {
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    while (true) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    // while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }
     
     /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
     let msgWeight = 1_000;

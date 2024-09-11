@@ -4,13 +4,13 @@ import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
 import Compressor from '../externalLibs/gzip.min.js';
 import Decompressor from '../externalLibs/gunzip.min.js';
 import msgpack from '../externalLibs/msgpack.min.js';
+import { Transaction_Builder } from './transaction.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
 * @typedef {import("./block.mjs").Block} Block
 * @typedef {import("./block.mjs").BlockData} BlockData
 * @typedef {import("./transaction.mjs").Transaction} Transaction
-* @typedef {import("./transaction.mjs").TransactionIO} TransactionIO
 * @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
 */
 
@@ -645,13 +645,12 @@ const compression = {
                     tx.witnesses[i] = [convert.hex.toUint8Array(signature), convert.hex.toUint8Array(publicKey)]; // safe type: hex
                 }
                 for (let j = 0; j < tx.inputs.length; j++) {
-                    const input = tx.inputs[j];
-                    if (typeof input === 'string') { // case of coinbase/posReward: input = nonce/validatorHash
-                        tx.inputs[j] = typeValidation.hex(input) ? convert.hex.toUint8Array(input) : input;
+                    /*if (isMinerOrValidatorTx) {
+                        tx.inputs[j] = convert.hex.toUint8Array(tx.inputs[j]); // case of coinbase/posReward: input = nonce/validatorHash
                         continue;
-                    }
+                    }*/
 
-                    for (const key in input) { if (input[key] === undefined) { delete input[key]; } }
+                    //for (const key in input) { if (input[key] === undefined) { delete input[key]; } } // should not append
                 };
                 for (let j = 0; j < tx.outputs.length; j++) {
                     const output = tx.outputs[j];
@@ -671,9 +670,7 @@ const compression = {
                 }
                 for (let j = 0; j < tx.inputs.length; j++) {
                     const input = tx.inputs[j];
-                    if (typeof input === 'string') {
-                        continue;
-                    }
+                    if (typeof input === 'string') { continue; }
                     if (typeValidation.uint8Array(input)) {
                         tx.inputs[j] = convert.uint8Array.toHex(input); // case of coinbase/posReward: input = nonce/validatorHash
                         continue;
@@ -689,6 +686,7 @@ const compression = {
                 // first block prevHash isn't Hex
                 blockData.prevHash = blockData.index !== 0 ? convert.hex.toUint8Array(blockData.prevHash) : blockData.prevHash;
                 for (let i = 0; i < blockData.Txs.length; i++) {
+                    //const isMinerOrValidatorTx = Transaction_Builder.isMinerOrValidatorTx(blockData.Txs[i]);
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
                 };
 
@@ -722,6 +720,7 @@ const compression = {
                 blockData.nonce = convert.hex.toUint8Array(blockData.nonce); // safe type: hex
 
                 for (let i = 0; i < blockData.Txs.length; i++) {
+                    //const isMinerOrValidatorTx = Transaction_Builder.isMinerOrValidatorTx(blockData.Txs[i], i);
                     blockData.Txs[i] = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(blockData.Txs[i]);
                 };
 

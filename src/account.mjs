@@ -2,7 +2,7 @@ import { AsymetricFunctions } from './conCrypto.mjs';
 
 /**
 * @typedef {import("../src/transaction.mjs").Transaction} Transaction
-* @typedef {import("../src/transaction.mjs").TransactionIO} TransactionIO
+* @typedef {import("../src/transaction.mjs").UTXO} UTXO
 */
 
 export class Account {
@@ -17,7 +17,7 @@ export class Account {
 
        /** @type {string} */
        this.address = address;
-       /** @type {TransactionIO[]} */
+       /** @type {UTXO[]} */
        this.UTXOs = [];
        /** @type {number} */
        this.balance = 0;
@@ -38,7 +38,7 @@ export class Account {
    }
    /**
     * @param {number} balance
-    * @param {TransactionIO[]} UTXOs
+    * @param {UTXO[]} UTXOs
     */
    setBalanceAndUTXOs(balance, UTXOs) {
        if (typeof balance !== 'number') { throw new Error('Invalid balance'); }
