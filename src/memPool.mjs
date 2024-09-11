@@ -132,12 +132,11 @@ export class MemPool { // Store transactions that are not yet included in a bloc
             for (const tx of Txs) {
                 if (Transaction_Builder.isMinerOrValidatorTx(tx)) { continue; }
     
-                const confirmedTx = tx;
-                const collidingTx = this.#caughtTransactionsAnchorsCollision(confirmedTx);
+                const collidingTx = this.#caughtTransactionsAnchorsCollision(tx);
                 if (!collidingTx) { continue; }
                 
-                if (confirmedTx.id === collidingTx.id) {
-                    console.log(`[MEMPOOL] transaction: ${confirmedTx.id} confirmed!`); }
+                if (tx.id === collidingTx.id) {
+                    console.log(`[MEMPOOL] transaction: ${tx.id} confirmed!`); }
                 this.#removeMempoolTransaction(collidingTx);
             }
         }

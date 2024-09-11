@@ -28,7 +28,7 @@ export class Blockchain {
     constructor(nodeId, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'silent',
+            logLevel = 'debug', // 'silent',
             snapshotInterval = 100,
         } = options;
         

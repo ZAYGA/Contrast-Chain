@@ -92,17 +92,17 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             const utxo = TxIO_Builder.newUTXO(anchor, amount, rule, address);
             if (!utxo) { throw new Error('Invalid UTXO'); }
 
-            if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
-            this.addressesUTXOs[address].push(utxo);
-            this.utxosByAnchor[anchor] = utxo;
-            this.#changeBalance(address, amount);
-
             if (rule === "sigOrSlash") {
                 if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
                 const remainingAmount = TxValidation.calculateRemainingAmount(this.utxosByAnchor, transaction);
                 if (remainingAmount < output.amount) { throw new Error('SigOrSlash requires fee > amount'); }
                 newStakesOutputs.push(utxo); // for now we only create new range
             }
+
+            if (this.addressesUTXOs[address] === undefined) { this.addressesUTXOs[address] = []; }
+            this.addressesUTXOs[address].push(utxo);
+            this.utxosByAnchor[anchor] = utxo;
+            this.#changeBalance(address, amount);
         }
 
         return newStakesOutputs;
@@ -118,8 +118,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
         for (let i = 0; i < Txs.length; i++) {
             const transaction = Txs[i];
-            this.#digestTransactionInputs(transaction, i); // Reverse function's call ?
             const newStakesOutputsFromTx = this.#digestTransactionOutputs(blockIndex, transaction);
+            this.#digestTransactionInputs(transaction, i);
             newStakesOutputs.push(...newStakesOutputsFromTx);
         }
 
@@ -131,12 +131,9 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
     async digestFinalizedBlocks(blocksData) {
         try {
             const newStakesOutputs = [];
-            //for (let i = 0; i < blocksData.length; i++) {
-                //const blockData = blocksData[i];
             for (const blockData of blocksData) {
                 const Txs = blockData.Txs;
                 const newStakesOutputsFromBlock = this.#digestFinalizedBlockTransactions(blockData.index, Txs);
-                if (newStakesOutputsFromBlock === false) { return false; }
 
                 const supplyFromBlock = blockData.supply;
                 const coinBase = blockData.coinBase;
@@ -145,6 +142,9 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
                 if (totalOfBalances !== totalSupply && this.bypassValidation === false) {
                     console.warn(`digestPowProposal rejected: blockIndex: ${blockData.index} | legitimacy: ${blockData.legitimacy} | supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);
+                    console.warn(`INVALID TOTAL SUPPLY !== TOTAL OF BALANCES`);
+                    console.warn(`INVALID TOTAL SUPPLY !== TOTAL OF BALANCES`);
+                    console.warn(`INVALID TOTAL SUPPLY !== TOTAL OF BALANCES`);
                     return false;
                 }
                 //console.info(`supplyFromBlock+coinBase: ${utils.convert.number.formatNumberAsCurrency(totalSupply)} - totalOfBalances: ${utils.convert.number.formatNumberAsCurrency(totalOfBalances)}`);

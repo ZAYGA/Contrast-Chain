@@ -191,22 +191,22 @@ async function nodeSpecificTest(accounts, wss) {
     const factory = new NodeFactory();
 
     const minerNodes = [];
-    for (let i = 0; i < testParams.nbOfMiners; i++) {
+    const validatorNodes = [];
+
+    /*for (let i = 0; i < testParams.nbOfMiners; i++) {
         const minerNode = await initMinerNode(factory, accounts[i]);
         minerNodes.push(minerNode);
-    }
-    
-    const validatorNodes = [];
+    }*/
     for (let i = testParams.nbOfMiners; i < testParams.nbOfMiners + testParams.nbOfValidators; i++) {
-        const validatorNode = await initValidatorNode(factory, accounts[i]);
+        const validatorNode = await initValidatorNode(factory, accounts[i+100]);
         validatorNodes.push(validatorNode);
     }
     
     // MultiNode test
-    /*const multiCode = await factory.createNode(accounts[0], ['validator', 'miner'], { listenAddress: '/ip4/0.0.0.0/tcp/0' });
-    await multiCode.start();
-    minerNodes.push(multiCode);
-    validatorNodes.push(multiCode);*/
+    const multiNode = await factory.createNode(accounts[0], ['validator', 'miner'], { listenAddress: '/ip4/0.0.0.0/tcp/0' });
+    await multiNode.start();
+    minerNodes.push(multiNode);
+    validatorNodes.push(multiNode);
     
     const allNodes = [...minerNodes, ...validatorNodes];
     await waitForP2PNetworkReady(allNodes);

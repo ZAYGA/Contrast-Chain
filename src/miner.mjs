@@ -5,6 +5,7 @@ import utils from './utils.mjs';
 /**
  * @typedef {import("./account.mjs").Account} Account
  * @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
+ * @typedef {import("./taskQueue.mjs").TaskQueue} TaskQueue
  */
 
 export class Miner {
@@ -12,7 +13,7 @@ export class Miner {
      * @param {Account} minerAccount
      * @param {P2PNetwork} p2pNetwork
      */
-    constructor(minerAccount, p2pNetwork, roles = ['miner']) {
+    constructor(minerAccount, p2pNetwork, roles = ['miner'], taskQueue = null) {
         /** @type {Account} */
         this.minerAccount = minerAccount;
         /** @type {BlockData[]} */
@@ -33,7 +34,9 @@ export class Miner {
         this.preshotedPowBlock = null;
 
         this.roles = roles;
-        this.canProceedMining = true; 
+        this.canProceedMining = true;
+        /** @type {TaskQueue} */
+        this.taskQueue = taskQueue; // only for multiNode (validator + miner)
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
@@ -99,6 +102,10 @@ export class Miner {
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
+    #broadcastBlockCandidate(blockCandidate) {
+        if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', blockCandidate); };
+        this.p2pNetwork.broadcast('new_block_pow', blockCandidate);
+    }
     /** DON'T AWAIT THIS FUNCTION */
     async startWithWorker(nbOfWorkers = 1) {
         const workersStatus = [];
@@ -111,7 +118,7 @@ export class Miner {
                     if (!conform) { workersStatus[message.id] = 'free'; return; }
 
                     if (message.blockCandidate.timestamp <= Date.now()) { // if block is ready to be broadcasted
-                        this.p2pNetwork.broadcast('new_block_pow', message.blockCandidate);
+                        this.#broadcastBlockCandidate(message.blockCandidate);
                     } else { // if block is not ready to be broadcasted (pre-shoted)
                         this.preshotedPowBlock = message.blockCandidate;
                         this.bets[message.blockCandidate.index] = 1; // avoid betting on the same block
@@ -133,10 +140,11 @@ export class Miner {
             await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
             if (preshotedPowReadyToSend) {
-                this.p2pNetwork.broadcast('new_block_pow', this.preshotedPowBlock)
+                this.#broadcastBlockCandidate(this.preshotedPowBlock);
                 this.preshotedPowBlock = null;
             }
 
+            if (!this.canProceedMining) { continue; }
             const id = workersStatus.indexOf('free');
             if (id === -1) { continue; }
 

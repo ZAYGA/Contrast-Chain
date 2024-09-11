@@ -93,7 +93,14 @@ export class TxValidation {
     static calculateRemainingAmount(utxosByAnchor, transaction) {
         // AT THIS STAGE WE HAVE ENSURED THAT THE TRANSACTION IS CONFORM
 
-        const utxosAmounts = transaction.inputs.map(anchor => utxosByAnchor[anchor].amount); // throw if not found
+        //const utxosAmounts = transaction.inputs.map(anchor => utxosByAnchor[anchor].amount); // throw if not found
+        const utxosAmounts = [];
+        for (let i = 0; i < transaction.inputs.length; i++) {
+            const utxo = utxosByAnchor[transaction.inputs[i]];
+            if (!utxo) { 
+                throw new Error('UTXO not found in utxoCache, already spent?'); }
+            utxosAmounts.push(utxo.amount);
+        }
         const inputsAmount = utxosAmounts.reduce((a, b) => a + b, 0);
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
 

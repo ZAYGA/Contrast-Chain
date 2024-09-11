@@ -44,13 +44,12 @@ export class Node {
         this.utxoCache = new UtxoCache();
         this.utxoCacheSnapshots = [];
         /** @type {Miner} */
-        this.miner = new Miner(account, this.p2pNetwork, this.roles);
+        this.miner = new Miner(account, this.p2pNetwork, this.roles, this.taskQueue);
         this.useDevArgon2 = false;
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
         /** @type {SyncHandler} */
         this.syncHandler = new SyncHandler(this.blockchain);
-
     }
 
     async start() {
@@ -196,6 +195,7 @@ export class Node {
 
         if (storeAsFiles) this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
+        //#region - log
         const timeBetweenPosPow = ((finalizedBlock.timestamp - finalizedBlock.posTimestamp) / 1000).toFixed(2);
         const isSynchronization = !broadcastNewCandidate && !skipValidation;
         const minerId = finalizedBlock.Txs[0].outputs[0].address.slice(0, 6);
@@ -204,8 +204,9 @@ export class Node {
         } else if (isSynchronization) {
             console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} (sync) -> ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${(Date.now() - startTime)}ms`);
         } else {
-            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> [MINER-${minerId}] ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | timeBetweenPosPow: ${timeBetweenPosPow}s | processProposal: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+            console.info(`[NODE-${this.id.slice(0, 6)}] #${finalizedBlock.index} -> [MINER-${minerId}] ( diff: ${hashConfInfo.difficulty} + timeAdj: ${hashConfInfo.timeDiffAdjustment} + leg: ${hashConfInfo.legitimacy} ) = finalDiff: ${hashConfInfo.finalDifficulty} | z: ${hashConfInfo.zeros} | a: ${hashConfInfo.adjust} | gap_PosPow: ${timeBetweenPosPow}s | digest: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
         }
+        //#endregion
 
         if (!broadcastNewCandidate) { return true; }
 
