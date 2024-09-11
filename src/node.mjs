@@ -61,7 +61,7 @@ export class Node {
 
         await this.p2pNetwork.start();
         // Set the event listeners
-        const rolesTopics = { 
+        const rolesTopics = {
             validator: ['new_transaction', 'new_block_pow', 'test'],
             miner: ['new_block_proposal', 'test']
         }
@@ -158,10 +158,11 @@ export class Node {
             const lastBlockIndex = this.blockchain.currentHeight;
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
-                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0,6)}`); return false;
+                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
-                console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0,6)}`); return false; }
+                console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
+            }
             // verify the hash
             const { hex, bitsArrayAsString } = await BlockUtils.getMinerHash(finalizedBlock, this.useDevArgon2);
             if (finalizedBlock.hash !== hex) { return 'Hash invalid!'; }
@@ -218,7 +219,7 @@ export class Node {
         const blocksData = await this.blockchain.checkAndHandleReorg(this.utxoCache);
         if (!blocksData) { throw new Error('Failed to handle reorg'); }
         await this.blockchain.applyChainReorg(this.utxoCache, this.vss, blocksData);
-        
+
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlocksTransactions(blocksData);
 
@@ -307,7 +308,8 @@ export class Node {
                     const lastBlockIndex = this.blockchain.currentHeight;
                     const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
                     if (isSynchronized) {
-                        this.taskQueue.push('digestPowProposal', data); break; }
+                        this.taskQueue.push('digestPowProposal', data); break;
+                    }
 
                     // if we are late, we ask for the missing blocks by p2p streaming
                     this.taskQueue.push('syncWithKnownPeers', null, true);
