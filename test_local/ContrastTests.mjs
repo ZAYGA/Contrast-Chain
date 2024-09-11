@@ -12,8 +12,9 @@ const testParams = {
     nbOfAccounts: 200,
     addressType: 'W',
 
-    nbOfMiners: 1,
-    nbOfValidators: 1,
+    nbOfMiners: 0,
+    nbOfValidators: 0,
+    nbOfMultiNodes: 2,
 
     txsSeqs: {
         userSendToAllOthers: { start: 5, end: 100000, interval: 4},
@@ -181,6 +182,16 @@ async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0
     return validatorNode;
 }
 /**
+ * @param {NodeFactory} factory
+ * @param {Account} account
+ */
+async function initMultiNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') {
+    const multiNode = await factory.createNode(account, ['validator', 'miner'], { listenAddress });
+    await multiNode.start();
+
+    return multiNode;
+}
+/**
  * @param {Account[]} accounts
  * @param {WebSocketServer} wss
  */
@@ -189,32 +200,27 @@ async function nodeSpecificTest(accounts, wss) {
 
     //#region init nodes
     const factory = new NodeFactory();
-
-    const minerNodes = [];
-    const validatorNodes = [];
-
-    /*for (let i = 0; i < testParams.nbOfMiners; i++) {
-        const minerNode = await initMinerNode(factory, accounts[i]);
-        minerNodes.push(minerNode);
-    }*/
-    for (let i = testParams.nbOfMiners; i < testParams.nbOfMiners + testParams.nbOfValidators; i++) {
-        const validatorNode = await initValidatorNode(factory, accounts[i+100]);
-        validatorNodes.push(validatorNode);
+    const nodesPromises = [];
+    for (let i = 0; i < testParams.nbOfMiners; i++) {
+        nodesPromises.push(initMinerNode(factory, accounts[i]));
     }
-    
-    // MultiNode test
-    const multiNode = await factory.createNode(accounts[0], ['validator', 'miner'], { listenAddress: '/ip4/0.0.0.0/tcp/0' });
-    await multiNode.start();
-    minerNodes.push(multiNode);
-    validatorNodes.push(multiNode);
-    
-    const allNodes = [...minerNodes, ...validatorNodes];
-    await waitForP2PNetworkReady(allNodes);
-    for (const node of minerNodes) { node.miner.startWithWorker(); }
-    for (const node of validatorNodes) { await node.createBlockCandidateAndBroadcast(); }
+    for (let i = testParams.nbOfMiners; i < testParams.nbOfValidators + testParams.nbOfMiners; i++) {
+        nodesPromises.push(initValidatorNode(factory, accounts[i]));
+    }
+    for (let i = testParams.nbOfMiners + testParams.nbOfValidators; i < testParams.nbOfMultiNodes + testParams.nbOfMiners + testParams.nbOfValidators; i++) {
+        nodesPromises.push(initMultiNode(factory, accounts[i]));
+    }
 
-    const minerNode = minerNodes[0];
-    const validatorNode = validatorNodes[0];
+    const nodes = await Promise.all(nodesPromises);
+
+    await waitForP2PNetworkReady(nodes);
+
+    let minerNode;
+    let validatorNode;
+    for (const node of nodes) { 
+        if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
+        if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
+    }
 
     console.log('[TEST] Nodes Initialized. - start mining');
     //#endregion
@@ -258,11 +264,6 @@ async function nodeSpecificTest(accounts, wss) {
                     client.send(JSON.stringify({ utxoCache: validatorNode.utxoCache }));
                 }
             });
-
-            if (validatorNode.blockCandidate.index > 9 && validatorNodes.length < 2) {
-                //const newValidator = await initValidatorNode(factory, accounts[10]);
-                //validatorNodes.push(newValidator);
-            }
 
             /*const timeDiff = Date.now() - lastBlockIndexAndTime.time;
             console.log(`[TEST] New block: ${node.blockCandidate.index} | Time: ${timeDiff}ms`);
