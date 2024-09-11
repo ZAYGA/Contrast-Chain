@@ -12,15 +12,15 @@ const testParams = {
     nbOfAccounts: 200,
     addressType: 'W',
 
-    nbOfMiners: 0,
-    nbOfValidators: 0,
-    nbOfMultiNodes: 1,
+    nbOfMiners: 1,
+    nbOfValidators: 1,
+    nbOfMultiNodes: 0,
 
     txsSeqs: {
-        userSendToAllOthers: { start: 5, end: 100000, interval: 4},
-        stakeVss: { start: 15, end: 25, interval: 1 },
-        simpleUserToUser: { start: 2, end: 100000, interval: 2 },
-        userSendToNextUser: { start: 40, end: 100000, interval: 6 }
+        userSendToAllOthers: { active: false, start: 5, end: 100000, interval: 4},
+        stakeVss: { active: false, start: 15, end: 25, interval: 1 },
+        simpleUserToUser: { active: false, start: 2, end: 100000, interval: 2 },
+        userSendToNextUser: { active: false, start: 40, end: 100000, interval: 6 }
     }
 }
 
@@ -159,7 +159,7 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
  * @param {NodeFactory} factory
  * @param {Account} account
  */
-async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { //ip4/0.0.0.0/tcp/0 - /ip4/0.0.0.0/tcp/7777
+async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { // /ip4/0.0.0.0/tcp/7777
     const minerNode = await factory.createNode(account, 'miner', { listenAddress });
     minerNode.miner.useDevArgon2 = testParams.useDevArgon2;
     minerNode.memPool.useDevArgon2 = testParams.useDevArgon2;
@@ -199,27 +199,29 @@ async function nodeSpecificTest(accounts, wss) {
     if (!contrast.utils.isNode) { return; }
 
     //#region init nodes
+    const totalOfNodesToInit = testParams.nbOfMiners + testParams.nbOfValidators + testParams.nbOfMultiNodes;
+    const listenAddress = totalOfNodesToInit > 1 ? '/ip4/0.0.0.0/tcp/0' : '/ip4/0.0.0.0/tcp/7777' // ugly
     const factory = new NodeFactory();
     const nodesPromises = [];
     for (let i = 0; i < testParams.nbOfMiners; i++) {
-        nodesPromises.push(initMinerNode(factory, accounts[i]));
+        nodesPromises.push(initMinerNode(factory, accounts[i], listenAddress));
     }
     for (let i = testParams.nbOfMiners; i < testParams.nbOfValidators + testParams.nbOfMiners; i++) {
-        nodesPromises.push(initValidatorNode(factory, accounts[i]));
+        nodesPromises.push(initValidatorNode(factory, accounts[i], listenAddress));
     }
     for (let i = testParams.nbOfMiners + testParams.nbOfValidators; i < testParams.nbOfMultiNodes + testParams.nbOfMiners + testParams.nbOfValidators; i++) {
-        nodesPromises.push(initMultiNode(factory, accounts[i]));
+        nodesPromises.push(initMultiNode(factory, accounts[i], listenAddress));
     }
 
     const nodes = await Promise.all(nodesPromises);
 
-    await waitForP2PNetworkReady(nodes);
+    ///await waitForP2PNetworkReady(nodes);
 
     let minerNode;
     let validatorNode;
     for (const node of nodes) {
-        if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
-        if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
+        if (node.roles.includes('miner')) { if (!minerNode) { minerNode = node; } }
+        if (node.roles.includes('validator')) { if (!validatorNode) { validatorNode = node; } }
     }
 
     console.log('[TEST] Nodes Initialized. - start mining');
@@ -274,7 +276,7 @@ async function nodeSpecificTest(accounts, wss) {
         refreshAllBalances(validatorNode, accounts);
 
         // user send to all others
-        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToAllOthers.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToAllOthers.interval === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
+        if (testParams.txsSeqs.userSendToAllOthers.active && validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToAllOthers.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToAllOthers.interval === 0 && !txsTaskDoneThisBlock['userSendToAllOthers']) {
             try {
                 txsTaskDoneThisBlock['userSendToAllOthers'] = false;
                 await userSendToAllOthers(minerNode, accounts);
@@ -285,7 +287,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // user stakes in VSS
-        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.stakeVss.start && validatorNode.blockCandidate.index < testParams.txsSeqs.stakeVss.end && !txsTaskDoneThisBlock['userStakeInVSS']) {
+        if (testParams.txsSeqs.stakeVss.active && validatorNode.blockCandidate.index >= testParams.txsSeqs.stakeVss.start && validatorNode.blockCandidate.index < testParams.txsSeqs.stakeVss.end && !txsTaskDoneThisBlock['userStakeInVSS']) {
             try {
                 txsTaskDoneThisBlock['userStakeInVSS'] = false;
                 const senderAccountIndex = validatorNode.blockCandidate.index - testParams.txsSeqs.stakeVss.start;
@@ -297,7 +299,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // simple user to user transactions
-        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.simpleUserToUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.simpleUserToUser.interval === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
+        if (testParams.txsSeqs.simpleUserToUser.active && validatorNode.blockCandidate.index >= testParams.txsSeqs.simpleUserToUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.simpleUserToUser.interval === 0 && !txsTaskDoneThisBlock['userSendToUser']) {
             try {
                 txsTaskDoneThisBlock['userSendToUser'] = false;
                 await userSendToUser(minerNode, accounts);
@@ -308,7 +310,7 @@ async function nodeSpecificTest(accounts, wss) {
         }
 
         // users Send To Next Users
-        if (validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToNextUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToNextUser.interval === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
+        if (testParams.txsSeqs.userSendToNextUser.active && validatorNode.blockCandidate.index >= testParams.txsSeqs.userSendToNextUser.start && (validatorNode.blockCandidate.index - 1) % testParams.txsSeqs.userSendToNextUser.interval === 0 && !txsTaskDoneThisBlock['userSendToNextUser']) {
             try {
                 txsTaskDoneThisBlock['userSendToNextUser'] = false;
                 await userSendToNextUser(minerNode, accounts, validatorNode);

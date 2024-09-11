@@ -71,15 +71,34 @@ export class Node {
 
         await this.syncHandler.start(this.p2pNetwork);
         await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
+        
+        if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
 
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
+        if (!await this.#waitSomePeers(1, 60)) { this.stop(); return; }
+        console.log('P2P network is ready - we are connected baby!');
+        await this.syncWithKnownPeers();
+
+        if (this.roles.includes('validator')) { await this.createBlockCandidateAndBroadcast(); }
+        this.#controlPeersConnection();
     }
     async stop() {
         await this.p2pNetwork.stop();
+        await this.syncHandler.stop(); // That do nothing lol!
         if (this.miner) { this.miner.terminate(); }
         await this.blockchain.close();
 
         console.log(`Node ${this.id} (${this.roles.join('_')}) => stopped`);
+    }
+    async #waitSomePeers(nbOfPeers = 1, maxAttempts = 30, interval = 1000) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, interval));
+            const peerCount = this.p2pNetwork.getConnectedPeers().length;
+            if (peerCount > nbOfPeers) { return true; }
+        }
+    
+        console.warn('P2P network failed to initialize within the expected time');
+        return false;
     }
     async syncWithKnownPeers() {
         const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
@@ -112,7 +131,17 @@ export class Node {
             }
         }
     }
+    async #controlPeersConnection() {
+        while (true) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            const nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
+            if (nbOfConnectedPeers > 1) { continue; }
 
+            await this.stop();
+            await this.start();
+            return;
+        }
+    }
     async createBlockCandidateAndBroadcast() {
         if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
 
@@ -129,7 +158,7 @@ export class Node {
             const lastBlockIndex = this.blockchain.currentHeight;
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
-                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
+                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0,6)}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
                 console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0,6)}`); return false; }

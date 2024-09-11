@@ -37,6 +37,9 @@ export class SyncHandler {
             throw error;
         }
     }
+    async stop() {
+        this.logger.info('Sync node stopped');
+    }
     /**
      * Handles incoming streams from peers.
      * @param {Object} param0 - The stream object.

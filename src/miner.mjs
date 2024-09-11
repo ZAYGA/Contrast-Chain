@@ -102,9 +102,9 @@ export class Miner {
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
-    #broadcastBlockCandidate(blockCandidate) {
-        if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', blockCandidate); };
-        this.p2pNetwork.broadcast('new_block_pow', blockCandidate);
+    #broadcastBlockCandidate(finalizedBlock) {
+        if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
+        this.p2pNetwork.broadcast('new_block_pow', finalizedBlock);
     }
     /** DON'T AWAIT THIS FUNCTION */
     async startWithWorker(nbOfWorkers = 1) {
@@ -114,14 +114,15 @@ export class Miner {
             worker.on('message', (message) => {
                 try {
                     if (message.error) { throw new Error(message.error); }
-                    const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, message.blockCandidate);
+                    const finalizedBlock = message.blockCandidate;
+                    const { conform } = utils.mining.verifyBlockHashConformToDifficulty(message.bitsArrayAsString, finalizedBlock);
                     if (!conform) { workersStatus[message.id] = 'free'; return; }
 
-                    if (message.blockCandidate.timestamp <= Date.now()) { // if block is ready to be broadcasted
-                        this.#broadcastBlockCandidate(message.blockCandidate);
+                    if (finalizedBlock.timestamp <= Date.now()) { // if block is ready to be broadcasted
+                        this.#broadcastBlockCandidate(finalizedBlock);
                     } else { // if block is not ready to be broadcasted (pre-shoted)
-                        this.preshotedPowBlock = message.blockCandidate;
-                        this.bets[message.blockCandidate.index] = 1; // avoid betting on the same block
+                        this.preshotedPowBlock = finalizedBlock;
+                        this.bets[finalizedBlock.index] = 1; // avoid betting on the same block
                     }
                 } catch (err) {
                     console.error(err);
