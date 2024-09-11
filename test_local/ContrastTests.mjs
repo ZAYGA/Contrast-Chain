@@ -220,10 +220,10 @@ async function nodeSpecificTest(accounts, wss) {
     let minerNode;
     let validatorNode;
     for (const node of nodes) {
-        //if (node.roles.includes('miner')) { if (!minerNode) { minerNode = node; } }
-        //if (node.roles.includes('validator')) { if (!validatorNode) { validatorNode = node; } }
-        if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
-        if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
+        if (node.roles.includes('miner')) { if (!minerNode) { minerNode = node; } }
+        if (node.roles.includes('validator')) { if (!validatorNode) { validatorNode = node; } }
+        //if (node.roles.includes('miner')) { node.miner.startWithWorker(); if (!minerNode) { minerNode = node; } }
+        //if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
     }
 
     console.log('[TEST] Nodes Initialized. - start mining');
