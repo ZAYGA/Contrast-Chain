@@ -80,6 +80,7 @@ export class Miner {
         }
         //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
         //const blockCandidateClone = BlockUtils.cloneBlockData(blockCandidate);
+        if (!this.roles.includes('validator')) { console.info(`[MINER] New block candidate pushed (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`); }
         this.candidates.push(blockCandidate);
     }
     #betOnTimeToPow() {
@@ -104,6 +105,7 @@ export class Miner {
     }
     /** @param {BlockData} finalizedBlock */
     #broadcastBlockCandidate(finalizedBlock) {
+        if (!this.roles.includes('validator')) { console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`); }
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
         this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
     }
@@ -140,7 +142,7 @@ export class Miner {
         while (true) {
             const delayBetweenMining = this.roles.includes('validator') ? 20 : 10;
             await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
-            
+
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
             if (preshotedPowReadyToSend) {
                 this.#broadcastBlockCandidate(this.preshotedPowBlock);

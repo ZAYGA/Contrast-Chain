@@ -54,6 +54,9 @@ export class TaskQueue {
                     await this.node.syncWithKnownPeers();
                     console.warn(`[NODE-${this.node.id.slice(0,6)}] retargeting done, lastBlockData.index: ${this.node.blockchain.lastBlock === null ? 0 : this.node.blockchain.lastBlock.index}`);
                     break;
+                case 'createBlockCandidateAndBroadcast':
+                    await this.node.createBlockCandidateAndBroadcast();
+                    break;
                 default:
                     console.error(`[TaskQueue] Unknown task type: ${task.type}`);
             }

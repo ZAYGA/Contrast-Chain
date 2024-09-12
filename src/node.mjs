@@ -80,15 +80,16 @@ export class Node {
 
         // wait for the p2p network to be ready
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
-        if (!await this.#waitSomePeers(1, 60)) { this.stop(); return; }
+        if (!await this.#waitSomePeers(1, 30)) { this.stop(); return; }
 
         console.log('P2P network is ready - we are connected baby!');
 
-        // validators start the sync process with known peers
-        if (this.roles.includes('validator')) { await this.syncWithKnownPeers(); }
-
-        // validators start the block candidate creation process
-        if (this.roles.includes('validator')) { await this.createBlockCandidateAndBroadcast(); }
+        if (this.roles.includes('validator')) {
+            //await this.syncWithKnownPeers(); // validators start the sync process with known peers
+            this.taskQueue.push('createBlockCandidateAndBroadcast', null, true);
+            this.taskQueue.push('syncWithKnownPeers', null, true);
+            //await this.createBlockCandidateAndBroadcast(); // validators start the block candidate creation process
+        }
 
         // control the peers connection to avoid being a lone peer
         this.#controlPeersConnection();
@@ -145,7 +146,11 @@ export class Node {
     async #controlPeersConnection() {
         while (true) {
             await new Promise(resolve => setTimeout(resolve, 5000));
-            const nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
+            
+            const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
+            const isSlefCountedAsPeer = this.p2pNetwork.getConnectedPeers().findIndex(peer => peer === myPeerId) !== -1;
+            let nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
+            if (isSlefCountedAsPeer) { nbOfConnectedPeers--; }
             if (nbOfConnectedPeers >= 1) { continue; }
 
             await this.stop();
@@ -264,7 +269,7 @@ export class Node {
         const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
 
         // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 1, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
+        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 100, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
         if (this.blockchain.lastBlock) {
             await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);

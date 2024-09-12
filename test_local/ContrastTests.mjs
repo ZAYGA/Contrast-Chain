@@ -9,12 +9,12 @@ import { NodeFactory } from '../src/node-factory.mjs';
 
 const testParams = {
     useDevArgon2: false, // true => 100txs processProposal: ~7sec | false => 100txs processProposal: ~5.8sec
-    nbOfAccounts: 200,
+    nbOfAccounts: 200, // minimum 25
     addressType: 'W',
 
     nbOfMiners: 0,
     nbOfValidators: 0,
-    nbOfMultiNodes: 2,
+    nbOfMultiNodes: 1,
 
     txsSeqs: {
         userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4 },
@@ -226,11 +226,15 @@ async function nodeSpecificTest(accounts, wss) {
         //if (node.roles.includes('validator')) { node.createBlockCandidateAndBroadcast(); if (!validatorNode) { validatorNode = node; } }
     }
 
-    console.log('[TEST] Nodes Initialized. - start mining');
+    console.log('[TEST] Nodes Initialized.');
     //#endregion
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    //await new Promise(resolve => setTimeout(resolve, 5000));
 
+    while (true) { 
+        if (validatorNode.blockCandidate !== null) { break; }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
     // while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }
 
     /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
