@@ -17,7 +17,7 @@ const testParams = {
     nbOfMultiNodes: 2,
 
     txsSeqs: {
-        userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4},
+        userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4 },
         stakeVss: { active: true, start: 15, end: 25, interval: 1 },
         simpleUserToUser: { active: true, start: 2, end: 100000, interval: 2 },
         userSendToNextUser: { active: true, start: 40, end: 100000, interval: 6 }
@@ -35,7 +35,7 @@ async function userSendToUser(node, accounts, senderAccountIndex = 0, receiverAc
     const receiverAddress = accounts[receiverAccountIndex].address;
 
     const amountToSend = 100_000;
-    const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAddress);
+    const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransfer(senderAccount, amountToSend, receiverAddress);
     if (signedTx) {
         //console.log(`SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAddress} | txID: ${signedTx.id}`);
         await node.p2pBroadcast('new_transaction', signedTx);
@@ -57,7 +57,7 @@ async function userSendToNextUser(node, accounts) {
         const receiverAccount = i === accounts.length - 1 ? accounts[0] : accounts[i + 1];
 
         const amountToSend = Math.floor(Math.random() * (1_000) + 1000);
-        const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransferTransaction(senderAccount, amountToSend, receiverAccount.address);
+        const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransfer(senderAccount, amountToSend, receiverAccount.address);
         if (signedTx) {
             signedTxsJSON.push(signedTx);
             //console.log(`[TEST] SEND: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToSend)} -> ${receiverAccount.address}`);
@@ -92,7 +92,7 @@ async function userSendToAllOthers(node, accounts, senderAccountIndex = 0) {
             const transfer = { recipientAddress: accounts[i].address, amount };
             transfers.push(transfer);
         }
-        const transaction = await contrast.Transaction_Builder.createTransferTransaction(senderAccount, transfers);
+        const transaction = await contrast.Transaction_Builder.createTransfer(senderAccount, transfers);
         const signedTx = await senderAccount.signTransaction(transaction);
 
         if (signedTx) {
@@ -117,7 +117,7 @@ async function userStakeInVSS(node, accounts, senderAccountIndex = 0, amountToSt
     const senderAccount = accounts[senderAccountIndex];
     const stakingAddress = senderAccount.address;
 
-    const transaction = await contrast.Transaction_Builder.createStakingNewVssTransaction(senderAccount, stakingAddress, amountToStake);
+    const transaction = await contrast.Transaction_Builder.createStakingVss(senderAccount, stakingAddress, amountToStake);
     const signedTx = await senderAccount.signTransaction(transaction);
     if (signedTx) {
         //console.log(`[TEST] STAKE: ${senderAccount.address} -> ${contrast.utils.convert.number.formatNumberAsCurrency(amountToStake)}`);
@@ -232,7 +232,7 @@ async function nodeSpecificTest(accounts, wss) {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }
-    
+
     /* TEST OF HEAVY MESSAGES NETWORKING OVER P2P
     let msgWeight = 1_000;
     while(true) {

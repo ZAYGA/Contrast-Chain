@@ -47,7 +47,7 @@ describe('Comprehensive Consensus Test', function () {
         await waitForP2PNetworkReady(nodes);
 
         // Start mining on all miner nodes
-        nodes.filter(node => node.roles.includes('miner')).forEach(node => node.miner.startWithWorker());
+        /// nodes.filter(node => node.roles.includes('miner')).forEach(node => node.miner.startWithWorker());
     });
 
     after(async function () {
@@ -153,7 +153,7 @@ describe('Comprehensive Consensus Test', function () {
 
     async function sendTransaction(sender, outputs, broadcastNode) {
         try {
-            const transaction = await Transaction_Builder.createTransferTransaction(sender, outputs, 1);
+            const transaction = await Transaction_Builder.createTransfer(sender, outputs, 1);
             const signedTx = await sender.signTransaction(transaction);
             await broadcastNode.p2pBroadcast('new_transaction', signedTx);
             //console.debug(`Transaction broadcasted: ${signedTx.id} from ${sender.address}`);

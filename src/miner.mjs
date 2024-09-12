@@ -29,7 +29,7 @@ export class Miner {
         /** @type {Object<string, number>} */
         this.bets = {};
         /** @type {{min: number, max: number}} */
-        this.betRange = {min: .4, max: .8}; // will bet between 40% and 80% of the expected blockTime
+        this.betRange = { min: .4, max: .8 }; // will bet between 40% and 80% of the expected blockTime
         /** @type {BlockData | null} */
         this.preshotedPowBlock = null;
 
@@ -49,7 +49,7 @@ export class Miner {
 
         const powReward = blockCandidate.powReward;
         delete clonedCandidate.powReward;
-        const coinbaseTx = await Transaction_Builder.createCoinbaseTransaction(coinbaseNonce, this.minerAccount.address, powReward);
+        const coinbaseTx = await Transaction_Builder.createCoinbase(coinbaseNonce, this.minerAccount.address, powReward);
         BlockUtils.setCoinbaseTransaction(clonedCandidate, coinbaseTx);
 
         const signatureHex = await BlockUtils.getBlockSignature(clonedCandidate);
@@ -57,7 +57,7 @@ export class Miner {
 
         return { signatureHex, nonce, clonedCandidate };
     }
-    /** 
+    /**
      * @param {BlockData} blockCandidate
      * @param {boolean} useBetTimestamp
      */
@@ -87,7 +87,7 @@ export class Miner {
         const betBasis = targetBlockTime * this.betRange.min;
         const betRandom = Math.random() * (this.betRange.max - this.betRange.min) * targetBlockTime;
         const bet = betBasis + betRandom;
-        
+
         return Math.floor(bet);
     }
     #cleanupCandidates(heightTolerance = 6) {

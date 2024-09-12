@@ -204,7 +204,7 @@ describe('Comprehensive Sync System Test', function () {
         const recipient = accounts[Math.floor(Math.random() * accounts.length)];
         const amount = Math.floor(Math.random() * TRANSACTION_AMOUNT) + 1;
 
-        const tx = await Transaction_Builder.createTransferTransaction(sender, [{ recipientAddress: recipient.address, amount }]);
+        const tx = await Transaction_Builder.createTransfer(sender, [{ recipientAddress: recipient.address, amount }]);
         const signedTx = await sender.signTransaction(tx);
         await node.p2pBroadcast('new_transaction', signedTx);
     }
