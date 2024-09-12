@@ -16,7 +16,7 @@ export class TxIO_Builder {
      */
     static newOutput(amount, rule, address) {
         const txOutput = TxOutput(amount, rule, address);
-        TxValidation.isValidTxOutput(txOutput);
+        TxValidation.isConformOutput(txOutput);
 
         return txOutput;
     }
@@ -143,7 +143,7 @@ export class Transaction_Builder {
         if (typeof address !== 'string') { throw new Error('Invalid address'); }
         if (typeof amount !== 'number') { throw new Error('Invalid amount'); }
 
-        const coinbaseOutput = TxIO_Builder.newOutput(amount, 'sig_v1', address);
+        const coinbaseOutput = TxIO_Builder.newOutput(amount, 'sig', address);
         const inputs = [nonceHex];
         const outputs = [coinbaseOutput];
 
@@ -165,7 +165,7 @@ export class Transaction_Builder {
         const posHashHex = await BlockUtils.getBlockSignature(blockCandidate, true);
         const posInput = `${posStakedAddress}:${posHashHex}`;
         const inputs = [posInput];
-        const posOutput = TxIO_Builder.newOutput(posReward, 'sig_v1', address);
+        const posOutput = TxIO_Builder.newOutput(posReward, 'sig', address);
         const outputs = [posOutput];
 
         const transaction = Transaction(inputs, outputs);
@@ -187,13 +187,13 @@ export class Transaction_Builder {
         this.checkMalformedAnchorsInUtxosArray(UTXOs);
         this.checkDuplicateAnchorsInUtxosArray(UTXOs);
 
-        const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig_v1', 1);
+        const { outputs, totalSpent } = Transaction_Builder.buildOutputsFrom(transfers, 'sig', 1);
         const estimatedWeight = Transaction_Builder.simulateTxToEstimateWeight(UTXOs, outputs);
         const { fee, change } = Transaction_Builder.calculateFeeAndChange(UTXOs, totalSpent, estimatedWeight, feePerByte);
         //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
-            const changeOutput = TxIO_Builder.newOutput(change, 'sig_v1', senderAddress);
+            const changeOutput = TxIO_Builder.newOutput(change, 'sig', senderAddress);
             outputs.push(changeOutput);
         }
 
@@ -222,7 +222,7 @@ export class Transaction_Builder {
         //console.log(`[TRANSACTION] fee: ${fee} microCont`);
 
         if (change !== 0) {
-            const changeOutput = TxIO_Builder.newOutput(change, 'sig_v1', senderAddress);
+            const changeOutput = TxIO_Builder.newOutput(change, 'sig', senderAddress);
             outputs.push(changeOutput);
         }
 
@@ -247,7 +247,7 @@ export class Transaction_Builder {
      */
     static simulateTxToEstimateWeight(utxos, outputs, nbOfSigners = 1) {
         const change = 26_152_659_654_321;
-        const changeOutput = TxIO_Builder.newOutput(change, 'sig_v1', 'Cv6XXKBTALRPSCzuU6k4');
+        const changeOutput = TxIO_Builder.newOutput(change, 'sig', 'Cv6XXKBTALRPSCzuU6k4');
         const outputsClone = TxIO_Builder.cloneTxIO(outputs);
         outputsClone.push(changeOutput);
 
@@ -270,7 +270,7 @@ export class Transaction_Builder {
      * @param {string} rule
      * @param {number} version
      */
-    static buildOutputsFrom(transfers = [{ recipientAddress: 'recipientAddress', amount: 1 }], rule = 'sig_v1') {
+    static buildOutputsFrom(transfers = [{ recipientAddress: 'recipientAddress', amount: 1 }], rule = 'sig') {
         const outputs = [];
         let totalSpent = 0;
 

@@ -162,6 +162,7 @@ class P2PNetwork extends EventEmitter {
 
             this.emit(topic, parsedMessage, from);
         } catch (error) {
+            console.error('Failed to parse pubsub message:', error);
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
         }
     }
@@ -183,8 +184,6 @@ class P2PNetwork extends EventEmitter {
                     break;
                 case 'new_block_finalized':
                     serialized = utils.serializer.block_finalized.toBinary_v2(message);
-                    if (serialized.Txs[0].inputs[0] === undefined) {
-                        console.error('Invalid coinbase nonce'); return; }
                     break;
                 default:
                     serialized = utils.serializer.rawData.toBinary_v1(message);
@@ -193,7 +192,10 @@ class P2PNetwork extends EventEmitter {
 
             await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
-        } catch (error) { this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error'); }
+        } catch (error) { 
+            console.error('Broadcast error:', error);
+            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error'); 
+        }
     }
     /**
      * Sends a message to a peer.

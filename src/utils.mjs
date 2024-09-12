@@ -528,9 +528,11 @@ const convert = {
         },
         /** @param {Uint8Array} uint8Array - Uint8Array to convert to hex */
         toHex: (uint8Array) => {
-            return Array.from(uint8Array, function (byte) {
-                return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-            }).join('');
+            let hexStr = '';
+            for (let i = 0; i < uint8Array.length; i++) {
+                hexStr += uint8Array[i].toString(16).padStart(2, '0');
+            }
+            return hexStr;
         },
         /** @param {Uint8Array} uint8Array - Uint8Array to convert to bits */
         toBits: (uint8Array) => {
@@ -592,16 +594,12 @@ const convert = {
         },
         /** @param {string} hex - Hex string to convert to Uint8Array */
         toUint8Array: (hex) => {
-            if (hex.length % 2 !== 0) {
-                throw new Error("The length of the input is not a multiple of 2.");
-            }
+            if (hex.length % 2 !== 0) { throw new Error("The length of the input is not a multiple of 2."); }
 
             const length = hex.length / 2;
             const uint8Array = new Uint8Array(length);
 
-            for (let i = 0, j = 0; i < length; ++i, j += 2) {
-                uint8Array[i] = parseInt(hex.substring(j, j + 2), 16);
-            }
+            for (let i = 0, j = 0; i < length; ++i, j += 2) { uint8Array[i] = parseInt(hex.substring(j, j + 2), 16); }
 
             return uint8Array;
         },
@@ -716,38 +714,6 @@ const types = {
     
             return true;
         },
-    },
-    transaction: {
-        /** @param {TxOutput} txOutput */
-        isConformOutput(txOutput) {
-            if (typeValidation.numberIsPositiveInteger(txOutput.amount) === false) { throw new Error('Invalid amount value: <= 0'); }
-
-            if (typeof txOutput.rule !== 'string') { throw new Error('Invalid rule !== string'); }
-            const ruleName = txOutput.rule.split('_')[0]; // rule format : 'ruleName_version'
-            if (UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
-
-            if (typeof txOutput.address !== 'string') { throw new Error('Invalid address !== string'); }
-            addressUtils.conformityCheck(txOutput.address);
-        },
-        /** @param {TxInput} input */
-        isConformInput(input) {
-            return types.anchor.isConform(input);
-        },
-        /** @param {UTXO} utxo */
-        isConformUTXO(utxo) {
-            if (typeof utxo.amount !== 'number') { throw new Error('Invalid amount !== number'); }
-            if (utxo.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
-            if (utxo.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
-
-            if (typeof utxo.rule !== 'string') { throw new Error('Invalid rule !== string'); }
-            const ruleName = utxo.rule.split('_')[0]; // rule format : 'ruleName_version'
-            if (UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
-
-            if (typeof utxo.address !== 'string') { throw new Error('Invalid address !== string'); }
-            addressUtils.conformityCheck(utxo.address);
-
-            if (!types.anchor.isConform(utxo.anchor)) { throw new Error('Invalid anchor'); }
-        }
     }
 };
 const serializer = {
@@ -802,23 +768,21 @@ const serializer = {
                             convert.hex.toUint8Array(splitted[1]) // safe type: hex
                         ]);
                     } else if (splitted.length === 1) { // -> pow miner nonce ex: "5684e9b4"
-                        txAsArray[3].push(convert.hex.toUint8Array(splitted[0])); // safe type: hex
+                        txAsArray[3].push([convert.hex.toUint8Array(splitted[0])]); // safe type: hex
                     }
                 };
 
                 for (let j = 0; j < tx.outputs.length; j++) {
                     const { amount, rule, address } = tx.outputs[j];
-                    if (amount, rule, address) { //  {"amount": 19545485, "rule": "sig_v1", "address": "WKXmNF5xJTd58aWpo7QX"}
-                        const ruleSplitted = rule.split('_v'); // rule format : 'ruleName_version'
-                        const ruleCode = UTXO_RULES_GLOSSARY[ruleSplitted[0]].code;
-                        const ruleVersion = parseInt(ruleSplitted[1], 10);
+                    if (amount, rule, address) { //  {"amount": 19545485, "rule": "sig", "address": "WKXmNF5xJTd58aWpo7QX"}
+                        const ruleCode = UTXO_RULES_GLOSSARY[rule].code;
                         txAsArray[4].push([
                             convert.number.toUint8Array(amount), // safe type: number
-                            [convert.number.toUint8Array(ruleCode), convert.number.toUint8Array(ruleVersion)], // safe type: numbers
+                            convert.number.toUint8Array(ruleCode), // safe type: numbers
                             convert.base58.toUint8Array(address) // safe type: base58
                         ]);
                     } else { // type: string
-                        txAsArray[4].push(convert.string.toUint8Array(tx.outputs[j]));
+                        txAsArray[4].push([convert.string.toUint8Array(tx.outputs[j])]);
                     }
                 };
                 /** @type {Uint8Array} */
@@ -856,7 +820,7 @@ const serializer = {
                     } else if (input.length === 2) { // -> pos validator address:hash
                         tx.inputs.push(`${convert.uint8Array.toBase58(input[0])}:${convert.uint8Array.toHex(input[1])}`);
                     } else if (input.length === 1) { // -> pow miner nonce ex: "5684e9b4"
-                        tx.inputs.push(convert.uint8Array.toHex(input));
+                        tx.inputs.push(convert.uint8Array.toHex(input[0]));
                     }
                 };
 
@@ -864,10 +828,8 @@ const serializer = {
                     const output = decodedTx[4][j];
                     if (output.length === 3) {
                         const amount = convert.uint8Array.toNumber(output[0]); // safe type: uint8 -> number
-                        const ruleCode = convert.uint8Array.toNumber(output[1][0]); // safe type: uint8 -> number
-                        const ruleVersion = convert.uint8Array.toNumber(output[1][1]); // safe type: uint8 -> number
-                        const ruleName = UTXO_RULESNAME_FROM_CODE[ruleCode];
-                        const rule = `${ruleName}_v${ruleVersion}`;
+                        const ruleCode = convert.uint8Array.toNumber(output[1]); // safe type: uint8 -> number
+                        const rule = UTXO_RULESNAME_FROM_CODE[ruleCode];
                         const address = convert.uint8Array.toBase58(output[2]); // safe type: uint8 -> base58
                         tx.outputs.push({ amount, rule, address });
                     } else {

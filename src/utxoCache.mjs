@@ -83,7 +83,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         const TxOutputs = transaction.outputs;
         for (let i = 0; i < TxOutputs.length; i++) {
             const output = TxOutputs[i];
-            TxValidation.isValidTxOutput(output); // throw if invalid
+            TxValidation.isConformOutput(output); // throw if invalid
 
             const { address, amount, rule } = output;
             const anchor = `${blockIndex}:${TxID}:${i}`

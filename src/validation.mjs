@@ -38,7 +38,7 @@ export class TxValidation {
 
         for (let i = 0; i < transaction.outputs.length; i++) {
             const output = transaction.outputs[i];
-            TxValidation.isValidTxOutput(output);
+            TxValidation.isConformOutput(output);
 
             if (output.rule === "sigOrSlash") {
                 if (i !== 0) { throw new Error('sigOrSlash must be the first output'); }
@@ -47,27 +47,25 @@ export class TxValidation {
         }
     }
     /** @param {TxOutput} txOutput */
-    static isValidTxOutput(txOutput) {
+    static isConformOutput(txOutput) {
         if (typeof txOutput.amount !== 'number') { throw new Error('Invalid amount !== number'); }
         if (txOutput.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
         if (txOutput.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
         if (typeof txOutput.rule !== 'string') { throw new Error('Invalid rule !== string'); }
-        const ruleName = txOutput.rule.split('_')[0]; // rule format : 'ruleName_version'
-        if (utils.UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
+        if (utils.UTXO_RULES_GLOSSARY[txOutput.rule] === undefined) { throw new Error(`Invalid rule name: ${txOutput.rule}`); }
 
         if (typeof txOutput.address !== 'string') { throw new Error('Invalid address !== string'); }
         utils.addressUtils.conformityCheck(txOutput.address);
     }
     /** @param {UTXO} utxo */
-    static isValidUTXO(utxo) {
+    static isConformUTXO(utxo) {
         if (typeof utxo.amount !== 'number') { throw new Error('Invalid amount !== number'); }
         if (utxo.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
         if (utxo.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
 
         if (typeof utxo.rule !== 'string') { throw new Error('Invalid rule !== string'); }
-        const ruleName = utxo.rule.split('_')[0]; // rule format : 'ruleName_version'
-        if (utils.UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
+        if (utils.UTXO_RULES_GLOSSARY[utxo.rule] === undefined) { throw new Error(`Invalid rule name: ${utxo.rule}`); }
 
         if (typeof utxo.address !== 'string') { throw new Error('Invalid address !== string'); }
         utils.addressUtils.conformityCheck(utxo.address);

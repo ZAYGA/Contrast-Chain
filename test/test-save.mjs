@@ -42,7 +42,7 @@ describe('Blockchain Save and Load Tests', function () {
                     {
                         amount: coinbaseReward,
                         address: "genesisAddress",
-                        rule: "sig_v1",
+                        rule: "sig",
                         anchor: `${0}:${coinbaseTxId}:${0}`
                     }
                 ],
@@ -66,7 +66,7 @@ describe('Blockchain Save and Load Tests', function () {
                     {
                         amount: coinbaseReward,
                         address: "testAddress",
-                        rule: "sig_v1",
+                        rule: "sig",
                         anchor: `${index}:${coinbaseTxId}:${0}`
                     }
                 ],

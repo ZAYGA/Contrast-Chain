@@ -169,10 +169,10 @@ export class Node {
             const lastBlockIndex = this.blockchain.currentHeight;
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
-                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
+                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
-                console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
+                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
             // verify the hash
             const { hex, bitsArrayAsString } = await BlockUtils.getMinerHash(finalizedBlock, this.useDevArgon2);
@@ -318,9 +318,7 @@ export class Node {
                     if (!this.roles.includes('validator')) { break; }
                     const lastBlockIndex = this.blockchain.currentHeight;
                     const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
-                    if (isSynchronized) {
-                        this.taskQueue.push('digestPowProposal', data); break;
-                    }
+                    if (isSynchronized) { this.taskQueue.push('digestPowProposal', data); break; }
 
                     // if we are late, we ask for the missing blocks by p2p streaming
                     this.taskQueue.push('syncWithKnownPeers', null, true);
