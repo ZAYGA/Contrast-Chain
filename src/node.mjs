@@ -54,14 +54,16 @@ export class Node {
 
     async start() {
         await this.blockchain.init();
+
+        // load the blocks from storage
         const loadedBlocks = this.roles.includes('validator') ? await this.blockchain.recoverBlocksFromStorage() : [];
-        //const loadedBlocks = await this.blockchain.recoverBlocksFromStorage();
         for (const block of loadedBlocks) {
             await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
         }
 
+        // start the libp2p network
         await this.p2pNetwork.start();
-        // Set the event listeners
+
         const rolesTopics = {
             validator: ['new_transaction', 'new_block_finalized', 'test'],
             miner: ['new_block_candidate', 'test']
@@ -70,17 +72,25 @@ export class Node {
         for (const role of this.roles) { topicsToSubscribe.push(...rolesTopics[role]); }
         const uniqueTopics = [...new Set(topicsToSubscribe)];
 
-        await this.syncHandler.start(this.p2pNetwork);
+        // subscribe to the topics
         await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
-
+        await this.syncHandler.start(this.p2pNetwork);
+        // miners start their workers, we dont await here
         if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
 
+        // wait for the p2p network to be ready
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
         if (!await this.#waitSomePeers(1, 60)) { this.stop(); return; }
-        console.log('P2P network is ready - we are connected baby!');
-        await this.syncWithKnownPeers();
 
+        console.log('P2P network is ready - we are connected baby!');
+
+        // validators start the sync process with known peers
+        if (this.roles.includes('validator')) { await this.syncWithKnownPeers(); }
+
+        // validators start the block candidate creation process
         if (this.roles.includes('validator')) { await this.createBlockCandidateAndBroadcast(); }
+
+        // control the peers connection to avoid being a lone peer
         this.#controlPeersConnection();
     }
     async stop() {
