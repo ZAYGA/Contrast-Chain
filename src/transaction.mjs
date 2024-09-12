@@ -120,7 +120,7 @@ export class Transaction_Builder {
     /** @param {UTXO[]} utxos */
     static checkMalformedAnchorsInUtxosArray(utxos) {
         for (const utxo of utxos) {
-            if (!utils.anchor.isValid(utxo.anchor)) { throw new Error(`UTXO anchor malformed in UTXO: ${utxo.anchor}`); }
+            if (!utils.types.anchor.isConform(utxo.anchor)) { throw new Error(`UTXO anchor malformed in UTXO: ${utxo.anchor}`); }
         }
     }
     /** @param {UTXO[]} utxos */

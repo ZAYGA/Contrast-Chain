@@ -4,7 +4,7 @@ import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
 import Compressor from '../externalLibs/gzip.min.js';
 import Decompressor from '../externalLibs/gunzip.min.js';
 import msgpack from '../externalLibs/msgpack.min.js';
-import { Transaction_Builder } from './transaction.mjs';
+import { TxOutput, TxInput, UTXO } from './transaction.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
@@ -60,11 +60,18 @@ const SETTINGS = { // The Fibonacci based distribution
     minTransactionFeePerByte: 1,
 };
 const UTXO_RULES_GLOSSARY = {
-    sig: { description: 'Simple signature verification' },
-    sigOrSlash: { description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
-    lockUntilBlock: { description: 'UTXO locked until block height', lockUntilBlock: 0 },
-    multiSigCreate: { description: 'Multi-signature creation' },
-    p2pExchange: { description: 'Peer-to-peer exchange' }
+    sig: { code: 0, description: 'Simple signature verification' },
+    sigOrSlash: { code: 1, description: "Open right to slash the UTXO if validator's fraud proof is provided", withdrawLockBlocks: 144 },
+    lockUntilBlock: { code: 2, description: 'UTXO locked until block height', lockUntilBlock: 0 },
+    multiSigCreate: { code: 3, description: 'Multi-signature creation' },
+    p2pExchange: { code: 4, description: 'Peer-to-peer exchange' }
+}
+const UTXO_RULESNAME_FROM_CODE = {
+    0: 'sig',
+    1: 'sigOrSlash',
+    2: 'lockUntilBlock',
+    3: 'multiSigCreate',
+    4: 'p2pExchange'
 }
 const MINING_PARAMS = {
     // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
@@ -255,10 +262,7 @@ const typeValidation = {
     },
     /** @param {number} number - Number to validate */
     numberIsPositiveInteger(number) {
-        if (typeof number !== 'number' || isNaN(number)) { return false; }
-        if (number < 0) { return false; }
-        if (number % 1 !== 0) { return false; }
-        return true;
+        return typeof number === 'number' && !isNaN(number) && number > 0 && number % 1 === 0;
     }
 };
 const convert = {
@@ -435,11 +439,71 @@ const convert = {
             const separedNum = numRest.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
             return `${separedNum}.${num2last6}`;
         },
+        /** Number should be between 0 and 255
+         * 
+         * @param {number} num - Integer to convert to 1 byte Uint8Array
+         */
+        to1ByteUint8Array: (num) => {
+            if (num < 0 || num > 255) { throw new Error('Number out of range'); }
+            return new Uint8Array([num]);
+        },
+        /** Number should be between 0 and 65535
+         * 
+         * @param {number} num - Integer to convert to 2 bytes Uint8Array
+         */
+        to2BytesUint8Array: (num) => {
+            if (num < 0 || num > 65535) { throw new Error('Number out of range'); }
+            let buffer = new ArrayBuffer(2);
+            let view = new DataView(buffer);
+            view.setUint16(0, num, true); // true for little-endian
+            return new Uint8Array(buffer);
+        },
+        /** Number should be between 0 and 4294967295
+         * 
+         * @param {number} num - Integer to convert to 4 bytes Uint8Array
+         */
         to4BytesUint8Array: (num) => {
+            if (num < 0 || num > 4294967295) { throw new Error('Number out of range'); }
             let buffer = new ArrayBuffer(4);
             let view = new DataView(buffer);
             view.setUint32(0, num, true); // true for little-endian
             return new Uint8Array(buffer);
+        },
+        /** Number should be between 0 and 2^48 - 1 (281474976710655).
+         * 
+         * @param {number} num - Integer to convert.
+         */
+        to6BytesUint8Array(num) {
+            if (num < 0 || num > 281474976710655) {
+                throw new Error('Number out of range. Must be between 0 and 281474976710655.');
+            }
+
+            const buffer = new ArrayBuffer(6);
+            const view = new DataView(buffer);
+            
+            // JavaScript bitwise operations treat numbers as 32-bit integers.
+            // We need to manually handle the 48-bit number by dividing it into parts.
+            for (let i = 0; i < 6; ++i) {
+                const byte = num & 0xff;
+                view.setUint8(i, byte);
+                num = (num - byte) / 256; // Shift right by 8 bits
+            }
+
+            return new Uint8Array(buffer);
+        },
+        /** Number should be between 0 and 281474976710655
+         * 
+         * @param {number} num - Integer to convert to the smallest Uint8Array possible
+         */
+        toUint8Array: (num) => {
+            if (num > 281474976710655) { throw new Error('Number out of range: > 281474976710655'); }
+
+            if (num > 4294967295) { return convert.number.to6BytesUint8Array(num); }
+            if (num > 65535) { return convert.number.to4BytesUint8Array(num); }
+            if (num > 255) { return convert.number.to2BytesUint8Array(num); }
+            if (num >= 0) { return convert.number.to1ByteUint8Array(num); }
+            
+            throw new Error('Number out of range: < 0');
         }
     },
     uint8Array: {
@@ -477,6 +541,36 @@ const convert = {
             }
 
             return bitsArray;
+        },
+        /**
+         * Converts a Uint8Array of 1, 2, 4, or 8 bytes to a number.
+         * 
+         * @param {Uint8Array} uint8Array
+         */
+        toNumber(uint8Array) {
+            const dataView = new DataView(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength);
+            switch (uint8Array.byteLength) {
+                case 1:
+                    return dataView.getUint8(0);
+                case 2:
+                    return dataView.getUint16(0, true); // true for little-endian
+                case 4:
+                    return dataView.getUint32(0, true); // true for little-endian
+                case 6:
+                    // Combine the 6 bytes into one number
+                    const lower = dataView.getUint32(0, true); // Read the lower 4 bytes
+                    const upper = dataView.getUint16(4, true); // Read the upper 2 bytes
+                    // Use bitwise OR to combine the two parts, shifting the upper part by 32 bits.
+                    // Note: JavaScript bitwise operations automatically convert operands to 32-bit integers.
+                    // We use multiplication and addition instead to avoid precision loss.
+                    return upper * 0x100000000 + lower;
+                default:
+                    throw new Error("Unsupported Uint8Array length. Must be 1, 2, or 4 bytes.");
+            }
+        },
+        /** @param {Uint8Array} uint8Array - Uint8Array to convert to string */
+        toString(uint8Array) {
+            return String.fromCharCode.apply(null, uint8Array);
         }
     },
     hex: {
@@ -596,7 +690,194 @@ const conditionnals = {
         return (new Set(array)).size !== array.length;
     }
 };
+const types = {
+    anchor: {
+        /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+        isConform(anchor) {
+            if (typeof anchor !== 'string') { return false; }
+    
+            const splitted = anchor.split(':');
+            if (splitted.length !== 3) { return false; }
+    
+            // height
+            const height = parseInt(splitted[0], 10);
+            if (isNaN(height) || typeof height !== 'number') { return false; }
+            if (height < 0 || height % 1 !== 0) { return false; }
+    
+            // TxID
+            if (typeof splitted[1] !== 'string') { return false; }
+            if (splitted[1].length !== 8) { return false; }
+            if (typeValidation.hex(splitted[1]) === false) { return false; }
+    
+            // vout
+            const vout = parseInt(splitted[2], 10);
+            if (isNaN(vout) || typeof vout !== 'number') { return false; }
+            if (vout < 0 || vout % 1 !== 0) { return false; }
+    
+            return true;
+        },
+    },
+    transaction: {
+        /** @param {TxOutput} txOutput */
+        isConformOutput(txOutput) {
+            if (typeValidation.numberIsPositiveInteger(txOutput.amount) === false) { throw new Error('Invalid amount value: <= 0'); }
 
+            if (typeof txOutput.rule !== 'string') { throw new Error('Invalid rule !== string'); }
+            const ruleName = txOutput.rule.split('_')[0]; // rule format : 'ruleName_version'
+            if (UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
+
+            if (typeof txOutput.address !== 'string') { throw new Error('Invalid address !== string'); }
+            addressUtils.conformityCheck(txOutput.address);
+        },
+        /** @param {TxInput} input */
+        isConformInput(input) {
+            return types.anchor.isConform(input);
+        },
+        /** @param {UTXO} utxo */
+        isConformUTXO(utxo) {
+            if (typeof utxo.amount !== 'number') { throw new Error('Invalid amount !== number'); }
+            if (utxo.amount <= 0) { throw new Error('Invalid amount value: <= 0'); }
+            if (utxo.amount % 1 !== 0) { throw new Error('Invalid amount value: not integer'); }
+
+            if (typeof utxo.rule !== 'string') { throw new Error('Invalid rule !== string'); }
+            const ruleName = utxo.rule.split('_')[0]; // rule format : 'ruleName_version'
+            if (UTXO_RULES_GLOSSARY[ruleName] === undefined) { throw new Error(`Invalid rule name: ${ruleName}`); }
+
+            if (typeof utxo.address !== 'string') { throw new Error('Invalid address !== string'); }
+            addressUtils.conformityCheck(utxo.address);
+
+            if (!types.anchor.isConform(utxo.anchor)) { throw new Error('Invalid anchor'); }
+        }
+    }
+};
+const serializer = {
+    rawData: {
+        toBinary_v1(rawData) {
+            return msgpack.encode(rawData);
+        },
+        fromBinary_v1(encodedData) {
+            return msgpack.decode(encodedData);
+        }
+    },
+    transaction: {
+        /** @param {Transaction} tx */
+        toBinary_v2(tx) { // return array of Uint8Array
+            try {
+                const txAsArray = [
+                    null, // id
+                    [], // witnesses
+                    null, // version
+                    [], // inputs,
+                    [] // outputs
+                ]
+
+                txAsArray[0] = convert.hex.toUint8Array(tx.id); // safe type: hex
+                txAsArray[2] = convert.number.toUint8Array(tx.version); // safe type: number
+
+                for (let i = 0; i < tx.witnesses.length; i++) {
+                    const splitted = tx.witnesses[i].split(':');
+                    txAsArray[1].push([
+                        convert.hex.toUint8Array(splitted[0]), // safe type: hex
+                        convert.hex.toUint8Array(splitted[1]) // safe type: hex
+                    ]);
+                }
+
+                for (let j = 0; j < tx.inputs.length; j++) {
+                    const splitted = tx.inputs[j].split(':');
+                    if (splitted.length === 3) { // -> anchor ex: "3:f996a9d1:0"
+                        txAsArray[3].push([
+                            convert.number.toUint8Array(splitted[0]), // safe type: number
+                            convert.hex.toUint8Array(splitted[1]), // safe type: hex
+                            convert.number.toUint8Array(splitted[2]) // safe type: number
+                        ]);
+                    } else if (splitted.length === 2) { // -> pos validator address:hash
+                        // ex: "WKXmNF5xJTd58aWpo7QX:964baf99b331fe400ca2de4da6fb4f52cbff8a7abfcea74e9f28704dc0dd2b5c"
+                        txAsArray[3].push([
+                            convert.base58.toUint8Array(splitted[0]), // safe type: base58
+                            convert.hex.toUint8Array(splitted[1]) // safe type: hex
+                        ]);
+                    } else if (splitted.length === 1) { // -> pow miner nonce ex: "5684e9b4"
+                        txAsArray[3].push(convert.hex.toUint8Array(splitted[0])); // safe type: hex
+                    }
+                };
+
+                for (let j = 0; j < tx.outputs.length; j++) {
+                    const { amount, rule, address } = tx.outputs[j];
+                    if (amount, rule, address) { //  {"amount": 19545485, "rule": "sig_v1", "address": "WKXmNF5xJTd58aWpo7QX"}
+                        const ruleSplitted = rule.split('_v'); // rule format : 'ruleName_version'
+                        const ruleCode = UTXO_RULES_GLOSSARY[ruleSplitted[0]].code;
+                        const ruleVersion = parseInt(ruleSplitted[1], 10);
+                        txAsArray[4].push([
+                            convert.number.toUint8Array(amount), // safe type: number
+                            [convert.number.toUint8Array(ruleCode), convert.number.toUint8Array(ruleVersion)], // safe type: numbers
+                            convert.base58.toUint8Array(address) // safe type: base58
+                        ]);
+                    } else { // type: string
+                        txAsArray[4].push(convert.string.toUint8Array(tx.outputs[j]));
+                    }
+                };
+                /** @type {Uint8Array} */
+                const encoded = msgpack.encode(txAsArray);
+                return encoded;
+            } catch (error) {
+                console.error('Error in prepareTransaction.toBinary_v2:', error);
+                throw new Error('Failed to serialize the transaction');
+            }
+        },
+        /** @param {Uint8Array} encodedTx */
+        fromBinary_v2(encodedTx) {
+            try {
+                /** @type {Transaction} */
+                const decodedTx = msgpack.decode(encodedTx);
+                /** @type {Transaction} */
+                const tx = {
+                    id: convert.uint8Array.toHex(decodedTx[0]), // safe type: uint8 -> hex
+                    witnesses: [],
+                    version: convert.uint8Array.toNumber(decodedTx[2]), // safe type: uint8 -> number
+                    inputs: [],
+                    outputs: []
+                };
+
+                for (let i = 0; i < decodedTx[1].length; i++) {
+                    const signature = convert.uint8Array.toHex(decodedTx[1][i][0]); // safe type: uint8 -> hex
+                    const publicKey = convert.uint8Array.toHex(decodedTx[1][i][1]); // safe type: uint8 -> hex
+                    tx.witnesses.push(`${signature}:${publicKey}`);
+                };
+
+                for (let j = 0; j < decodedTx[3].length; j++) {
+                    const input = decodedTx[3][j];
+                    if (input.length === 3) { // -> anchor ex: "3:f996a9d1:0"
+                        tx.inputs.push(`${convert.uint8Array.toNumber(input[0])}:${convert.uint8Array.toHex(input[1])}:${convert.uint8Array.toNumber(input[2])}`);
+                    } else if (input.length === 2) { // -> pos validator address:hash
+                        tx.inputs.push(`${convert.uint8Array.toBase58(input[0])}:${convert.uint8Array.toHex(input[1])}`);
+                    } else if (input.length === 1) { // -> pow miner nonce ex: "5684e9b4"
+                        tx.inputs.push(convert.uint8Array.toHex(input));
+                    }
+                };
+
+                for (let j = 0; j < decodedTx[4].length; j++) {
+                    const output = decodedTx[4][j];
+                    if (output.length === 3) {
+                        const amount = convert.uint8Array.toNumber(output[0]); // safe type: uint8 -> number
+                        const ruleCode = convert.uint8Array.toNumber(output[1][0]); // safe type: uint8 -> number
+                        const ruleVersion = convert.uint8Array.toNumber(output[1][1]); // safe type: uint8 -> number
+                        const ruleName = UTXO_RULESNAME_FROM_CODE[ruleCode];
+                        const rule = `${ruleName}_v${ruleVersion}`;
+                        const address = convert.uint8Array.toBase58(output[2]); // safe type: uint8 -> base58
+                        tx.outputs.push({ amount, rule, address });
+                    } else {
+                        tx.outputs.push(convert.uint8Array.toString(output));
+                    }
+                }
+
+                return tx;
+            } catch (error) {
+                console.error('Error in prepareTransaction.fromBinary_v2:', error);
+                throw new Error('Failed to deserialize the transaction');
+            }
+        },
+    }
+};
 const compression = {
     msgpack_Zlib: {
         rawData: {
@@ -616,6 +897,20 @@ const compression = {
         },
         transaction: {
             /** @param {Transaction} tx */
+            toBinary_v2(tx) {
+                const encoded = serializer.transaction.toBinary_v2(tx);
+                /** @type {Uint8Array} */
+                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
+                return compressed;
+            },
+            /** @param {Uint8Array} binary */
+            fromBinary_v2(binary) {
+                const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
+                /** @type {Transaction} */
+                const decoded = serializer.transaction.fromBinary_v2(decompressed);
+                return decoded;
+            },
+            /** @param {Transaction} tx */
             toBinary_v1(tx) {
                 const prepared = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(tx);
                 const encoded = msgpack.encode(prepared);
@@ -632,7 +927,7 @@ const compression = {
                 return finalized;
             }
         },
-        prepareTransaction: {
+        prepareTransaction: { // ugly, remove if serializer.transaction.[...]_v2 is working
             /** @param {Transaction} tx */
             toBinary_v1(tx) {
                 if (typeValidation.hex(tx.id) === false) {
@@ -878,47 +1173,6 @@ const mining = {
         return result;
     }
 };
-const anchor = {
-    /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    isValid(anchor) {
-        if (typeof anchor !== 'string') { return false; }
-
-        const splitted = anchor.split(':');
-        if (splitted.length !== 3) { return false; }
-
-        // height
-        if (typeValidation.numberIsPositiveInteger(parseInt(splitted[0], 10)) === false) { return false; }
-
-        // TxID
-        if (typeof splitted[1] !== 'string') { return false; }
-        if (splitted[1].length !== 8) { return false; }
-        if (typeValidation.hex(splitted[1]) === false) { return false; }
-
-        // vout
-        if (typeValidation.numberIsPositiveInteger(parseInt(splitted[2], 10)) === false) { return false; }
-
-        return true;
-    },
-    /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-    decomposeToReferences(anchor) { // should be in utils (LOL !)
-        const splitted = anchor.split(':');
-
-        const utxoBlockHeight = parseInt(splitted[0], 10);
-        const utxoTxID = splitted[1];
-        const vout = parseInt(splitted[2], 10);
-
-        return { utxoBlockHeight, utxoTxID, vout };
-    },
-    /**
-     * @param {number} utxoBlockHeight
-     * @param {string} utxoTxID
-     * @param {number} vout
-     */
-    fromReferences(utxoBlockHeight, utxoTxID, vout) {
-        if (utxoBlockHeight === undefined || utxoTxID === undefined || vout === undefined) { return undefined; }
-        return `${utxoBlockHeight}:${utxoTxID}:${vout}`;
-    }
-}
 
 const devParams = {
     useDevArgon2: false,
@@ -939,11 +1193,12 @@ const utils = {
     addressUtils,
     typeValidation,
     convert,
+    serializer,
     compression,
     conditionnals,
+    types,
     UTXO_RULES_GLOSSARY,
     mining,
-    anchor,
     devParams
 };
 

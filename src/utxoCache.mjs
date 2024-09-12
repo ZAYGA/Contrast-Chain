@@ -47,7 +47,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
         for (const input of transaction.inputs) {
             const anchor = input;
-            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
+            if (!utils.types.anchor.isConform(anchor)) { throw new Error('Invalid anchor'); }
             
             const { address, amount } = this.utxosByAnchor[anchor];
             this.#removeUTXO(address, anchor);
@@ -86,8 +86,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
             TxValidation.isValidTxOutput(output); // throw if invalid
 
             const { address, amount, rule } = output;
-            const anchor = utils.anchor.fromReferences(blockIndex, TxID, i);
-            if (!utils.anchor.isValid(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
+            const anchor = `${blockIndex}:${TxID}:${i}`
+            if (!utils.types.anchor.isConform(anchor)) { throw new Error(`Invalid UTXO anchor: ${anchor}`); }
 
             const utxo = TxIO_Builder.newUTXO(anchor, amount, rule, address);
             if (!utxo) { throw new Error('Invalid UTXO'); }

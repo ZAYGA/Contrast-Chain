@@ -12,15 +12,15 @@ const testParams = {
     nbOfAccounts: 200,
     addressType: 'W',
 
-    nbOfMiners: 1,
-    nbOfValidators: 1,
-    nbOfMultiNodes: 0,
+    nbOfMiners: 0,
+    nbOfValidators: 0,
+    nbOfMultiNodes: 2,
 
     txsSeqs: {
-        userSendToAllOthers: { active: false, start: 5, end: 100000, interval: 4},
-        stakeVss: { active: false, start: 15, end: 25, interval: 1 },
-        simpleUserToUser: { active: false, start: 2, end: 100000, interval: 2 },
-        userSendToNextUser: { active: false, start: 40, end: 100000, interval: 6 }
+        userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4},
+        stakeVss: { active: true, start: 15, end: 25, interval: 1 },
+        simpleUserToUser: { active: true, start: 2, end: 100000, interval: 2 },
+        userSendToNextUser: { active: true, start: 40, end: 100000, interval: 6 }
     }
 }
 

@@ -32,7 +32,7 @@ export class TxValidation {
             if (isCoinBase) { continue; }
 
             const anchor = transaction.inputs[i];
-            if (!utils.anchor.isValid(anchor)) { throw new Error('Invalid anchor'); }
+            if (!utils.types.anchor.isConform(anchor)) { throw new Error('Invalid anchor'); }
             if (!utxosByAnchor[anchor]) { throw new Error(`Invalid transaction: UTXO not found in utxoCache: ${anchor}`); }
         }
 
@@ -59,10 +59,6 @@ export class TxValidation {
         if (typeof txOutput.address !== 'string') { throw new Error('Invalid address !== string'); }
         utils.addressUtils.conformityCheck(txOutput.address);
     }
-    /** @param {TxInput} txInput */
-    static isValidTxInput(txInput) {
-        if (!utils.anchor.isValid(txInput)) { throw new Error('Invalid anchor'); }
-    }
     /** @param {UTXO} utxo */
     static isValidUTXO(utxo) {
         if (typeof utxo.amount !== 'number') { throw new Error('Invalid amount !== number'); }
@@ -76,7 +72,7 @@ export class TxValidation {
         if (typeof utxo.address !== 'string') { throw new Error('Invalid address !== string'); }
         utils.addressUtils.conformityCheck(utxo.address);
 
-        if (!utils.anchor.isValid(utxo.anchor)) { throw new Error('Invalid anchor'); }
+        if (!utils.types.anchor.isConform(utxo.anchor)) { throw new Error('Invalid anchor'); }
     }
 
     /** ==> Second validation, low computation cost.
@@ -105,8 +101,7 @@ export class TxValidation {
         const outputsAmount = transaction.outputs.reduce((a, b) => a + b.amount, 0);
 
         const fee = inputsAmount - outputsAmount;
-        if (fee < 0) { throw new Error('Negative transaction'); }
-        if (fee === 0) { throw new Error('Invalid transaction: fee = 0'); }
+        if (fee <= 0) { throw new Error('Negative or zero fee transaction'); }
         if (fee % 1 !== 0) { throw new Error('Invalid fee: not integer'); }
 
         return fee;

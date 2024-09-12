@@ -145,7 +145,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
     #caughtTransactionsAnchorsCollision(transaction) {
         // AT THIS STAGE WE HAVE ENSURED THAT THE TRANSACTION IS CONFORM
         for (const input of transaction.inputs) {
-            if (!utils.anchor.isValid(input)) { throw new Error(`Invalid anchor: ${input}`); }
+            if (!utils.types.anchor.isConform(input)) { throw new Error(`Invalid anchor: ${input}`); }
             if (!this.transactionByAnchor[input]) { continue; } // no collision
 
             return this.transactionByAnchor[input];

@@ -30,7 +30,7 @@ export class Account {
        const { signatureHex } = await AsymetricFunctions.signMessage(transaction.id, this.#privKey, this.#pubKey);
        if (!Array.isArray(transaction.witnesses)) { 
         throw new Error('Invalid witnesses'); }
-       if (transaction.witnesses.includes(signatureHex)) { throw new Error('Signature already included'); }
+       if (transaction.witnesses.includes(`${signatureHex}:${this.#pubKey}`)) { throw new Error('Signature already included'); }
 
        transaction.witnesses.push(`${signatureHex}:${this.#pubKey}`);
 

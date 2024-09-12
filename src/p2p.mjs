@@ -144,7 +144,16 @@ class P2PNetwork extends EventEmitter {
      */
     #handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
         try {
-            const parsedMessage = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(data);
+            let parsedMessage;
+            switch (topic) {
+                case 'new_transaction':
+                    parsedMessage = utils.serializer.transaction.fromBinary_v2(data);
+                    break;
+                default:
+                    parsedMessage = utils.serializer.rawData.fromBinary_v1(data);
+                    break;
+            }
+            
             this.emit(topic, parsedMessage, from);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
@@ -158,7 +167,16 @@ class P2PNetwork extends EventEmitter {
     async broadcast(topic, message) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcasting message');
         try {
-            const serialized = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+            let serialized;
+            switch (topic) {
+                case 'new_transaction':
+                    serialized = utils.serializer.transaction.toBinary_v2(message);
+                    break;
+                default:
+                    serialized = utils.serializer.rawData.toBinary_v1(message);
+                    break;
+            }
+
             await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
         } catch (error) { this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error'); }
