@@ -104,10 +104,10 @@ export class Miner {
         return sortedCandidates[0];
     }
     /** @param {BlockData} finalizedBlock */
-    #broadcastBlockCandidate(finalizedBlock) {
+    async #broadcastBlockCandidate(finalizedBlock) {
         console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`);
+        await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
-        this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
     }
     /** DON'T AWAIT THIS FUNCTION */
     async startWithWorker(nbOfWorkers = 1) {

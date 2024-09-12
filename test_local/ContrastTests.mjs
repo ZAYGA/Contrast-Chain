@@ -14,7 +14,7 @@ const testParams = {
 
     nbOfMiners: 0,
     nbOfValidators: 0,
-    nbOfMultiNodes: 1,
+    nbOfMultiNodes: 2,
 
     txsSeqs: {
         userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4 },

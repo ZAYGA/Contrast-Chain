@@ -150,7 +150,10 @@ class P2PNetwork extends EventEmitter {
                     parsedMessage = utils.serializer.transaction.fromBinary_v2(data);
                     break;
                 case 'new_block_candidate':
+                    // log the readable time : hh:mm:ss:ms
+                    const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
                     parsedMessage = utils.serializer.block_candidate.fromBinary_v2(data);
+                    console.log(`[RECEIVED] Block ${parsedMessage.index} | Time: ${readableNow}`);
                     break;
                 case 'new_block_finalized':
                     parsedMessage = utils.serializer.block_finalized.fromBinary_v2(data);
@@ -180,6 +183,9 @@ class P2PNetwork extends EventEmitter {
                     serialized = utils.serializer.transaction.toBinary_v2(message);
                     break;
                 case 'new_block_candidate':
+                    // log the readable time : hh:mm:ss:ms
+                    const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
+                    console.log(`[SENDING] Block ${message.index} | Time: ${readableNow}`);
                     serialized = utils.serializer.block_candidate.toBinary_v2(message);
                     break;
                 case 'new_block_finalized':

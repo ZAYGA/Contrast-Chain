@@ -122,6 +122,10 @@ export class Node {
         for (const peer of peerInfo) {
             const peerId = peer.id;
             const peerAddresses = peer.addresses;
+            const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
+            if (peerId.toString() === myPeerId) {
+                console.warn(`we are in the list of peers!! skipping ${myPeerId}`);
+                continue; }
 
             if (peerAddresses.length === 0) {
                 console.warn(`No addresses found for peer ${peerId.toString()}`);
