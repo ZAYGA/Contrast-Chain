@@ -72,7 +72,7 @@ export class Node {
 
         await this.syncHandler.start(this.p2pNetwork);
         await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
-        
+
         if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
 
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
@@ -97,7 +97,7 @@ export class Node {
             const peerCount = this.p2pNetwork.getConnectedPeers().length;
             if (peerCount >= nbOfPeers) { return true; }
         }
-    
+
         console.warn('P2P network failed to initialize within the expected time');
         return false;
     }
@@ -267,7 +267,7 @@ export class Node {
 
         // Sign the block candidate
         const { powReward, posReward } = BlockUtils.calculateBlockReward(this.utxoCache.utxosByAnchor, blockCandidate);
-        const posFeeTx = await Transaction_Builder.createPosRewardTransaction(posReward, blockCandidate, this.account.address, this.account.address);
+        const posFeeTx = await Transaction_Builder.createPosReward(posReward, blockCandidate, this.account.address, this.account.address);
         const signedPosFeeTx = await this.account.signTransaction(posFeeTx);
         blockCandidate.Txs.unshift(signedPosFeeTx);
         blockCandidate.powReward = powReward; // for the miner
