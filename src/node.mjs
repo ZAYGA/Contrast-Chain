@@ -24,7 +24,7 @@ export class Node {
         /** @type {string[]} */
         this.roles = roles; // 'miner', 'validator', ...
         /** @type {TaskQueue} */
-        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
+        this.taskQueue = null;
         /** @type {P2PNetwork} */
         this.p2pNetwork = new P2PNetwork({
             role: this.roles.join('_'),
@@ -44,7 +44,7 @@ export class Node {
         this.utxoCache = new UtxoCache();
         this.utxoCacheSnapshots = [];
         /** @type {Miner} */
-        this.miner = new Miner(account, this.p2pNetwork, this.roles, this.taskQueue);
+        this.miner = null;
         this.useDevArgon2 = false;
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
@@ -54,7 +54,8 @@ export class Node {
 
     async start() {
         await this.blockchain.init();
-
+        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
+        this.miner = new Miner(this.account, this.p2pNetwork, this.roles, this.taskQueue);
         // load the blocks from storage
         const loadedBlocks = this.roles.includes('validator') ? await this.blockchain.recoverBlocksFromStorage() : [];
         for (const block of loadedBlocks) {
@@ -92,9 +93,11 @@ export class Node {
         }
 
         // control the peers connection to avoid being a lone peer
-        this.#controlPeersConnection();
+        //this.#controlPeersConnection();
     }
     async stop() {
+        this.taskQueue = null;
+        this.miner = null;
         await this.p2pNetwork.stop();
         await this.syncHandler.stop(); // That do nothing lol!
         if (this.miner) { this.miner.terminate(); }
