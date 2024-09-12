@@ -149,11 +149,17 @@ class P2PNetwork extends EventEmitter {
                 case 'new_transaction':
                     parsedMessage = utils.serializer.transaction.fromBinary_v2(data);
                     break;
+                case 'new_block_candidate':
+                    parsedMessage = utils.serializer.block_candidate.fromBinary_v2(data);
+                    break;
+                case 'new_block_finalized':
+                    parsedMessage = utils.serializer.block_finalized.fromBinary_v2(data);
+                    break;
                 default:
                     parsedMessage = utils.serializer.rawData.fromBinary_v1(data);
                     break;
             }
-            
+
             this.emit(topic, parsedMessage, from);
         } catch (error) {
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to parse pubsub message');
@@ -171,6 +177,14 @@ class P2PNetwork extends EventEmitter {
             switch (topic) {
                 case 'new_transaction':
                     serialized = utils.serializer.transaction.toBinary_v2(message);
+                    break;
+                case 'new_block_candidate':
+                    serialized = utils.serializer.block_candidate.toBinary_v2(message);
+                    break;
+                case 'new_block_finalized':
+                    serialized = utils.serializer.block_finalized.toBinary_v2(message);
+                    if (serialized.Txs[0].inputs[0] === undefined) {
+                        console.error('Invalid coinbase nonce'); return; }
                     break;
                 default:
                     serialized = utils.serializer.rawData.toBinary_v1(message);

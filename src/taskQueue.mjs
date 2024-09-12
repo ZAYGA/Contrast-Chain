@@ -44,6 +44,8 @@ export class TaskQueue {
                     await this.node.memPool.pushTransaction(task.data.utxosByAnchor, task.data.transaction);
                     break;
                 case 'digestPowProposal':
+                    if (task.data.Txs[0].inputs[0] === undefined) {
+                        console.error('Invalid coinbase nonce'); return; }
                     await this.node.digestFinalizedBlock(task.data, {storeAsFiles: true});
                     break;
                 case 'syncWithKnownPeers':

@@ -102,9 +102,10 @@ export class Miner {
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
+    /** @param {BlockData} finalizedBlock */
     #broadcastBlockCandidate(finalizedBlock) {
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
-        this.p2pNetwork.broadcast('new_block_pow', finalizedBlock);
+        this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
     }
     /** DON'T AWAIT THIS FUNCTION */
     async startWithWorker(nbOfWorkers = 1) {
@@ -139,6 +140,7 @@ export class Miner {
         while (true) {
             const delayBetweenMining = this.roles.includes('validator') ? 20 : 10;
             await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
+            
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
             if (preshotedPowReadyToSend) {
                 this.#broadcastBlockCandidate(this.preshotedPowBlock);

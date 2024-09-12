@@ -50,7 +50,7 @@ describe('Blockchain Save and Load Tests', function () {
             }
         ];
 
-        return BlockData(0, 0, coinbaseReward, 1, 0, "ContrastGenesisBlock", transactions, timestamp, timestamp, generateRandomHex(64), "0");
+        return BlockData(0, 0, coinbaseReward, 1, 0, "0000000000000000000000000000000000000000000000000000000000000000", transactions, timestamp, timestamp, generateRandomHex(64), "0");
     }
 
     function createValidBlock(index, prevHash, prevSupply) {

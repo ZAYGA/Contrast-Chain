@@ -35,7 +35,7 @@ export class Blockchain {
         /** @type {LevelUp} */
         this.db = LevelUp(LevelDown('./databases/blockchainDB' + nodeId));
         /** @type {BlockTree} */
-        this.blockTree = new BlockTree('ContrastGenesisBlock');
+        this.blockTree = new BlockTree('0000000000000000000000000000000000000000000000000000000000000000');
         /** @type {ForkChoiceRule} */
         this.forkChoiceRule = new ForkChoiceRule(this.blockTree);
         /** @type {SnapshotManager} */
@@ -324,7 +324,7 @@ export class Blockchain {
      * @returns {string} The hash of the latest block.
      */
     getLatestBlockHash() {
-        return this.lastBlock ? this.lastBlock.hash : "ContrastGenesisBlock";
+        return this.lastBlock ? this.lastBlock.hash : "0000000000000000000000000000000000000000000000000000000000000000";
     }
     /**
          * Retrieves a block by its index (height).

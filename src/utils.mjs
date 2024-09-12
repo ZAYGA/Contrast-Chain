@@ -757,6 +757,11 @@ const serializer = {
         },
         fromBinary_v1(encodedData) {
             return msgpack.decode(encodedData);
+        },
+        clone(data) {
+            const encoded = serializer.rawData.toBinary_v1(data);
+            const decoded = serializer.rawData.fromBinary_v1(encoded);
+            return decoded;
         }
     },
     transaction: {
@@ -876,6 +881,105 @@ const serializer = {
                 throw new Error('Failed to deserialize the transaction');
             }
         },
+    },
+    block_candidate: {
+        /** @param {BlockData} blockData */
+        toBinary_v2(blockData) {
+            // + powReward
+            // - nonce - hash - timestamp
+
+            const blockAsArray = [
+                convert.number.toUint8Array(blockData.index), // safe type: number
+                convert.number.toUint8Array(blockData.supply), // safe type: number
+                convert.number.toUint8Array(blockData.coinBase), // safe type: number
+                convert.number.toUint8Array(blockData.difficulty), // safe type: number
+                convert.number.toUint8Array(blockData.legitimacy), // safe type: number
+                convert.hex.toUint8Array(blockData.prevHash), // safe type: hex
+                convert.number.toUint8Array(blockData.posTimestamp), // safe type: number
+                convert.number.toUint8Array(blockData.powReward), // safe type: number
+                [] // Txs
+            ];
+
+            for (let i = 0; i < blockData.Txs.length; i++) {
+                blockAsArray[8].push(serializer.transaction.toBinary_v2(blockData.Txs[i]));
+            }
+
+            /** @type {Uint8Array} */
+            const encoded = msgpack.encode(blockAsArray);
+            return encoded;
+        },
+        /** @param {Uint8Array} encodedBlock */
+        fromBinary_v2(encodedBlock) {
+            const decodedBlock = msgpack.decode(encodedBlock);
+            /** @type {BlockData} */
+            const blockData = {
+                index: convert.uint8Array.toNumber(decodedBlock[0]), // safe type: uint8 -> number
+                supply: convert.uint8Array.toNumber(decodedBlock[1]), // safe type: uint8 -> number
+                coinBase: convert.uint8Array.toNumber(decodedBlock[2]), // safe type: uint8 -> number
+                difficulty: convert.uint8Array.toNumber(decodedBlock[3]), // safe type: uint8 -> number
+                legitimacy: convert.uint8Array.toNumber(decodedBlock[4]), // safe type: uint8 -> number
+                prevHash: convert.uint8Array.toHex(decodedBlock[5]), // safe type: uint8 -> hex
+                posTimestamp: convert.uint8Array.toNumber(decodedBlock[6]), // safe type: uint8 -> number
+                powReward: convert.uint8Array.toNumber(decodedBlock[7]), // safe type: uint8 -> number
+                Txs: []
+            };
+
+            for (let i = 0; i < decodedBlock[8].length; i++) {
+                blockData.Txs.push(serializer.transaction.fromBinary_v2(decodedBlock[8][i]));
+            }
+
+            return blockData;
+        }
+    },
+    block_finalized: {
+        /** @param {BlockData} blockData */
+        toBinary_v2(blockData) {
+            const blockAsArray = [
+                convert.number.toUint8Array(blockData.index), // safe type: number
+                convert.number.toUint8Array(blockData.supply), // safe type: number
+                convert.number.toUint8Array(blockData.coinBase), // safe type: number
+                convert.number.toUint8Array(blockData.difficulty), // safe type: number
+                convert.number.toUint8Array(blockData.legitimacy), // safe type: number
+                convert.hex.toUint8Array(blockData.prevHash), // safe type: hex
+                convert.number.toUint8Array(blockData.posTimestamp), // safe type: number
+                convert.number.toUint8Array(blockData.timestamp), // safe type: number
+                convert.hex.toUint8Array(blockData.hash), // safe type: hex
+                convert.hex.toUint8Array(blockData.nonce), // safe type: hex
+                [] // Txs
+            ];
+
+            for (let i = 0; i < blockData.Txs.length; i++) {
+                blockAsArray[10].push(serializer.transaction.toBinary_v2(blockData.Txs[i]));
+            };
+
+            /** @type {Uint8Array} */
+            const encoded = msgpack.encode(blockAsArray);
+            return encoded;
+        },
+        /** @param {Uint8Array} encodedBlock */
+        fromBinary_v2(encodedBlock) {
+            const decodedBlock = msgpack.decode(encodedBlock);
+            /** @type {BlockData} */
+            const blockData = {
+                index: convert.uint8Array.toNumber(decodedBlock[0]), // safe type: uint8 -> number
+                supply: convert.uint8Array.toNumber(decodedBlock[1]), // safe type: uint8 -> number
+                coinBase: convert.uint8Array.toNumber(decodedBlock[2]), // safe type: uint8 -> number
+                difficulty: convert.uint8Array.toNumber(decodedBlock[3]), // safe type: uint8 -> number
+                legitimacy: convert.uint8Array.toNumber(decodedBlock[4]), // safe type: uint8 -> number
+                prevHash: convert.uint8Array.toHex(decodedBlock[5]), // safe type: uint8 -> hex
+                posTimestamp: convert.uint8Array.toNumber(decodedBlock[6]), // safe type: uint8 -> number   
+                timestamp: convert.uint8Array.toNumber(decodedBlock[7]), // safe type: uint8 -> number
+                hash: convert.uint8Array.toHex(decodedBlock[8]), // safe type: uint8 -> hex
+                nonce: convert.uint8Array.toHex(decodedBlock[9]), // safe type: uint8 -> hex
+                Txs: []
+            };
+
+            for (let i = 0; i < decodedBlock[10].length; i++) {
+                blockData.Txs.push(serializer.transaction.fromBinary_v2(decodedBlock[10][i]));
+            }
+
+            return blockData;
+        }
     }
 };
 const compression = {

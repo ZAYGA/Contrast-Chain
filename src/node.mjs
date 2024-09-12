@@ -63,8 +63,8 @@ export class Node {
         await this.p2pNetwork.start();
         // Set the event listeners
         const rolesTopics = {
-            validator: ['new_transaction', 'new_block_pow', 'test'],
-            miner: ['new_block_proposal', 'test']
+            validator: ['new_transaction', 'new_block_finalized', 'test'],
+            miner: ['new_block_candidate', 'test']
         }
         const topicsToSubscribe = [];
         for (const role of this.roles) { topicsToSubscribe.push(...rolesTopics[role]); }
@@ -148,7 +148,7 @@ export class Node {
 
         this.blockCandidate = await this.#createBlockCandidate();
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
-        await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
+        await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
     } // Work as a "init"
 
     /** @param {BlockData} finalizedBlock */
@@ -159,7 +159,7 @@ export class Node {
             const lastBlockIndex = this.blockchain.currentHeight;
 
             if (finalizedBlock.index > lastBlockIndex + 1) {
-                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1}`); return false;
+                console.log(`Rejected block proposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
                 console.log(`Rejected block proposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
@@ -243,7 +243,7 @@ export class Node {
 
         this.blockCandidate = await this.#createBlockCandidate();
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
-        await this.p2pBroadcast('new_block_proposal', this.blockCandidate);
+        await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
 
         return true;
     }
@@ -254,7 +254,7 @@ export class Node {
         const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
 
         // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 1, 0, 'ContrastGenesisBlock', Txs, posTimestamp);
+        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 1, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
         if (this.blockchain.lastBlock) {
             await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
@@ -300,11 +300,11 @@ export class Node {
                         transaction: data // signedTransaction
                     });
                     break;
-                case 'new_block_proposal':
+                case 'new_block_candidate':
                     if (!this.roles.includes('miner')) { break; }
                     this.miner.pushCandidate(data);
                     break;
-                case 'new_block_pow':
+                case 'new_block_finalized':
                     if (!this.roles.includes('validator')) { break; }
                     const lastBlockIndex = this.blockchain.currentHeight;
                     const isSynchronized = data.index === 0 || lastBlockIndex + 1 >= data.index;
