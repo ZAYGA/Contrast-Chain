@@ -133,7 +133,7 @@ export class TxValidation {
         const startTime = Date.now();
         if (!Array.isArray(transaction.witnesses)) { throw new Error(`Invalid witnesses: ${transaction.witnesses} !== array`); }
             
-        const TxID = await Transaction_Builder.hashTxToGetID(transaction);
+        const TxID = await Transaction_Builder.hashId(transaction);
         if (TxID !== transaction.id) { throw new Error('Invalid transaction hash'); }
         for (let i = 0; i < transaction.witnesses.length; i++) {
             const { signature, pubKeyHex } = TxValidation.#decomposeWitnessOrThrow(transaction.witnesses[i]);
@@ -226,7 +226,7 @@ export class TxValidation {
      * @param {Transaction} transaction
      */
     static async controlTransactionHash(transaction) {
-        const expectedID = await Transaction_Builder.hashTxToGetID(transaction);
+        const expectedID = await Transaction_Builder.hashId(transaction);
         if (expectedID !== transaction.id) { throw new Error('Invalid transaction hash'); }
     }
 }
