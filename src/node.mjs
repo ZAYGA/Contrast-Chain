@@ -125,7 +125,8 @@ export class Node {
             const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
             if (peerId.toString() === myPeerId) {
                 console.warn(`we are in the list of peers!! skipping ${myPeerId}`);
-                continue; }
+                continue;
+            }
 
             if (peerAddresses.length === 0) {
                 console.warn(`No addresses found for peer ${peerId.toString()}`);
@@ -136,12 +137,17 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
 
                 try {
-                    const blocks = await this.syncHandler.getMissingBlocks(this.p2pNetwork, fullAddr);
-                    if (!blocks) { continue; }
-
-                    for (const block of blocks) {
-                        await this.digestFinalizedBlock(block, { broadcastNewCandidate: false, storeAsFiles: true });
-                    }
+                    await this.syncHandler.getMissingBlocks(
+                        this.p2pNetwork,
+                        fullAddr,
+                        async (block) => {
+                            try {
+                                await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
+                            } catch (error) {
+                                console.error(`Failed to digest block from peer ${fullAddr.toString()}:`, error);
+                            }
+                        }
+                    );
 
                     break; // If successful, move to next peer
                 } catch (error) {
@@ -150,10 +156,11 @@ export class Node {
             }
         }
     }
+
     async #controlPeersConnection() {
         while (true) {
             await new Promise(resolve => setTimeout(resolve, 5000));
-            
+
             const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
             const isSlefCountedAsPeer = this.p2pNetwork.getConnectedPeers().findIndex(peer => peer === myPeerId) !== -1;
             let nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
@@ -168,7 +175,7 @@ export class Node {
     async createBlockCandidateAndBroadcast() {
         try {
             if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
-    
+
             this.blockCandidate = await this.#createBlockCandidate();
             if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
             await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
@@ -185,10 +192,10 @@ export class Node {
             // verify the height
             const lastBlockIndex = this.blockchain.currentHeight;
             if (finalizedBlock.index > lastBlockIndex + 1) {
-                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
+                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected finalized block, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
-                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
+                console.log(`[NODE-${this.id.slice(0, 6)}] Rejected finalized block, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
 
             // verify the timestamp
@@ -280,7 +287,12 @@ export class Node {
 
         this.blockCandidate = await this.#createBlockCandidate();
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
-        await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
+
+        try {
+            await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
+        } catch (error) {
+            console.error(`Failed to broadcast new block candidate: ${error}`);
+        }
 
         return true;
     }
@@ -309,7 +321,7 @@ export class Node {
         blockCandidate.Txs.unshift(signedPosFeeTx);
         blockCandidate.powReward = powReward; // for the miner
 
-        if (blockCandidate.Txs.length > 3) 
+        if (blockCandidate.Txs.length > 3)
             console.warn(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
 
         return blockCandidate;

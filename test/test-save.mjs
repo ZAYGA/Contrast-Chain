@@ -12,10 +12,10 @@ describe('Blockchain Save and Load Tests', function () {
     let utxoCache;
     let dbPath;
     let vss;
-
     function generateRandomHex(length) {
-        return Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+        return Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16).padStart(2, '0')).join('');
     }
+
 
     beforeEach(function () {
         dbPath = './test-db' + Math.random();
