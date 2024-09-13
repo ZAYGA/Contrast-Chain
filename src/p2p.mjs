@@ -24,7 +24,6 @@ class P2PNetwork extends EventEmitter {
     static logger = null;
 
     /**
-     * Initializes a new P2PNetwork instance.
      * @param {Object} [options={}]
      */
     constructor(options = {}) {
@@ -58,7 +57,6 @@ class P2PNetwork extends EventEmitter {
     }
 
     /**
-     * Initializes the logger.
      * @returns {pino.Logger}
      */
     #initLogger() {
@@ -77,9 +75,6 @@ class P2PNetwork extends EventEmitter {
         });
     }
 
-    /**
-     * Starts the P2P network.
-     */
     async start() {
         try {
             this.p2pNode = await this.#createLibp2pNode();
@@ -95,21 +90,14 @@ class P2PNetwork extends EventEmitter {
             throw error;
         }
     }
-
-    /**
-     * Stops the P2P network.
-     */
     async stop() {
         if (this.p2pNode) {
             await this.p2pNode.stop();
-            this.logger.info(
-                { component: 'P2PNetwork' },
-            );
+            this.logger.info({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() }, 'P2P network stopped');
         }
     }
 
     /**
-     * Creates and configures the libp2p node.
      * @returns {Promise<Libp2p>}
      */
     async #createLibp2pNode() {
@@ -142,9 +130,6 @@ class P2PNetwork extends EventEmitter {
         });
     }
 
-    /**
-     * Connects to bootstrap nodes.
-     */
     async #connectToBootstrapNodes() {
         for (const addr of this.options.bootstrapNodes) {
             try {
@@ -158,9 +143,6 @@ class P2PNetwork extends EventEmitter {
         }
     }
 
-    /**
-     * Sets up event listeners.
-     */
     #setupEventListeners() {
         this.p2pNode.addEventListener('peer:connect', this.#handlePeerConnect);
         this.p2pNode.addEventListener('peer:disconnect', this.#handlePeerDisconnect);
@@ -168,7 +150,6 @@ class P2PNetwork extends EventEmitter {
     }
 
     /**
-     * Handles peer connections.
      * @param {CustomEvent} event
      */
     #handlePeerConnect = (event) => {
@@ -176,9 +157,7 @@ class P2PNetwork extends EventEmitter {
         this.logger.debug({ component: 'P2PNetwork', peerId }, 'Peer connected');
         this.updatePeer(peerId, { status: 'connected' });
     };
-
     /**
-     * Handles peer disconnections.
      * @param {CustomEvent} event
      */
     #handlePeerDisconnect = (event) => {
@@ -188,7 +167,6 @@ class P2PNetwork extends EventEmitter {
     };
 
     /**
-     * Handles incoming pubsub messages.
      * @param {CustomEvent} event
      */
     #handlePubsubMessage = async (event) => {
@@ -249,7 +227,6 @@ class P2PNetwork extends EventEmitter {
         }
     }
     /**
-     * Sends a message to a peer.
      * @param {string} peerMultiaddr - The multiaddress of the peer.
      * @param {Object} message - The message to send.
      * @returns {Promise<Object>} The response from the peer.
@@ -293,7 +270,6 @@ class P2PNetwork extends EventEmitter {
 
 
     /**
-     * Subscribes to a topic.
      * @param {string} topic
      * @param {Function} [callback]
      */
@@ -313,18 +289,14 @@ class P2PNetwork extends EventEmitter {
             throw error;
         }
     }
-
     /**
-     * Subscribes to multiple topics.
      * @param {string[]} topics
      * @param {Function} [callback]
      */
     async subscribeMultipleTopics(topics, callback) {
         await Promise.all(topics.map((topic) => this.subscribe(topic, callback)));
     }
-
     /**
-     * Unsubscribes from a topic.
      * @param {string} topic
      */
     async unsubscribe(topic) {
@@ -347,7 +319,6 @@ class P2PNetwork extends EventEmitter {
     }
 
     /**
-     * Updates a peer's information.
      * @param {string} peerId
      * @param {Object} data
      */
@@ -363,7 +334,6 @@ class P2PNetwork extends EventEmitter {
 
 
     /**
-     * Retrieves the network status.
      * @returns {Object}
      */
     getStatus() {
@@ -375,29 +345,23 @@ class P2PNetwork extends EventEmitter {
             peerId: this.p2pNode.peerId.toString(),
         };
     }
-
     /**
-     * Gets connected peers.
      * @returns {string[]}
      */
     getConnectedPeers() {
         return Array.from(this.peers.keys());
     }
-
     /**
-     * Gets subscribed topics.
      * @returns {string[]}
      */
     getSubscribedTopics() {
         return Array.from(this.subscriptions);
     }
-
     /**
-     * Checks if the network is started.
      * @returns {boolean}
      */
     isStarted() {
-        return this.p2pNode && this.p2pNode.isStarted();
+        return this.p2pNode && this.p2pNode.status === 'started';
     }
 }
 
