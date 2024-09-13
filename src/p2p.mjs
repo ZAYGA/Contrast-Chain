@@ -144,16 +144,15 @@ class P2PNetwork extends EventEmitter {
      */
     #handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
         try {
+            const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
             let parsedMessage;
             switch (topic) {
                 case 'new_transaction':
                     parsedMessage = utils.serializer.transaction.fromBinary_v2(data);
                     break;
                 case 'new_block_candidate':
-                    // log the readable time : hh:mm:ss:ms
-                    const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
                     parsedMessage = utils.serializer.block_candidate.fromBinary_v2(data);
-                    console.log(`[RECEIVED] Block ${parsedMessage.index} | Time: ${readableNow}`);
+                    //console.log(`[RECEIVED] Block ${parsedMessage.index} | Time: ${readableNow}`);
                     break;
                 case 'new_block_finalized':
                     parsedMessage = utils.serializer.block_finalized.fromBinary_v2(data);
@@ -177,16 +176,15 @@ class P2PNetwork extends EventEmitter {
     async broadcast(topic, message) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcasting message');
         try {
+            const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
             let serialized;
             switch (topic) {
                 case 'new_transaction':
                     serialized = utils.serializer.transaction.toBinary_v2(message);
                     break;
                 case 'new_block_candidate':
-                    // log the readable time : hh:mm:ss:ms
-                    const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
-                    console.log(`[SENDING] Block ${message.index} | Time: ${readableNow}`);
                     serialized = utils.serializer.block_candidate.toBinary_v2(message);
+                    //console.log(`[SENDING] Block ${message.index} | Time: ${readableNow}`);
                     break;
                 case 'new_block_finalized':
                     serialized = utils.serializer.block_finalized.toBinary_v2(message);

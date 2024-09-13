@@ -74,7 +74,7 @@ async function userSendToNextUser(node, accounts) {
     }
     const timeToPushAllTxsToMempool = Date.now() - startTime;
 
-    console.log(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeToBroadcast: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
+    console.warn(`[TEST-USTNU] NbTxs: ${accounts.length} | timeToCreate: ${(timeToCreateAndSignAllTxs / 1000).toFixed(2)}s | timeToBroadcast: ${(timeToPushAllTxsToMempool / 1000).toFixed(2)}s`);
 }
 /** User send to all other accounts
 * @param {Node} node

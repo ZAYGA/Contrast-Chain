@@ -260,10 +260,26 @@ export class Transaction_Builder {
     }
     /** @param {Transaction} transaction */
     static getTxWeight(transaction) {
+        /* COMPARE WEIGHTS AND TIMES OF DIFFERENT METHODS
+        const start1 = Date.now();
         const clone = Transaction_Builder.cloneTx(transaction);
         const compressedTx = utils.compression.msgpack_Zlib.transaction.toBinary_v1(clone);
         const transactionWeight = compressedTx.byteLength;
-        return transactionWeight;
+        console.log(`[TRANSACTION-GZIP] weight: ${transactionWeight} bytes - ${Date.now() - start1} ms`);
+
+        const start2 = Date.now();
+        const serialized = utils.serializer.transaction.toBinary_v2(transaction);
+        const transactionWeight2 = serialized.byteLength;
+        console.log(`[TRANSACTION-SERI_v2] weight: ${transactionWeight2} bytes - ${Date.now() - start2} ms`);
+
+        const start3 = Date.now();
+        const serialized3 = utils.serializer.transaction.toBinary_v2(transaction);
+        const compressed = utils.compression.Gzip.compress(serialized3);
+        const transactionWeight3 = compressed.byteLength;
+        console.log(`[TRANSACTION-SERI_v2+compress] weight: ${transactionWeight3} bytes - ${Date.now() - start3} ms`);*/
+
+        const serialized = utils.serializer.transaction.toBinary_v2(transaction);
+        return serialized.byteLength;
     }
     /**
      * @param {{recipientAddress: string, amount: number}[]} transfers
@@ -346,7 +362,12 @@ export class Transaction_Builder {
 
         return Transaction(inputs, outputs, transaction.id, witnesses, transaction.version);
     }
-
+    /** @param {Transaction} transaction */
+    static clone(transaction) {
+        const serialized = utils.serializer.transaction.toBinary_v2(transaction);
+        const clone = utils.serializer.transaction.fromBinary_v2(serialized);
+        return clone;
+    }
     // Multi-functions methods
     /**
      * @param {Account} senderAccount

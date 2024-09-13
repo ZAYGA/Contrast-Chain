@@ -724,7 +724,7 @@ const serializer = {
         fromBinary_v1(encodedData) {
             return msgpack.decode(encodedData);
         },
-        clone(data) {
+        clone(data) { // not that fast compared to JSON.parse(JSON.stringify(data))
             const encoded = serializer.rawData.toBinary_v1(data);
             const decoded = serializer.rawData.fromBinary_v1(encoded);
             return decoded;
@@ -842,7 +842,7 @@ const serializer = {
                 console.error('Error in prepareTransaction.fromBinary_v2:', error);
                 throw new Error('Failed to deserialize the transaction');
             }
-        },
+        }
     },
     block_candidate: {
         /** @param {BlockData} blockData */
@@ -962,20 +962,6 @@ const compression = {
             }
         },
         transaction: {
-            /** @param {Transaction} tx */
-            toBinary_v2(tx) {
-                const encoded = serializer.transaction.toBinary_v2(tx);
-                /** @type {Uint8Array} */
-                const compressed = new Compressor.Zlib.Gzip(encoded).compress();
-                return compressed;
-            },
-            /** @param {Uint8Array} binary */
-            fromBinary_v2(binary) {
-                const decompressed = new Decompressor.Zlib.Gunzip(binary).decompress();
-                /** @type {Transaction} */
-                const decoded = serializer.transaction.fromBinary_v2(decompressed);
-                return decoded;
-            },
             /** @param {Transaction} tx */
             toBinary_v1(tx) {
                 const prepared = compression.msgpack_Zlib.prepareTransaction.toBinary_v1(tx);
@@ -1108,6 +1094,16 @@ const compression = {
 
                 return decoded;
             }
+        }
+    },
+    Gzip: {
+        compress(data) {
+            const compressed = new Compressor.Zlib.Gzip(data).compress();
+            return compressed;
+        },
+        decompress(data) {
+            const decompressed = new Decompressor.Zlib.Gunzip(data).decompress();
+            return decompressed;
         }
     }
 };

@@ -209,21 +209,23 @@ export class Blockchain {
     }
     /**
      * Persists a block to disk.
-     * @param {BlockData} block - The block to persist.
+     * @param {BlockData} finalizedBlock - The block to persist.
      * @returns {Promise<void>}
      * @private
      */
-    async persistBlockToDisk(block) {
-        this.logger.debug({ blockHash: block.hash }, 'Persisting block to disk');
+    async persistBlockToDisk(finalizedBlock) {
+        this.logger.debug({ blockHash: finalizedBlock.hash }, 'Persisting block to disk');
         try {
-            const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
+            //const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
+            const serializedBlock = utils.serializer.block_finalized.toBinary_v2(finalizedBlock);
+            const compressedBlock = utils.compression.Gzip.compress(serializedBlock);
             const buffer = Buffer.from(compressedBlock);
-            await this.db.put(block.hash, buffer);
-            await this.db.put(`height-${block.index}`, block.hash);
+            await this.db.put(finalizedBlock.hash, buffer);
+            await this.db.put(`height-${finalizedBlock.index}`, finalizedBlock.hash);
 
-            this.logger.debug({ blockHash: block.hash }, 'Block persisted to disk');
+            this.logger.debug({ blockHash: finalizedBlock.hash }, 'Block persisted to disk');
         } catch (error) {
-            this.logger.error({ error, blockHash: block.hash }, 'Failed to persist block to disk');
+            this.logger.error({ error, blockHash: finalizedBlock.hash }, 'Failed to persist block to disk');
             throw error;
         }
     }
@@ -239,7 +241,9 @@ export class Blockchain {
             const blockHash = new TextDecoder().decode(blockHashUint8Array);
 
             const compressedBlock = await this.db.get(blockHash);
-            const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);
+            //const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);
+            const serializedBlock = utils.compression.Gzip.decompress(compressedBlock);
+            const blockData = utils.serializer.block_finalized.fromBinary_v2(serializedBlock);
 
             return blockData;
         } catch (error) {

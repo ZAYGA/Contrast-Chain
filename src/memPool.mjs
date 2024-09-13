@@ -106,7 +106,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
                 const txWeight = tx.byteWeight;
                 if (totalBytes + txWeight > maxTotalBytes) { continue; }
 
-                const clone = Transaction_Builder.cloneTx(tx);
+                const clone = Transaction_Builder.clone(tx);
                 delete clone.feePerByte;
                 delete clone.byteWeight;
 

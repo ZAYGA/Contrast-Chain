@@ -78,9 +78,7 @@ export class Miner {
             this.highestBlockIndex = blockCandidate.index;
             this.#cleanupCandidates();
         }
-        //console.warn(`[MINER] New block candidate pushed (Height: ${blockCandidateClone.index}) | Diff = ${blockCandidateClone.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidateClone.coinBase)}`);
-        //const blockCandidateClone = BlockUtils.cloneBlockData(blockCandidate);
-        console.info(`[MINER] New block candidate pushed (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
+        //console.info(`[MINER] New block candidate pushed (Height: ${blockCandidate.index}) | Diff = ${blockCandidate.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(blockCandidate.coinBase)}`);
         this.candidates.push(blockCandidate);
     }
     #betOnTimeToPow() {

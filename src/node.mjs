@@ -174,23 +174,32 @@ export class Node {
     } // Work as a "init"
 
     /** @param {BlockData} finalizedBlock */
-    async #validateBlockProposal(finalizedBlock) {
+    async #validateBlockProposal(finalizedBlock, timeDrift = 500) {
         try {
             // verify the height
-            //const lastBlockIndex = this.lastBlockData ? this.lastBlockData.index : -1; / /DEPRECATED
             const lastBlockIndex = this.blockchain.currentHeight;
-
             if (finalizedBlock.index > lastBlockIndex + 1) {
                 console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, higher index: ${finalizedBlock.index} > ${lastBlockIndex + 1} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
             if (finalizedBlock.index <= lastBlockIndex) {
                 console.log(`[NODE-${this.id.slice(0, 6)}] Rejected blockProposal, older index: ${finalizedBlock.index} <= ${lastBlockIndex} | from: ${finalizedBlock.Txs[0].outputs[0].address.slice(0, 6)}`); return false;
             }
+
+            // verify the timestamp
+            const timeDiff = this.blockchain.lastBlock === null ? 0 : this.blockchain.lastBlock.timestamp - finalizedBlock.posTimestamp;
+            if (timeDiff > timeDrift) { return `Invalid lastBlock.timestamp - finalizedBlock.posTimestamp: ${timeDiff}ms`; }
+
             // verify the hash
             const { hex, bitsArrayAsString } = await BlockUtils.getMinerHash(finalizedBlock, this.useDevArgon2);
             if (finalizedBlock.hash !== hex) { return 'Hash invalid!'; }
             const hashConfInfo = utils.mining.verifyBlockHashConformToDifficulty(bitsArrayAsString, finalizedBlock);
             if (!hashConfInfo.conform) { return 'Hash not conform!'; }
+
+            // verify the legitimacy
+            await this.vss.calculateRoundLegitimacies(finalizedBlock.hash);
+            const validatorAddress = finalizedBlock.Txs[1].inputs[0].split(':')[0];
+            const validatorLegitimacy = this.vss.getAddressLegitimacy(validatorAddress);
+            if (validatorLegitimacy !== finalizedBlock.legitimacy) { return 'Invalid legitimacy!'; }
 
             // control coinbase amount
             const expectedCoinBase = utils.mining.calculateNextCoinbaseReward(this.blockchain.lastBlock || finalizedBlock);
@@ -276,7 +285,7 @@ export class Node {
         const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
 
         // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 100, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
+        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 20, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
         if (this.blockchain.lastBlock) {
             await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
@@ -294,7 +303,8 @@ export class Node {
         blockCandidate.Txs.unshift(signedPosFeeTx);
         blockCandidate.powReward = powReward; // for the miner
 
-        if (blockCandidate.Txs.length > 3) console.info(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
+        if (blockCandidate.Txs.length > 3) 
+            console.warn(`(Height:${blockCandidate.index}) => ${blockCandidate.Txs.length} txs, block candidate created in ${(Date.now() - startTime)}ms`);
 
         return blockCandidate;
     }
@@ -324,6 +334,12 @@ export class Node {
                     break;
                 case 'new_block_candidate':
                     if (!this.roles.includes('miner')) { break; }
+                    if (this.roles.includes('validator')) { // check legitimacy
+                        await this.vss.calculateRoundLegitimacies(data.hash);
+                        const validatorAddress = data.Txs[0].inputs[0].split(':')[0];
+                        const validatorLegitimacy = this.vss.getAddressLegitimacy(validatorAddress);
+                        if (validatorLegitimacy !== data.legitimacy) { return 'Invalid legitimacy!'; }
+                    }
                     this.miner.pushCandidate(data);
                     break;
                 case 'new_block_finalized':

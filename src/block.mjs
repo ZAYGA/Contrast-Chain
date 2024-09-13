@@ -184,4 +184,18 @@ export class BlockUtils {
         const JSON = this.dataAsJSON(blockData);
         return this.blockDataFromJSON(JSON);
     }
+    /** @param {BlockData} blockData */
+    static cloneBlockCandidate(blockData) { // TESTING Fnc(), unused
+        const start1 = Date.now();
+        const JSON = this.dataAsJSON(blockData);
+        const jsonClone = this.blockDataFromJSON(JSON);
+        console.log(`cloneBlockData JSON took: ${Date.now() - start1}ms`);
+
+        const start2 = Date.now();
+        const serialized = utils.serializer.block_candidate.toBinary_v2(blockData);
+        const binaryClone = utils.serializer.block_candidate.fromBinary_v2(serialized);
+        console.log(`cloneBlockData binary took: ${Date.now() - start2}ms`);
+
+        return jsonClone;
+    }
 }

@@ -86,6 +86,7 @@ export class Vss {
         this.spectrum = {};
         /** @type {StakeReference[]} */
         this.legitimacies = [];
+        this.currentRoundHash = '';
     }
 
     /**
@@ -116,6 +117,8 @@ export class Vss {
      * @param {string} blockHash
      */
     async calculateRoundLegitimacies(blockHash, maxResultingArrayLength = 100) {
+        if (blockHash === this.currentRoundHash) { return; } // already calculated
+
         /** @type {StakeReference[]} */
         const roundLegitimacies = [];
         const spectrumLength = Object.keys(this.spectrum).length;
@@ -136,6 +139,7 @@ export class Vss {
         }
 
         this.legitimacies = roundLegitimacies;
+        this.currentRoundHash = blockHash;
     }
     /** @param {string} address */
     getAddressLegitimacy(address) {
