@@ -209,7 +209,7 @@ export class TxValidation {
      * @param {Object<string, UTXO>} utxosByAnchor - from utxoCache
      * @param {Object<string, string>} knownPubKeysAddresses - will be filled
      * @param {Transaction} transaction
-     * @param {boolean} isCoinBase
+     * @param {string | false} specialTx - 'miner' || 'validator' or false
      */
     static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, specialTx, useDevArgon2 = false) {
         const result = { fee: 0, success: false };

@@ -55,7 +55,7 @@ export class Node {
     async start() {
         await this.blockchain.init();
         this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
-        this.miner = new Miner(this.account, this.p2pNetwork, this.roles, this.taskQueue);
+        this.miner = new Miner(this.account.address, this.p2pNetwork, this.roles, this.taskQueue);
         // load the blocks from storage
         const loadedBlocks = this.roles.includes('validator') ? await this.blockchain.recoverBlocksFromStorage() : [];
         for (const block of loadedBlocks) {

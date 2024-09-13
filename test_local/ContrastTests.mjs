@@ -12,9 +12,9 @@ const testParams = {
     nbOfAccounts: 200, // minimum 25
     addressType: 'W',
 
-    nbOfMiners: 0,
-    nbOfValidators: 0,
-    nbOfMultiNodes: 2,
+    nbOfMiners: 1,
+    nbOfValidators: 1,
+    nbOfMultiNodes: 0,
 
     txsSeqs: {
         userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4 },
@@ -161,9 +161,9 @@ async function waitForP2PNetworkReady(nodes, maxAttempts = 30, interval = 1000) 
  */
 async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { // /ip4/0.0.0.0/tcp/7777
     const minerNode = await factory.createNode(account, 'miner', { listenAddress });
+    await minerNode.start();
     minerNode.miner.useDevArgon2 = testParams.useDevArgon2;
     minerNode.memPool.useDevArgon2 = testParams.useDevArgon2;
-    await minerNode.start();
 
     return minerNode;
 }
@@ -174,10 +174,9 @@ async function initMinerNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp
 async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/0') { // /ip4/0.0.0.0/tcp/0
     const validatorNode = await factory.createNode(account, 'validator', { listenAddress });
     //await contrast.localStorage_v1.loadBlockchainLocally(validatorNode);
-
+    await validatorNode.start();
     validatorNode.useDevArgon2 = testParams.useDevArgon2;
     validatorNode.memPool.useDevArgon2 = testParams.useDevArgon2;
-    await validatorNode.start();
 
     return validatorNode;
 }
@@ -188,14 +187,13 @@ async function initValidatorNode(factory, account, listenAddress = '/ip4/0.0.0.0
 async function initMultiNode(factory, account, listenAddress = '/ip4/0.0.0.0/tcp/7777') {
     const multiNode = await factory.createNode(account, ['validator', 'miner'], { listenAddress });
     await multiNode.start();
+    multiNode.useDevArgon2 = testParams.useDevArgon2;
+    multiNode.memPool.useDevArgon2 = testParams.useDevArgon2;
 
     return multiNode;
 }
-/**
- * @param {Account[]} accounts
- * @param {WebSocketServer} wss
- */
-async function nodeSpecificTest(accounts, wss) {
+/** @param {Account[]} accounts */
+async function nodeSpecificTest(accounts) {
     if (!contrast.utils.isNode) { return; }
 
     //#region init nodes
@@ -267,12 +265,6 @@ async function nodeSpecificTest(accounts, wss) {
                 }
             }
 
-            wss.clients.forEach(function each(client) { // wss broadcast - utxoCache
-                if (client.readyState === 1) {
-                    client.send(JSON.stringify({ utxoCache: validatorNode.utxoCache }));
-                }
-            });
-
             /*const timeDiff = Date.now() - lastBlockIndexAndTime.time;
             console.log(`[TEST] New block: ${node.blockCandidate.index} | Time: ${timeDiff}ms`);
             lastBlockIndexAndTime.time = Date.now();*/
@@ -326,22 +318,12 @@ async function nodeSpecificTest(accounts, wss) {
             }
         }
 
-        // wss broadcast - mempool
-        /*if (validatorNode.blockCandidate.index > lastBlockIndexAndTime.index) { // new block only
-            wss.clients.forEach(function each(client) {
-                if (client.readyState === 1) {
-                    client.send(JSON.stringify({ memPool: validatorNode.memPool }));
-                }
-            });
-        }*/
-
         //await validatorNode.callStack.breathe();
     }
 
     console.log('[TEST] Node test completed. - stop mining');
 }
-/** @param {WebSocketServer} wss */
-export async function test(wss) {
+export async function test() {
     const timings = { walletRestore: 0, deriveAccounts: 0, startTime: Date.now(), checkPoint: Date.now() };
 
     const wallet = new contrast.Wallet("00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", testParams.useDevArgon2);
@@ -369,5 +351,6 @@ export async function test(wss) {
 ---------------------------------`
     );
 
-    nodeSpecificTest(derivedAccounts, wss);
+    nodeSpecificTest(derivedAccounts);
 };
+test();

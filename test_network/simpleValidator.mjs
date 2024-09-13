@@ -20,9 +20,9 @@ async function main() {
     const factory = new NodeFactory();
     //const validatorNode = await factory.createNode(derivedAccounts[0], 'validator', { listenAddress: '/ip4/0.0.0.0/tcp/0' });
     const validatorNode = await factory.createNode(derivedAccounts[0], 'validator', {listenAddress: '/ip4/0.0.0.0/tcp/7777'});
+    await validatorNode.start();
     validatorNode.useDevArgon2 = useDevArgon2;
     validatorNode.memPool.useDevArgon2 = useDevArgon2;
-    await validatorNode.start();
     console.log('Validator node started');
 
     while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }

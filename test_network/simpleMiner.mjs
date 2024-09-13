@@ -19,9 +19,9 @@ async function main() {
     
     const factory = new NodeFactory();
     const minerNode = await factory.createNode(derivedAccounts[0], 'miner', {listenAddress: '/ip4/0.0.0.0/tcp/7777'});
+    await minerNode.start();
     minerNode.useDevArgon2 = useDevArgon2;
     minerNode.memPool.useDevArgon2 = useDevArgon2;
-    await minerNode.start();
     console.log('Miner node started');
 
     while (true) { await new Promise(resolve => setTimeout(resolve, 1000)); }

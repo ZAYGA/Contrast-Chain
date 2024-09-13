@@ -1,1 +1,1 @@
-node test_local/test-NodeJS-FrontES6.mjs
+node test_local/ContrastTests.mjs

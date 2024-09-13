@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Dashboard v1.0</title>
+    <script src="./nodeDashboardScript.mjs" type="module"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        #dashboard {
+            
+            border-radius: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="dashboard">
+        <h1>Address: <span id="address"></span></h1>
+        <h2>roles: <span id="roles"></span></h2>
+        <h2>currentHeight: <span id="currentHeight">0</span></h2>
+    </div>
+</body>

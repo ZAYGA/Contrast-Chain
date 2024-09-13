@@ -10,12 +10,12 @@ import utils from './utils.mjs';
 
 export class Miner {
     /**
-     * @param {Account} minerAccount
+     * @param {Account} address
      * @param {P2PNetwork} p2pNetwork
      */
-    constructor(minerAccount, p2pNetwork, roles = ['miner'], taskQueue = null) {
-        /** @type {Account} */
-        this.minerAccount = minerAccount;
+    constructor(address, p2pNetwork, roles = ['miner'], taskQueue = null) {
+        /** @type {string} */
+        this.address = address;
         /** @type {BlockData[]} */
         this.candidates = [];
         /** @type {P2PNetwork} */
@@ -49,7 +49,7 @@ export class Miner {
 
         const powReward = blockCandidate.powReward;
         delete clonedCandidate.powReward;
-        const coinbaseTx = await Transaction_Builder.createCoinbase(coinbaseNonce, this.minerAccount.address, powReward);
+        const coinbaseTx = await Transaction_Builder.createCoinbase(coinbaseNonce, this.address, powReward);
         BlockUtils.setCoinbaseTransaction(clonedCandidate, coinbaseTx);
 
         const signatureHex = await BlockUtils.getBlockSignature(clonedCandidate);
