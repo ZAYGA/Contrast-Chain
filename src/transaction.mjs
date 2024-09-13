@@ -343,8 +343,8 @@ export class Transaction_Builder {
     /** @param {Transaction} transaction */
     static isMinerOrValidatorTx(transaction) {
         if (transaction.inputs.length !== 1) { return false; }
-        if (transaction.inputs[0].length === 8) { return true; } // nonce length is 8
-        if (transaction.inputs[0].length === 20 + 1 + 64) { return true; } // address length 20 + : + posHash length is 64
+        if (transaction.inputs[0].length === 8) { return 'miner'; } // nonce length is 8
+        if (transaction.inputs[0].length === 20 + 1 + 64) { return 'validator'; } // address length 20 + : + posHash length is 64
 
         return false;
     }

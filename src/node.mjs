@@ -213,8 +213,8 @@ export class Node {
 
             // verify the transactions
             for (const tx of finalizedBlock.Txs) {
-                const isCoinBase = Transaction_Builder.isMinerOrValidatorTx(tx);
-                const { fee, success } = await TxValidation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, isCoinBase, this.useDevArgon2);
+                const specialTx = Transaction_Builder.isMinerOrValidatorTx(tx);
+                const { fee, success } = await TxValidation.fullTransactionValidation(this.utxoCache.utxosByAnchor, this.memPool.knownPubKeysAddresses, tx, specialTx, this.useDevArgon2);
                 if (!success) { return `Invalid transaction: ${tx.id} - ${TxValidation}`; }
             }
 

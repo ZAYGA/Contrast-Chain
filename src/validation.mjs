@@ -192,11 +192,13 @@ export class TxValidation {
         // control the input's(UTXOs) addresses presence in the witnesses
         for (let i = 0; i < transaction.inputs.length; i++) {
             const referencedUTXO = utxosByAnchor[transaction.inputs[i]];
-            if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
+            //if (!referencedUTXO) { throw new Error('referencedUTXO not found'); }
+            const addressToVerify = referencedUTXO ? referencedUTXO.address : transaction.inputs[i].split(':')[0];
+            if (!addressToVerify) { throw new Error('addressToVerify not found'); }
 
-            if (!transactionWitnessesAddresses.includes(referencedUTXO.address)) {
-                console.log(`UTXO address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
-                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(referencedUTXO.address)}`);
+            if (!transactionWitnessesAddresses.includes(addressToVerify)) {
+                console.log(`UTXO address: ${utils.addressUtils.formatAddress(addressToVerify)}`);
+                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(addressToVerify)}`);
             }
         }
 
@@ -209,15 +211,17 @@ export class TxValidation {
      * @param {Transaction} transaction
      * @param {boolean} isCoinBase
      */
-    static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, isCoinBase, useDevArgon2 = false) {
-        TxValidation.isConformTransaction(utxosByAnchor, transaction, isCoinBase);
+    static async fullTransactionValidation(utxosByAnchor, knownPubKeysAddresses, transaction, specialTx, useDevArgon2 = false) {
+        const result = { fee: 0, success: false };
+        TxValidation.isConformTransaction(utxosByAnchor, transaction, specialTx);
         await TxValidation.controlAllWitnessesSignatures(transaction);
-        if (isCoinBase) { return { fee: 0, success: true }; }
+        if (specialTx === 'miner') { return { fee: 0, success: true }; }
         
-        const fee = TxValidation.calculateRemainingAmount(utxosByAnchor, transaction);
+        if (!specialTx) { result.fee = TxValidation.calculateRemainingAmount(utxosByAnchor, transaction); }
         await TxValidation.addressOwnershipConfirmation(utxosByAnchor, transaction, knownPubKeysAddresses, useDevArgon2);
 
-        return { fee, success: true };
+        result.success = true;
+        return result;
     }
 
     /** - control the transaction hash (SHA256)
