@@ -262,13 +262,14 @@ export class BlockValidation {
             if (i === 0 || i === 1) { continue; } // coinbase Tx / validator Tx
             
             const Tx = blockData.Txs[i];
-            const utxoSpentInTx = {};
+            //const utxoSpentInTx = {}; // to delete
             for (const input of Tx.inputs) {
                 const anchor = input;
 
-                if (utxoSpentInTx[anchor]) { continue; } // we can see the same anchor multiple times in the same Tx
-                utxoSpentInTx[anchor] = true;
-                if (utxoSpent[anchor]) { throw new Error('Double spending'); }
+                /*if (utxoSpentInTx[anchor]) { continue; } // we can see the same anchor multiple times in the same Tx
+                utxoSpentInTx[anchor] = true;*/ // to delete
+                if (utxoSpent[anchor]) { 
+                    throw new Error('Double spending'); }
 
                 const utxo = utxosByAnchor[anchor];
                 if (!utxo) { throw new Error('UTXO not found in utxoCache, already spent?'); }

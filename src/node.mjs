@@ -166,11 +166,17 @@ export class Node {
         }
     }
     async createBlockCandidateAndBroadcast() {
-        if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
-
-        this.blockCandidate = await this.#createBlockCandidate();
-        if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
-        await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
+        try {
+            if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }
+    
+            this.blockCandidate = await this.#createBlockCandidate();
+            if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
+            await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
+            return true;
+        } catch (error) {
+            console.error(error);
+            return false;
+        }
     } // Work as a "init"
 
     /** @param {BlockData} finalizedBlock */
