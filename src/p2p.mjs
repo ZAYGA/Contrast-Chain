@@ -16,16 +16,12 @@ import utils from './utils.mjs';
 class P2PNetwork extends EventEmitter {
     /** @type {string} */
     static SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
-
     /** @type {number} */
     static MAX_MESSAGE_SIZE = 2000000000000000;
-
     /** @type {pino.Logger} */
     static logger = null;
 
-    /**
-     * @param {Object} [options={}]
-     */
+    /** @param {Object} [options={}] */
     constructor(options = {}) {
         super();
 
@@ -48,9 +44,6 @@ class P2PNetwork extends EventEmitter {
         this.p2pNode = null;
         this.peers = new Map();
         this.subscriptions = new Set();
-
-        this.syncProtocol = P2PNetwork.SYNC_PROTOCOL;
-        this.maxMessageSize = P2PNetwork.MAX_MESSAGE_SIZE;
 
         if (!P2PNetwork.logger) {
             P2PNetwork.logger = this.#initLogger();
@@ -237,20 +230,20 @@ class P2PNetwork extends EventEmitter {
         let stream;
         try {
             // Dial the peer
-            stream = await this.p2pNode.dialProtocol(peerMultiaddr, this.syncProtocol);
+            stream = await this.p2pNode.dialProtocol(peerMultiaddr, P2PNetwork.SYNC_PROTOCOL);
             const lp = lpStream(stream);
             const serialized = utils.serializer.rawData.toBinary_v1(message);
 
             // Write the message to the stream
             await lp.write(serialized);
-            const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
+            const res = await lp.read({ maxSize: P2PNetwork.MAX_MESSAGE_SIZE });
             const response = utils.serializer.rawData.fromBinary_v1(res.subarray());
             // console.log('Received response:', response);
             if (response.status === 'error') { throw new Error(response.message); }
             return response;
         } catch (err) {
             this.logger.error(
-                { component: 'P2PNetwork', protocol: this.syncProtocol, error: err.message },
+                { component: 'P2PNetwork', protocol: P2PNetwork.SYNC_PROTOCOL, error: err.message },
                 'Error sending message'
             );
             throw err;

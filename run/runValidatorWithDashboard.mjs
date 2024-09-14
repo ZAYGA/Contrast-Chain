@@ -29,8 +29,8 @@ async function initMultiNode(local = false, useDevArgon2 = false) {
     await multiNode.start();
     multiNode.memPool.useDevArgon2 = useDevArgon2;
 
-    const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransfer(derivedAccounts[0], 1000, 'W9bxy4aLJiQjX1kNgoAC');
-    if (!error) { await multiNode.p2pBroadcast('new_transaction', signedTx); }
+    /*const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransfer(derivedAccounts[0], 1000, 'W9bxy4aLJiQjX1kNgoAC');
+    if (!error) { await multiNode.p2pBroadcast('new_transaction', signedTx); }*/
 
     return multiNode;
 }
