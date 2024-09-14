@@ -1,6 +1,7 @@
 import { lpStream } from 'it-length-prefixed-stream';
 import pino from 'pino';
 import utils from './utils.mjs';
+import P2PNetwork from './p2p.mjs';
 
 /**
  * @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
@@ -34,8 +35,8 @@ export class SyncHandler {
     async start(p2pNetwork) {
         try {
             this.p2pNetworkMaxMessageSize = p2pNetwork.maxMessageSize;
-            p2pNetwork.p2pNode.handle(p2pNetwork.syncProtocol, this.handleIncomingStream.bind(this));
-            this.logger.info({ protocol: p2pNetwork.syncProtocol }, 'Sync node started');
+            p2pNetwork.p2pNode.handle(P2PNetwork.SYNC_PROTOCOL, this.handleIncomingStream.bind(this));
+            this.logger.info({ protocol: P2PNetwork.SYNC_PROTOCOL }, 'Sync node started');
         } catch (error) {
             this.logger.error({ error: error.message }, 'Failed to start sync node');
             throw error;
