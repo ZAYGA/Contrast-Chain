@@ -13,13 +13,23 @@ import { multiaddr } from 'multiaddr';
 import { lpStream } from 'it-length-prefixed-stream';
 import utils from './utils.mjs';
 
-const SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
-const MAX_MESSAGE_SIZE = 20000000;
-
 class P2PNetwork extends EventEmitter {
+    /** @type {string} */
+    static SYNC_PROTOCOL = '/blockchain-sync/1.0.0';
+
+    /** @type {number} */
+    static MAX_MESSAGE_SIZE = 2000000000000000;
+
+    /** @type {pino.Logger} */
+    static logger = null;
+
+    /**
+     * @param {Object} [options={}]
+     */
     constructor(options = {}) {
         super();
-        this.options = {
+
+        const defaultOptions = {
             bootstrapNodes: [
                 '/ip4/82.126.155.210/tcp/7777',
                 '/dns4/pinkparrot.science/tcp/7777',
@@ -28,65 +38,77 @@ class P2PNetwork extends EventEmitter {
             announceInterval: 60000,
             cleanupInterval: 300000,
             peerTimeout: 600000,
-            logLevel: 'info', // 'info',
+            logLevel: 'silent',
             logging: true,
             listenAddress: '/ip4/0.0.0.0/tcp/7777',
-            ...options
         };
-        this.p2pNode = null; // Libp2pNode
+
+        this.options = { ...defaultOptions, ...options };
+
+        this.p2pNode = null;
         this.peers = new Map();
         this.subscriptions = new Set();
 
-        this.announceIntervalId = null;
-        this.cleanupIntervalId = null;
-        this.syncProtocol = SYNC_PROTOCOL;
-        this.maxMessageSize = MAX_MESSAGE_SIZE;
+        this.syncProtocol = P2PNetwork.SYNC_PROTOCOL;
+        this.maxMessageSize = P2PNetwork.MAX_MESSAGE_SIZE;
 
-        if (!P2PNetwork.logger) { P2PNetwork.logger = P2PNetwork.initLogger(this.options); }
+        if (!P2PNetwork.logger) {
+            P2PNetwork.logger = this.#initLogger();
+        }
         this.logger = P2PNetwork.logger;
-        this.logger.setMaxListeners(10000);
     }
 
-    static initLogger(options) {
+    /**
+     * @returns {pino.Logger}
+     */
+    #initLogger() {
         return pino({
-            level: options.logLevel,
-            enabled: options.logging,
+            level: this.options.logLevel,
+            enabled: this.options.logging,
             transport: {
                 target: 'pino-pretty',
                 options: {
                     colorize: true,
                     translateTime: 'SYS:standard',
                     ignore: 'pid,hostname',
-                    messageFormat: '{component} - {msg}'
-                }
-            }
+                    messageFormat: '{component} - {msg}',
+                },
+            },
         });
     }
+
     async start() {
         try {
             this.p2pNode = await this.#createLibp2pNode();
             await this.p2pNode.start();
-            this.logger.debug({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() }, `${this.options.role} node started`);
+
+            this.logger.debug({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() },);
 
             this.#setupEventListeners();
             await this.#connectToBootstrapNodes();
         } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', error: error.message }, 'Failed to start P2P network');
+            this.logger.error(
+                { component: 'P2PNetwork', error: error.message }, 'Failed to start P2P network');
             throw error;
         }
     }
     async stop() {
         if (this.p2pNode) {
-            // Stop the libp2p node
             await this.p2pNode.stop();
-            this.logger.info({ component: 'P2PNetwork' }, `${this.options.role} node stopped`);
+            this.logger.info({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() }, 'P2P network stopped');
         }
     }
+
+    /**
+     * @returns {Promise<Libp2p>}
+     */
     async #createLibp2pNode() {
         const peerDiscovery = [mdns()];
+
         if (this.options.bootstrapNodes.length > 0) {
             peerDiscovery.push(bootstrap({ list: this.options.bootstrapNodes }));
         }
+
         return createLibp2p({
             addresses: { listen: [this.options.listenAddress] },
             transports: [tcp()],
@@ -109,42 +131,49 @@ class P2PNetwork extends EventEmitter {
             },
         });
     }
+
     async #connectToBootstrapNodes() {
         for (const addr of this.options.bootstrapNodes) {
             try {
                 const ma = multiaddr(addr);
                 await this.p2pNode.dial(ma);
-
-                //console.log('Connected to bootstrap node:', addr);
-                //this.updatePeer(addr, { status: 'connected' });
-                this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node');
+                this.logger.info({ component: 'P2PNetwork', bootstrapNode: addr }, 'Connected to bootstrap node'
+                );
             } catch (err) {
                 this.logger.error({ component: 'P2PNetwork', bootstrapNode: addr, error: err.message }, 'Failed to connect to bootstrap node');
             }
         }
     }
+
     #setupEventListeners() {
-        this.p2pNode.addEventListener('peer:connect', this.#handlePeerConnect.bind(this));
-        this.p2pNode.addEventListener('peer:disconnect', this.#handlePeerDisconnect.bind(this));
-        this.p2pNode.services.pubsub.addEventListener('message', this.#handlePubsubMessage.bind(this));
+        this.p2pNode.addEventListener('peer:connect', this.#handlePeerConnect);
+        this.p2pNode.addEventListener('peer:disconnect', this.#handlePeerDisconnect);
+        this.p2pNode.services.pubsub.addEventListener('message', this.#handlePubsubMessage);
     }
-    #handlePeerConnect = ({ detail: peerId }) => {
-        this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer connected');
-        this.updatePeer(peerId.toString(), { status: 'connected' });
-    }
-    #handlePeerDisconnect = ({ detail: peerId }) => {
-        this.logger.debug({ component: 'P2PNetwork', peerId: peerId.toString() }, 'Peer disconnected');
-        this.peers.delete(peerId.toString());
-    }
+
     /**
-     * @param {Object} detail
-     * @param {string} detail.topic
-     * @param {Uint8Array} detail.data
-     * @param {PeerId} detail.from
+     * @param {CustomEvent} event
      */
-    #handlePubsubMessage = async ({ detail: { topic, data, from } }) => { // TODO: optimize this by using specific compression serialization
+    #handlePeerConnect = (event) => {
+        const peerId = event.detail.toString();
+        this.logger.debug({ component: 'P2PNetwork', peerId }, 'Peer connected');
+        this.updatePeer(peerId, { status: 'connected' });
+    };
+    /**
+     * @param {CustomEvent} event
+     */
+    #handlePeerDisconnect = (event) => {
+        const peerId = event.detail.toString();
+        this.logger.debug({ component: 'P2PNetwork', peerId }, 'Peer disconnected');
+        this.peers.delete(peerId);
+    };
+
+    /**
+     * @param {CustomEvent} event
+     */
+    #handlePubsubMessage = async (event) => {
+        const { topic, data, from } = event.detail;
         try {
-            const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
             let parsedMessage;
             switch (topic) {
                 case 'new_transaction':
@@ -152,7 +181,6 @@ class P2PNetwork extends EventEmitter {
                     break;
                 case 'new_block_candidate':
                     parsedMessage = utils.serializer.block_candidate.fromBinary_v2(data);
-                    //console.log(`[RECEIVED] Block ${parsedMessage.index} | Time: ${readableNow}`);
                     break;
                 case 'new_block_finalized':
                     parsedMessage = utils.serializer.block_finalized.fromBinary_v2(data);
@@ -184,7 +212,6 @@ class P2PNetwork extends EventEmitter {
                     break;
                 case 'new_block_candidate':
                     serialized = utils.serializer.block_candidate.toBinary_v2(message);
-                    //console.log(`[SENDING] Block ${message.index} | Time: ${readableNow}`);
                     break;
                 case 'new_block_finalized':
                     serialized = utils.serializer.block_finalized.toBinary_v2(message);
@@ -196,13 +223,12 @@ class P2PNetwork extends EventEmitter {
 
             await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
-        } catch (error) { 
+        } catch (error) {
             console.error('Broadcast error:', error);
-            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error'); 
+            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
         }
     }
     /**
-     * Sends a message to a peer.
      * @param {string} peerMultiaddr - The multiaddress of the peer.
      * @param {Object} message - The message to send.
      * @returns {Promise<Object>} The response from the peer.
@@ -210,10 +236,12 @@ class P2PNetwork extends EventEmitter {
     async sendMessage(peerMultiaddr, message) {
         let stream;
         try {
-            stream = await this.p2pNode.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
+            // Dial the peer
+            stream = await this.p2pNode.dialProtocol(peerMultiaddr, this.syncProtocol);
             const lp = lpStream(stream);
             const serialized = utils.serializer.rawData.toBinary_v1(message);
 
+            // Write the message to the stream
             await lp.write(serialized);
             const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
             const response = utils.serializer.rawData.fromBinary_v1(res.subarray());
@@ -221,43 +249,56 @@ class P2PNetwork extends EventEmitter {
             if (response.status === 'error') { throw new Error(response.message); }
             return response;
         } catch (err) {
-            console.error('Error sending message:' + SYNC_PROTOCOL, err);
+            this.logger.error(
+                { component: 'P2PNetwork', protocol: this.syncProtocol, error: err.message },
+                'Error sending message'
+            );
             throw err;
         } finally {
-            if (stream && stream.status === 'closed') { return; }
-            await stream.close().catch(console.error);
+            // Ensure the stream is properly closed
+            if (stream && !stream.closed) {
+                await stream.close().catch(console.error);
+            }
         }
     }
+
+
     /**
      * @param {string} topic
-     * @param {Function} callback
+     * @param {Function} [callback]
      */
     async subscribe(topic, callback) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Subscribing to topic');
         try {
             await this.p2pNode.services.pubsub.subscribe(topic);
             this.subscriptions.add(topic);
-            //if (callback) this.on(topic, callback);
-            if (callback) this.on(topic, (message) => callback(topic, message));
-            this.logger.debug({ component: 'P2PNetwork', topic, subscriptions: Array.from(this.subscriptions) }, 'Subscribed to topic');
+            if (callback) {
+                this.on(topic, (message) => callback(topic, message));
+            }
+            this.logger.debug({ component: 'P2PNetwork', topic, subscriptions: Array.from(this.subscriptions) }, 'Subscribed to topic'
+            );
         } catch (error) {
-            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to subscribe to topic');
+            this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Failed to subscribe to topic'
+            );
             throw error;
         }
     }
     /**
      * @param {string[]} topics
-     * @param {Function} callback
+     * @param {Function} [callback]
      */
     async subscribeMultipleTopics(topics, callback) {
-        for (const topic of topics) {
-            await this.subscribe(topic, callback);
-        }
+        await Promise.all(topics.map((topic) => this.subscribe(topic, callback)));
     }
-    /** @param {string} topic */
+    /**
+     * @param {string} topic
+     */
     async unsubscribe(topic) {
         if (!this.subscriptions.has(topic)) {
-            this.logger.debug({ component: 'P2PNetwork', topic }, 'Attempting to unsubscribe from a topic that was not subscribed to');
+            this.logger.debug(
+                { component: 'P2PNetwork', topic },
+                'Attempting to unsubscribe from a topic that was not subscribed to'
+            );
             return;
         }
 
@@ -271,12 +312,24 @@ class P2PNetwork extends EventEmitter {
         }
     }
 
+    /**
+     * @param {string} peerId
+     * @param {Object} data
+     */
     updatePeer(peerId, data) {
-        this.peers.set(peerId, { ...data, lastSeen: Date.now(), address: data.address || null });
+        this.peers.set(peerId, {
+            ...data,
+            lastSeen: Date.now(),
+            address: data.address || null,
+        });
         this.logger.debug({ component: 'P2PNetwork', peerId, data }, 'Peer updated');
         this.emit('peer:updated', peerId, data);
     }
 
+
+    /**
+     * @returns {Object}
+     */
     getStatus() {
         return {
             isSyncing: false,
@@ -286,12 +339,21 @@ class P2PNetwork extends EventEmitter {
             peerId: this.p2pNode.peerId.toString(),
         };
     }
+    /**
+     * @returns {string[]}
+     */
     getConnectedPeers() {
         return Array.from(this.peers.keys());
     }
+    /**
+     * @returns {string[]}
+     */
     getSubscribedTopics() {
         return Array.from(this.subscriptions);
     }
+    /**
+     * @returns {boolean}
+     */
     isStarted() {
         return this.p2pNode && this.p2pNode.status === 'started';
     }

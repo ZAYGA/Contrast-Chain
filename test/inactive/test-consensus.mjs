@@ -7,8 +7,8 @@ import { Wallet } from '../../src/wallet.mjs';
 describe('Comprehensive Consensus Test', function () {
     this.timeout(3600000); // 1 hour
 
-    const NUM_NODES = 3;
-    const NUM_MINERS = 1;
+    const NUM_NODES = 4;
+    const NUM_MINERS = 0;
     const INITIAL_MINER_BALANCE = 30000000;
     const DISTRIBUTION_AMOUNT = 3000000;
     const CONSENSUS_CHECK_INTERVAL = 2000; // Check consensus every minute

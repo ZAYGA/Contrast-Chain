@@ -28,10 +28,10 @@ export class Blockchain {
     constructor(nodeId, options = {}) {
         const {
             maxInMemoryBlocks = 1000,
-            logLevel = 'debug', // 'silent',
+            logLevel = 'silent', // 'silent',
             snapshotInterval = 100,
         } = options;
-        
+
         /** @type {LevelUp} */
         this.db = LevelUp(LevelDown('./databases/blockchainDB' + nodeId));
         /** @type {BlockTree} */
@@ -88,7 +88,7 @@ export class Blockchain {
             for (let i = 0; i <= storedHeightInt; i++) {
                 const blockData = await this.getBlockFromDiskByHeight(i);
                 if (!blockData) { this.logger.warn({ height: i }, 'Failed to load block from disk'); break; }
-    
+
                 blocksData.push(blockData);
             }
 
@@ -124,25 +124,25 @@ export class Blockchain {
             try {
                 this.updateIndices(block);
                 this.inMemoryBlocks.set(block.hash, block);
-    
+
                 if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(); }
-    
+
                 this.blockTree.addBlock({
                     hash: block.hash,
                     prevHash: block.prevHash,
                     height: block.index,
                     score: this.calculateBlockScore(block)
                 });
-                    
+
                 this.snapshotManager.takeSnapshot(block.index, utxoCache, this.vss);
-                
+
                 this.lastBlock = block;
                 this.currentHeight = block.index;
-    
+
                 if (persistToDisk) { await this.persistBlockToDisk(block); }
-    
+
                 await this.db.put('currentHeight', this.currentHeight.toString());
-    
+
                 this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
             } catch (error) {
                 this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
@@ -289,18 +289,18 @@ export class Blockchain {
             const block = await this.getBlock(hash);
             await this.applyBlock(utxoCache, block);
         }*/
-       this.lastBlock = await this.getBlock(newTip);
-       if (!this.lastBlock) { this.logger.error('Failed to get new tip block'); return false; }
+        this.lastBlock = await this.getBlock(newTip);
+        if (!this.lastBlock) { this.logger.error('Failed to get new tip block'); return false; }
 
-       this.currentHeight = this.lastBlock.index;
-       await this.db.put('currentHeight', this.currentHeight.toString());
+        this.currentHeight = this.lastBlock.index;
+        await this.db.put('currentHeight', this.currentHeight.toString());
 
         const blocksData = [];
         for (const hash of reorgPath.apply) {
             const block = await this.getBlock(hash);
             blocksData.push(block);
         }
-        
+
         return blocksData;
         //this.logger.info({ newTip, newHeight: this.currentHeight }, 'Chain reorganization complete'); not true
     }
