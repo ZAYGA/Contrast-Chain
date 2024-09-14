@@ -116,8 +116,14 @@ export class Node {
     async #waitSomePeers(nbOfPeers = 1, maxAttempts = 30, interval = 1000) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, interval));
-            const peerCount = this.p2pNetwork.getConnectedPeers().length;
+            const peersIds = this.p2pNetwork.getConnectedPeers();
+            let peerCount = peersIds.length;
+
+            const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
+            if (peersIds.includes(myPeerId)) { peerCount--; }
+
             if (peerCount >= nbOfPeers) { return true; }
+            console.log(`Waiting for ${nbOfPeers} peers, currently connected to ${peerCount} peers`);
         }
 
         console.warn('P2P network failed to initialize within the expected time');

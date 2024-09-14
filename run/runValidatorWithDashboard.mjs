@@ -34,7 +34,7 @@ async function initMultiNode(local = false, useDevArgon2 = false) {
 
     return multiNode;
 }
-const multiNode = await initMultiNode(true);
+const multiNode = await initMultiNode(false);
 console.log(`Multi node started, account : ${multiNode.account.address}`);
 //#endregion ------------------------------------------------------------
 
@@ -107,33 +107,36 @@ function extractNodeInfo(node) {
 }
 
 // CALLBACKS
-const nodeCallbacks = {
-    digestFinalizedBlock: (finalizedBlock) => {
-        wss.clients.forEach(function each(client) {
-            if (client.readyState !== 1) { return; }
-            client.send(JSON.stringify({ type: 'broadcast_new_candidate', data: finalizedBlock }));
-        });
+const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
+const callBacks = {
+    node: {
+        digestFinalizedBlock: (finalizedBlock) => {
+            wss.clients.forEach(function each(client) {
+                if (client.readyState !== 1) { return; }
+                client.send(JSON.stringify({ type: 'broadcast_new_candidate', data: finalizedBlock }));
+            });
+        },
     },
-}
-const minerCallbacks = {
-    broadcastFinalizedBlock: (finalizedBlock) => {
-        wss.clients.forEach(function each(client) {
-            if (client.readyState !== 1) { return; }
-            client.send(JSON.stringify({ type: 'broadcast_finalized_block', data: finalizedBlock }));
-        });
-    },
-    hashRateUpdated: (hashRate = 0) => {
-        wss.clients.forEach(function each(client) {
-            if (client.readyState !== 1) { return; }
-            client.send(JSON.stringify({ type: 'hash_rate_updated', data: hashRate }));
-        });
+    miner: {
+        broadcastFinalizedBlock: (finalizedBlock) => {
+            wss.clients.forEach(function each(client) {
+                if (client.readyState !== 1) { return; }
+                client.send(JSON.stringify({ type: 'broadcast_finalized_block', data: finalizedBlock }));
+            });
+        },
+        hashRateUpdated: (hashRate = 0) => {
+            wss.clients.forEach(function each(client) {
+                if (client.readyState !== 1) { return; }
+                client.send(JSON.stringify({ type: 'hash_rate_updated', data: hashRate }));
+            });
+        },
     },
 }
 
-for (const [key, value] of Object.entries(nodeCallbacks)) {
+for (const [key, value] of Object.entries(callBacks.node)) {
     multiNode.callbacks[key] = value;
 }
-for (const [key, value] of Object.entries(minerCallbacks)) {
+for (const [key, value] of Object.entries(callBacks.miner)) {
     if (!multiNode.miner) { continue; }
     multiNode.miner.callbacks[key] = value;
 }

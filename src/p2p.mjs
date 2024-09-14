@@ -197,7 +197,6 @@ class P2PNetwork extends EventEmitter {
     async broadcast(topic, message) {
         this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcasting message');
         try {
-            const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
             let serialized;
             switch (topic) {
                 case 'new_transaction':

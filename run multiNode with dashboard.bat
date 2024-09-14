@@ -1,0 +1,2 @@
+node run/runValidatorWithDashboard.mjs
+pause
