@@ -25,11 +25,11 @@ export class TaskQueue {
         while (true) {
             if (this.tasks.length === 0) {
                 await new Promise(resolve => setTimeout(resolve, delayMS));
-                this.node.miner.canProceedMining = true;
+                try { this.node.miner.canProceedMining = true; } catch (error) { console.error(error.stack); }
                 continue;
             }
 
-            this.node.miner.canProceedMining = false;
+            try { this.node.miner.canProceedMining = false; } catch (error) { console.error(error.stack); }
             await new Promise(resolve => setImmediate(resolve));
             await this.#executeNextTask();
         }

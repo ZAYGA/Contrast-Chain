@@ -16,7 +16,7 @@ export class TxValidation {
      * @param {boolean} isCoinBase
      */
     static isConformTransaction(utxosByAnchor, transaction, isCoinBase) {
-        if (!transaction) { throw new Error('Invalid transaction'); }
+        if (!transaction) { throw new Error(`missing transaction: ${transaction}`); }
         if (typeof transaction.id !== 'string') { throw new Error('Invalid transaction ID'); }
         if (typeof transaction.version !== 'number') { throw new Error('Invalid version !== number'); }
         if (transaction.version <= 0) { throw new Error('Invalid version value: <= 0'); }
@@ -198,7 +198,7 @@ export class TxValidation {
 
             if (!transactionWitnessesAddresses.includes(addressToVerify)) {
                 console.log(`UTXO address: ${utils.addressUtils.formatAddress(addressToVerify)}`);
-                throw new Error(`Witness missing for address: ${utils.addressUtils.formatAddress(addressToVerify)}`);
+                throw new Error(`Witness missing for address: ${addressToVerify}, witnesses: ${transactionWitnessesAddresses.join(', ')}`);
             }
         }
 

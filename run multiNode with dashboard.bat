@@ -1,2 +1,2 @@
-node run/runValidatorWithDashboard.mjs
+node run/runMultiNodeWithDashboard.mjs
 pause

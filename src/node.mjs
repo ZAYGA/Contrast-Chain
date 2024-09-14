@@ -60,7 +60,7 @@ export class Node {
 
     async start() {
         await this.blockchain.init();
-        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
+        this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:']); // , 'Invalid transaction']);
         this.miner = new Miner(this.minerAddress || this.account.address, this.p2pNetwork, this.roles, this.taskQueue);
         this.miner.useDevArgon2 = this.useDevArgon2;
 
@@ -113,7 +113,7 @@ export class Node {
 
         console.log(`Node ${this.id} (${this.roles.join('_')}) => stopped`);
     }
-    async #waitSomePeers(nbOfPeers = 1, maxAttempts = 30, interval = 1000) {
+    async #waitSomePeers(nbOfPeers = 1, maxAttempts = 120, interval = 1000) {
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, interval));
             const peersIds = this.p2pNetwork.getConnectedPeers();
@@ -397,7 +397,7 @@ export class Node {
      * @param {any} message
      */
     async p2pBroadcast(topic, message) {
-        await this.p2pNetwork.broadcast(topic, message);
+        return await this.p2pNetwork.broadcast(topic, message);
     }
 
     getStatus() {
@@ -408,5 +408,17 @@ export class Node {
             memPoolSize: Object.keys(this.memPool.transactionsByID).length,
             peerCount: this.p2pNetwork.getConnectedPeers().length,
         };
+    }
+
+    // -----------------------------------------------------------------------------
+    async pushTransaction(transaction) {
+        try {
+            const pushedInLocalMempool = await this.memPool.pushTransaction(this.utxoCache.utxosByAnchor, transaction);
+            const broadcasted = await this.p2pBroadcast('new_transaction', transaction);
+            return { broadcasted, pushedInLocalMempool, error: null };
+        } catch (error) {
+            console.error(error);
+            return { broadcasted: false, pushedInLocalMempool: false, error: error.message };
+        }
     }
 }

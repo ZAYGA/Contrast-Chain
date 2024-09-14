@@ -1,5 +1,7 @@
 console.log('run/nodeDashboardScript.mjs');
 
+import { Transaction_Builder, UTXO } from '../src/transaction.mjs';
+import { StakeReference } from '../src/vss.mjs';
 import utils from '../src/utils.mjs';
 /**
 * @typedef {import("../src/block.mjs").BlockData} BlockData
@@ -9,7 +11,8 @@ import utils from '../src/utils.mjs';
 let ws;
 const reconnectInterval = 5000;
 let pingInterval;
-
+/** @type {UTXO[]} */
+let validatorUTXOs = [];
 function connectWS() {
     ws = new WebSocket('ws://localhost:3000');
   
@@ -31,6 +34,7 @@ function connectWS() {
         switch (message.type) {
             case 'node_info':
                 displayNodeInfo(data);
+                validatorUTXOs = data.validatorUTXOs;
                 break;
             case 'broadcast_new_candidate':
                 console.log('broadcast_new_candidate', data);
@@ -44,10 +48,6 @@ function connectWS() {
             default:
                 break;
         }
-    
-        if (data.utxoCache && data.utxoCache.addressesUTXOs) {
-            displayUTXOs(data.utxoCache);
-        }
     };
 }
 connectWS();
@@ -57,12 +57,18 @@ const eHTML = {
     roles: document.getElementById('roles'),
 
     validatorAddress: document.getElementById('validatorAddress'),
-    validatorBalance: document.getElementById('validatorBalance'),
     validatorHeight: document.getElementById('validatorHeight'),
+    validatorBalance: document.getElementById('validatorBalance'),
+    validatorStaked: document.getElementById('staked'),
+    stakeInput: {
+        wrap: document.getElementById('stakeInputWrap'),
+        input: document.getElementById('stakeInputWrap').getElementsByTagName('input')[0],
+        confirmBtn: document.getElementById('stakeInputWrap').getElementsByTagName('button')[0],
+    },
 
     minerAddress: document.getElementById('minerAddress'),
-    minerBalance: document.getElementById('minerBalance'),
     minerHeight: document.getElementById('minerHeight'),
+    minerBalance: document.getElementById('minerBalance'),
     hashRate: document.getElementById('hashRate'),
 
     minerThreads: {
@@ -74,12 +80,16 @@ const eHTML = {
 }
 
 function displayNodeInfo(data) {
-    console.log(`toto : ${data.minerThreads}`);
+    /** @type {StakeReference[]} */
+    const validatorStakesReference = data.validatorStakes;
+    const validatorStaked = validatorStakesReference.reduce((acc, stake) => acc + stake.amount, 0);
+
     eHTML.roles.textContent = data.roles.join(' - ')
 
     eHTML.validatorAddress.textContent = data.validatorAddress, // utils.addressUtils.formatAddress(data.validatorAddress, " ");
     eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.validatorBalance);
     eHTML.validatorHeight.textContent = data.currentHeight;
+    eHTML.validatorStaked.textContent = utils.convert.number.formatNumberAsCurrency(validatorStaked);
 
     eHTML.minerAddress.textContent = data.minerAddress;
     eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
@@ -87,16 +97,37 @@ function displayNodeInfo(data) {
     eHTML.hashRate.textContent = data.hashRate.toFixed(2);
     eHTML.minerThreads.input.value = data.minerThreads;
 }
+// not 'change' event because it's triggered by the browser when the input loses focus, not when the value changes
+eHTML.stakeInput.input.addEventListener('input', () => {
+    formatInputValueAsCurrency(eHTML.stakeInput.input);
+    ws.send(JSON.stringify({ type: 'set_stake', data: eHTML.stakeInput.input.value }));
+});
+eHTML.stakeInput.confirmBtn.addEventListener('click', async () => {
+    const amountToStake = parseInt(eHTML.stakeInput.input.value.replace(",","").replace(".",""));
+    const validatorAddress = eHTML.validatorAddress.textContent;
+    console.log(`amountToStake: ${amountToStake} | validatorAddress: ${validatorAddress}`);
+    
+    console.log('UTXOs', validatorUTXOs);
+    const senderAccount = { address: validatorAddress, UTXOs: validatorUTXOs };
+    const transaction = await Transaction_Builder.createStakingVss(senderAccount, validatorAddress, amountToStake);
 
-eHTML.minerThreads.input.addEventListener('change', function() {
+    ws.send(JSON.stringify({ type: 'new_unsigned_transaction', data: transaction }));
+    eHTML.stakeInput.input.value = 0;
+});
+eHTML.minerThreads.input.addEventListener('change', () => {
     console.log('set_miner_threads', eHTML.minerThreads.input.value);
     ws.send(JSON.stringify({ type: 'set_miner_threads', data: eHTML.minerThreads.input.value }));
 });
-eHTML.minerThreads.decrementBtn.addEventListener('click', () => adjustValue(eHTML.minerThreads.input, -1));
-eHTML.minerThreads.incrementBtn.addEventListener('click', () => adjustValue(eHTML.minerThreads.input, 1));
+eHTML.minerThreads.decrementBtn.addEventListener('click', () => adjustInputValue(eHTML.minerThreads.input, -1));
+eHTML.minerThreads.incrementBtn.addEventListener('click', () => adjustInputValue(eHTML.minerThreads.input, 1));
 
 //#region FUNCTIONS -------------------------------------------------------
-function adjustValue(targetInput, delta, min = 1, max = 16) {
+function formatInputValueAsCurrency(input) {
+    const cleanedValue = input.value.replace(",","").replace(".","");
+    const intValue = parseInt(cleanedValue);
+    input.value = utils.convert.number.formatNumberAsCurrency(intValue);
+}
+function adjustInputValue(targetInput, delta, min = 1, max = 16) {
     const currentValue = parseInt(targetInput.value);
     if (delta < 0) {
         targetInput.value = Math.max(currentValue + delta, min);

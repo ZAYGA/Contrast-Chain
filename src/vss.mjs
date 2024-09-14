@@ -6,16 +6,19 @@ import utils from "./utils.mjs";
  * @typedef {Object} StakeReference
  * @property {string} address - Example: "WCHMD65Q7qR2uH9XF5dJ"
  * @property {string} anchor - Example: "0:bdadb7ab:0"
+ * @property {number} amount - Example: 100
  */
 /**
  * @param {string} address - Example: "WCHMD65Q7qR2uH9XF5dJ"
  * @param {string} anchor - Example: "0:bdadb7ab:0"
+ * @param {number} amount - Example: 100
  * @returns {VssRange}
  */
-const StakeReference = (address, anchor) => {
+export const StakeReference = (address, anchor, amount) => {
     return {
         address,
         anchor,
+        amount
     };
 }
 
@@ -85,7 +88,7 @@ export class Vss {
          * @type {Object<string, StakeReference | undefined>} */
         this.spectrum = {};
         /** @type {StakeReference[]} */
-        this.legitimacies = [];
+        this.legitimacies = []; // the order of the stakes in the array is the order of legitimacy
         this.currentRoundHash = '';
     }
 
@@ -104,7 +107,7 @@ export class Vss {
             const lastUpperBound = spectrumFunctions.getHighestUpperBound(this.spectrum);
             // TODO: manage this case even if it's impossible to reach
             if (lastUpperBound + amount >= utils.SETTINGS.maxSupply) { throw new Error('VSS: Max supply reached.'); }
-            this.spectrum[lastUpperBound + amount] = StakeReference(address, anchor);
+            this.spectrum[lastUpperBound + amount] = StakeReference(address, anchor, amount);
         }
     }
     /** @param {UTXO[]} utxos */
@@ -145,5 +148,9 @@ export class Vss {
     getAddressLegitimacy(address) {
         const legitimacy = this.legitimacies.findIndex(stakeReference => stakeReference.address === address);
         return legitimacy !== -1 ? legitimacy : this.legitimacies.length; // if not found, return last index + 1
+    }
+    getAddressStakesInfo(address) {
+        const references = this.legitimacies.filter(stakeReference => stakeReference.address === address);
+        return references;
     }
 }

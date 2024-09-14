@@ -29,9 +29,6 @@ async function initMultiNode(local = false, useDevArgon2 = false) {
     await multiNode.start();
     multiNode.memPool.useDevArgon2 = useDevArgon2;
 
-    /*const { signedTx, error } = await contrast.Transaction_Builder.createAndSignTransfer(derivedAccounts[0], 1000, 'W9bxy4aLJiQjX1kNgoAC');
-    if (!error) { await multiNode.p2pBroadcast('new_transaction', signedTx); }*/
-
     return multiNode;
 }
 const multiNode = await initMultiNode(false);
@@ -55,7 +52,7 @@ wss.on('connection', function connection(ws) {
     //ws.on('ping', function incoming(data) { console.log('received: %s', data); });
 
     //ws.on('message', function incoming(message) {
-    ws.onmessage = function(event) {
+    ws.onmessage = async function(event) {
         const message = JSON.parse(event.data);
         const data = message.data;
         switch (message.type) {
@@ -68,6 +65,17 @@ wss.on('connection', function connection(ws) {
             case 'set_miner_threads':
                 console.log(`Setting miner threads to ${data}`);
                 multiNode.miner.nbOfWorkers = data;
+                break;
+            case 'new_unsigned_transaction':
+                console.log(`signing transaction ${data.id}`);
+                const tx = await multiNode.account.signTransaction(data);
+                console.log('Broadcast transaction', data);
+                const { broadcasted, pushedInLocalMempool, error } = multiNode.pushTransaction(tx);
+
+                if (error) { console.error('Error broadcasting transaction', error); return; }
+
+                ws.send(JSON.stringify({ type: 'transaction_broadcasted', data: { broadcasted, pushedInLocalMempool } }));
+                console.log('Transaction sent');
                 break;
             default:
                 ws.send(JSON.stringify({ type: 'error', data: 'unknown message type' }));
@@ -83,15 +91,17 @@ function updateBalance(node) {
 /** @param {Node} node */
 function extractNodeInfo(node) {
     updateBalance(node);
-    const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(node.miner.address);
+    const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(node.account.address);
     return {
         roles: node.roles,
 
         // validator
         validatorAddress: node.account.address,
         validatorBalance: node.account.balance,
+        validatorUTXOs: UTXOs,
         validatorSpendableBalance: node.account.spendableBalance,
         //validatorStake: node.vss.getAddressLegitimacy
+        validatorStakes: node.vss.getAddressStakesInfo(node.account.address),
         validatorUtxos: node.account.UTXOs,
         currentHeight: node.blockchain.currentHeight,
 
@@ -105,7 +115,6 @@ function extractNodeInfo(node) {
         minerThreads: node.miner.nbOfWorkers,
     };
 }
-
 // CALLBACKS
 const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
 const callBacks = {

@@ -165,6 +165,7 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         // clone values to avoid modification
         /** @type {number} */
         const balance = this.addressesBalances[address] ? JSON.parse(JSON.stringify(this.addressesBalances[address])) : 0;
+        /** @type {UTXO[]} */
         const UTXOs = [];
         if (this.addressesUTXOs[address]) {
             for (let i = 0; i < this.addressesUTXOs[address].length; i++) {

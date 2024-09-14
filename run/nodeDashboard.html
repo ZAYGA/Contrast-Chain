@@ -44,6 +44,29 @@
             background-color: var(--color1);
             color: white;
         }
+        button {
+            font-family: 'IBM Plex Mono';
+            font-weight: 500;
+            background: var(--color2);
+            border-radius: 6px;
+            color: white;
+            padding: 5px;
+        }
+        input {
+            background: var(--color3);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            margin: 0 10px;
+            border: solid 1px #ff000000;
+            font-size: large;
+        }
+        input[type="text"] {
+            text-align: right;
+            width: 194px;
+            padding: 2px 10px;
+            margin: 0;
+        }
         #dashboard {
             display: flex;
             justify-content: space-between;
@@ -125,8 +148,16 @@
             </div>
 
             <div class="spacedText">
-                <h3>Stake:</h3>
-                <h3 id="stake">0.000000</h3>
+                <h3>Staked:</h3>
+                <h3 id="staked">0.000000</h3>
+            </div>
+
+            <div class="spacedText">
+                <h3>Staking:</h3>
+                <div id="stakeInputWrap" style="transform: translateY(26%);">
+                    <input type="text" value="1.000000" min="0">
+                    <button>Send Tx</button>
+                </div>
             </div>
         </div>
         <div class="container miner">

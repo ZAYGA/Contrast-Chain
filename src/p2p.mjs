@@ -215,9 +215,11 @@ class P2PNetwork extends EventEmitter {
 
             await this.p2pNode.services.pubsub.publish(topic, serialized);
             this.logger.debug({ component: 'P2PNetwork', topic }, 'Broadcast complete');
+            return 'success';
         } catch (error) {
             console.error('Broadcast error:', error);
             this.logger.error({ component: 'P2PNetwork', topic, error: error.message }, 'Broadcast error');
+            return error;
         }
     }
     /**
