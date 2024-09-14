@@ -19,6 +19,7 @@
     "@libp2p/mdns": "^10.1.5",
     "@libp2p/mplex": "^10.1.5",
     "@libp2p/tcp": "^9.1.5",
+    "@msgpack/msgpack": "^3.0.0-beta2",
     "argon2": "^0.40.3",
     "chai": "^5.1.1",
     "express": "^4.19.2",

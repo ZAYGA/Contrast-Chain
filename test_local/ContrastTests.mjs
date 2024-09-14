@@ -12,9 +12,9 @@ const testParams = {
     nbOfAccounts: 200, // minimum 25
     addressType: 'W',
 
-    nbOfMiners: 1,
-    nbOfValidators: 1,
-    nbOfMultiNodes: 0,
+    nbOfMiners: 0,
+    nbOfValidators: 0,
+    nbOfMultiNodes: 1,
 
     txsSeqs: {
         userSendToAllOthers: { active: true, start: 5, end: 100000, interval: 4 },

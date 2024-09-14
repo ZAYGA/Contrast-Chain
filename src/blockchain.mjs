@@ -216,10 +216,8 @@ export class Blockchain {
     async persistBlockToDisk(finalizedBlock) {
         this.logger.debug({ blockHash: finalizedBlock.hash }, 'Persisting block to disk');
         try {
-            //const compressedBlock = utils.compression.msgpack_Zlib.rawData.toBinary_v1(block);
             const serializedBlock = utils.serializer.block_finalized.toBinary_v2(finalizedBlock);
-            const compressedBlock = utils.compression.Gzip.compress(serializedBlock);
-            const buffer = Buffer.from(compressedBlock);
+            const buffer = Buffer.from(serializedBlock);
             await this.db.put(finalizedBlock.hash, buffer);
             await this.db.put(`height-${finalizedBlock.index}`, finalizedBlock.hash);
 
@@ -240,9 +238,7 @@ export class Blockchain {
             const blockHashUint8Array = await this.db.get(`height-${height}`);
             const blockHash = new TextDecoder().decode(blockHashUint8Array);
 
-            const compressedBlock = await this.db.get(blockHash);
-            //const blockData = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(compressedBlock);
-            const serializedBlock = utils.compression.Gzip.decompress(compressedBlock);
+            const serializedBlock = await this.db.get(blockHash);
             const blockData = utils.serializer.block_finalized.fromBinary_v2(serializedBlock);
 
             return blockData;

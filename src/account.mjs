@@ -21,6 +21,8 @@ export class Account {
        this.UTXOs = [];
        /** @type {number} */
        this.balance = 0;
+       /** @type {number} */
+       this.spendableBalance = 0;
    }
 
    /** @param {Transaction} transaction */
@@ -40,11 +42,12 @@ export class Account {
     * @param {number} balance
     * @param {UTXO[]} UTXOs
     */
-   setBalanceAndUTXOs(balance, UTXOs) {
-       if (typeof balance !== 'number') { throw new Error('Invalid balance'); }
-       if (!Array.isArray(UTXOs)) { throw new Error('Invalid UTXOs'); }
+   setBalanceAndUTXOs(balance, UTXOs, spendableBalance = 0) {
+        if (typeof balance !== 'number') { throw new Error('Invalid balance'); }
+        if (!Array.isArray(UTXOs)) { throw new Error('Invalid UTXOs'); }
 
-       this.balance = balance;
-       this.UTXOs = UTXOs;
+        this.balance = balance;
+        this.UTXOs = UTXOs;
+        this.spendableBalance = spendableBalance;
    }
 }

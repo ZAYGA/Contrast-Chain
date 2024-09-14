@@ -1,3 +1,4 @@
+import { hash } from 'argon2';
 import { BlockData, BlockUtils } from './block.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import utils from './utils.mjs';
@@ -25,6 +26,7 @@ export class Miner {
         this.useDevArgon2 = false;
         /** @type {Worker[]} */
         this.workers = [];
+        this.nbOfWorkers = 1;
 
         /** @type {Object<string, number>} */
         this.bets = {};
@@ -35,8 +37,16 @@ export class Miner {
 
         this.roles = roles;
         this.canProceedMining = true;
+        this.hashTimings = [];
+        this.hashRate = 0; // hash rate in H/s
         /** @type {TaskQueue} */
         this.taskQueue = taskQueue; // only for multiNode (validator + miner)
+
+        /** @type {Object<string, Function>} */
+        this.callbacks = {
+            broadcastFinalizedBlock: null,
+            hashRateUpdated: null,
+        };
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
@@ -101,16 +111,26 @@ export class Miner {
         const sortedCandidates = filteredCandidates.sort((a, b) => a.legitimacy - b.legitimacy);
         return sortedCandidates[0];
     }
+    /** @param {number} hashTime - ms */
+    #hashRateNew(hashTime = 50) {
+        this.hashTimings.push(hashTime);
+        if (this.hashTimings.length < 9) { return; } // wait for 10 hash timings to be collected
+
+        const hashRate = 1000 / (this.hashTimings.reduce((acc, timing) => acc + timing, 0) / this.hashTimings.length);
+        this.hashRate = hashRate;
+        this.hashTimings = [];
+    }
     /** @param {BlockData} finalizedBlock */
     async #broadcastBlockCandidate(finalizedBlock) {
         console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`);
-        await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
+        await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
+        if (this.callbacks.broadcastFinalizedBlock) { this.callbacks.broadcastFinalizedBlock(finalizedBlock); }
     }
-    /** DON'T AWAIT THIS FUNCTION */
-    async startWithWorker(nbOfWorkers = 1) {
-        const workersStatus = [];
-        for (let i = 0; i < nbOfWorkers; i++) {
+    #createMissingWorkers(workersStatus = []) {
+        const missingWorkers = this.nbOfWorkers - this.workers.length;
+
+        for (let i = 0; i < missingWorkers; i++) {
             const worker = utils.newWorker('../workers/miner-worker-nodejs.mjs');
             worker.on('message', (message) => {
                 try {
@@ -134,11 +154,15 @@ export class Miner {
 
             this.workers.push(worker);
             workersStatus.push('free');
-            console.log('Worker started');
+            console.log(`Worker ${this.workers.length} started`);
         }
-
+    }
+    /** DON'T AWAIT THIS FUNCTION */
+    async startWithWorker() {
+        const workersStatus = [];
+        let lastHashTime = Date.now();
         while (true) {
-            const delayBetweenMining = this.roles.includes('validator') ? 20 : 10;
+            const delayBetweenMining = this.roles.includes('validator') ? 2 : 1;
             await new Promise((resolve) => setTimeout(resolve, delayBetweenMining));
 
             const preshotedPowReadyToSend = this.preshotedPowBlock ? this.preshotedPowBlock.timestamp <= Date.now() : false;
@@ -148,12 +172,17 @@ export class Miner {
             }
 
             if (!this.canProceedMining) { continue; }
-            const id = workersStatus.indexOf('free');
+
+            this.#createMissingWorkers(workersStatus);
+            const usableWorkersStatus = workersStatus.slice(0, this.nbOfWorkers);
+            const id = usableWorkersStatus.indexOf('free');
             if (id === -1) { continue; }
 
             const blockCandidate = this.#getMostLegitimateBlockCandidate();
             if (!blockCandidate) { continue; }
 
+            this.#hashRateNew(Date.now() - lastHashTime);
+            lastHashTime = Date.now();
             workersStatus[id] = 'busy';
 
             const { signatureHex, nonce, clonedCandidate } = await this.#prepareBlockCandidateBeforeMining(blockCandidate);

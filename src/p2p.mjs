@@ -22,7 +22,7 @@ class P2PNetwork extends EventEmitter {
         this.options = {
             bootstrapNodes: [
                 '/ip4/82.126.155.210/tcp/7777',
-                '/ip4/141.8.119.6/tcp/7777',
+                '/dns4/pinkparrot.science/tcp/7777',
             ],
             maxPeers: 50,
             announceInterval: 60000,
@@ -212,11 +212,11 @@ class P2PNetwork extends EventEmitter {
         try {
             stream = await this.p2pNode.dialProtocol(peerMultiaddr, SYNC_PROTOCOL);
             const lp = lpStream(stream);
-            const serialized = utils.compression.msgpack_Zlib.rawData.toBinary_v1(message);
+            const serialized = utils.serializer.rawData.toBinary_v1(message);
 
             await lp.write(serialized);
             const res = await lp.read({ maxSize: MAX_MESSAGE_SIZE });
-            const response = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(res.subarray());
+            const response = utils.serializer.rawData.fromBinary_v1(res.subarray());
             // console.log('Received response:', response);
             if (response.status === 'error') { throw new Error(response.message); }
             return response;

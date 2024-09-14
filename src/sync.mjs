@@ -50,12 +50,12 @@ export class SyncHandler {
         const lp = lpStream(stream);
         try {
             const req = await lp.read({ maxSize: this.p2pNetworkMaxMessageSize });
-            const message = utils.compression.msgpack_Zlib.rawData.fromBinary_v1(req.subarray());
+            const message = utils.serializer.rawData.fromBinary_v1(req.subarray());
             const response = await this.#handleMessage(message);
-            await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1(response));
+            await lp.write(utils.serializer.rawData.toBinary_v1(response));
         } catch (err) {
             this.logger.error({ error: err.message }, 'Error handling incoming stream');
-            await lp.write(utils.compression.msgpack_Zlib.rawData.toBinary_v1({ status: 'error', message: err.message }));
+            await lp.write(utils.serializer.rawData.toBinary_v1({ status: 'error', message: err.message }));
         } finally {
             await stream.close();
             //console.log('Stream closed');

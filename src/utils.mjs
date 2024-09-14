@@ -1,23 +1,16 @@
 'use strict';
-
-import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
-import Compressor from '../externalLibs/gzip.min.js';
-import Decompressor from '../externalLibs/gunzip.min.js';
-import msgpack from '../externalLibs/msgpack.min.js';
-import { TxOutput, TxInput, UTXO } from './transaction.mjs';
-
-/**
-* @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
-* @typedef {import("./block.mjs").Block} Block
-* @typedef {import("./block.mjs").BlockData} BlockData
-* @typedef {import("./transaction.mjs").Transaction} Transaction
-* @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
-*/
-
-const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const isNode = typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
-const cryptoLib = isNode ? crypto : window.crypto;
 
+//#region Libs imports and type definitions
+import ed25519 from '../externalLibs/noble-ed25519-03-2024.mjs';
+async function msgPackLib() {
+    if (isNode) {
+        const m = await import('../externalLibs/msgpack.min.js');
+        return m.default;
+    }
+    return MessagePack;
+}; const msgpack = await msgPackLib();
+const cryptoLib = isNode ? crypto : window.crypto;
 async function getArgon2Lib() {
     if (isNode) {
         const a = await import('argon2');
@@ -33,13 +26,27 @@ async function getArgon2Lib() {
     window.argon2 = argon2Import.default;
     return argon2Import.default;
 }; const argon2Lib = await getArgon2Lib();
-
 const WorkerModule = isNode ? (await import('worker_threads')).Worker : Worker;
+
+//import Compressor from '../externalLibs/gzip.min.js'; -> not used anymore
+//import Decompressor from '../externalLibs/gunzip.min.js'; -> not used anymore
+//import { encode, decode } from "@msgpack/msgpack";
+
+/**
+* @typedef {import("./block.mjs").BlockMiningData} BlockMiningData
+* @typedef {import("./block.mjs").Block} Block
+* @typedef {import("./block.mjs").BlockData} BlockData
+* @typedef {import("./transaction.mjs").Transaction} Transaction
+* @typedef {import("./conCrypto.mjs").argon2Hash} HashFunctions
+*/
+//#endregion
+
+const base58Alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function newWorker(scriptPath) {
     if (isNode) {
         return new WorkerModule(new URL(scriptPath, import.meta.url));
     } else {
-        return new WorkerModule(scriptPath, { workerData: { password } });
+        return new WorkerModule(scriptPath);
     }
 }
 
@@ -54,7 +61,7 @@ const SETTINGS = { // The Fibonacci based distribution
     blockReward: 102_334_155 - 63_245_986, // Fibonacci n = 39_088_169
     minBlockReward: 1,
     halvingInterval: 262_980, // 1 year at 2 min per block
-    maxSupply: 27_000_000_000_000, // last 2 zeros are considered as decimals ( can be stored as 8 bytes )
+    maxSupply: 27_000_000_000_000, // last 6 zeros are considered as decimals ( can be stored as 8 bytes )
 
     // TRANSACTION
     minTransactionFeePerByte: 1,
@@ -65,14 +72,14 @@ const UTXO_RULES_GLOSSARY = {
     lockUntilBlock: { code: 2, description: 'UTXO locked until block height', lockUntilBlock: 0 },
     multiSigCreate: { code: 3, description: 'Multi-signature creation' },
     p2pExchange: { code: 4, description: 'Peer-to-peer exchange' }
-}
+};
 const UTXO_RULESNAME_FROM_CODE = {
     0: 'sig',
     1: 'sigOrSlash',
     2: 'lockUntilBlock',
     3: 'multiSigCreate',
     4: 'p2pExchange'
-}
+};
 const MINING_PARAMS = {
     // a difficulty incremented by 16 means 1 more zero in the hash - then 50% more difficult to find a valid hash
     // a difference of 1 difficulty means 3.125% harder to find a valid hash
@@ -104,13 +111,13 @@ class ProgressLogger {
 
         console.log(`${this.msgPrefix} : ${progress.toFixed(1)}% (${current}/${this.total})`);
     }
-}
+};
 class AddressTypeInfo {
     name = '';
     description = '';
     zeroBits = 0;
     nbOfSigners = 1;
-}
+};
 const addressUtils = {
     params: {
         argon2DerivationMemory: 2 ** 16, // 2**16 should be great
@@ -263,6 +270,70 @@ const typeValidation = {
     /** @param {number} number - Number to validate */
     numberIsPositiveInteger(number) {
         return typeof number === 'number' && !isNaN(number) && number > 0 && number % 1 === 0;
+    }
+};
+const conditionnals = {
+    /**
+     * Check if the string starts with a certain amount of zeros
+     * @param {string} string
+     * @param {number} zeros
+     */
+    binaryStringStartsWithZeros: (string, zeros) => {
+        if (typeof string !== 'string') { return false; }
+        if (typeof zeros !== 'number') { return false; }
+        if (zeros < 0) { return false; }
+
+        const target = '0'.repeat(zeros);
+        return string.startsWith(target);
+    },
+
+    /**
+     * Check if the string as binary is superior or equal to the target
+     * @param {string} string
+     * @param {number} minValue
+     */
+    binaryStringSupOrEqual: (string = '', minValue = 0) => {
+        if (typeof string !== 'string') { return false; }
+        if (typeof minValue !== 'number') { return false; }
+        if (minValue < 0) { return false; }
+
+        const intValue = parseInt(string, 2);
+        return intValue >= minValue;
+    },
+    /**
+     * Check if the array contains duplicates
+     * @param {Array} array
+     */
+    arrayIncludeDuplicates(array) {
+        return (new Set(array)).size !== array.length;
+    }
+};
+const types = {
+    anchor: {
+        /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
+        isConform(anchor) {
+            if (typeof anchor !== 'string') { return false; }
+    
+            const splitted = anchor.split(':');
+            if (splitted.length !== 3) { return false; }
+    
+            // height
+            const height = parseInt(splitted[0], 10);
+            if (isNaN(height) || typeof height !== 'number') { return false; }
+            if (height < 0 || height % 1 !== 0) { return false; }
+    
+            // TxID
+            if (typeof splitted[1] !== 'string') { return false; }
+            if (splitted[1].length !== 8) { return false; }
+            if (typeValidation.hex(splitted[1]) === false) { return false; }
+    
+            // vout
+            const vout = parseInt(splitted[2], 10);
+            if (isNaN(vout) || typeof vout !== 'number') { return false; }
+            if (vout < 0 || vout % 1 !== 0) { return false; }
+    
+            return true;
+        },
     }
 };
 const convert = {
@@ -652,75 +723,14 @@ const convert = {
         },
     }
 };
-const conditionnals = {
-    /**
-     * Check if the string starts with a certain amount of zeros
-     * @param {string} string
-     * @param {number} zeros
-     */
-    binaryStringStartsWithZeros: (string, zeros) => {
-        if (typeof string !== 'string') { return false; }
-        if (typeof zeros !== 'number') { return false; }
-        if (zeros < 0) { return false; }
-
-        const target = '0'.repeat(zeros);
-        return string.startsWith(target);
-    },
-
-    /**
-     * Check if the string as binary is superior or equal to the target
-     * @param {string} string
-     * @param {number} minValue
-     */
-    binaryStringSupOrEqual: (string = '', minValue = 0) => {
-        if (typeof string !== 'string') { return false; }
-        if (typeof minValue !== 'number') { return false; }
-        if (minValue < 0) { return false; }
-
-        const intValue = parseInt(string, 2);
-        return intValue >= minValue;
-    },
-    /**
-     * Check if the array contains duplicates
-     * @param {Array} array
-     */
-    arrayIncludeDuplicates(array) {
-        return (new Set(array)).size !== array.length;
-    }
-};
-const types = {
-    anchor: {
-        /** @param {string} anchor - "height:TxID:vout" - ex: "8:7c5aec61:0" */
-        isConform(anchor) {
-            if (typeof anchor !== 'string') { return false; }
-    
-            const splitted = anchor.split(':');
-            if (splitted.length !== 3) { return false; }
-    
-            // height
-            const height = parseInt(splitted[0], 10);
-            if (isNaN(height) || typeof height !== 'number') { return false; }
-            if (height < 0 || height % 1 !== 0) { return false; }
-    
-            // TxID
-            if (typeof splitted[1] !== 'string') { return false; }
-            if (splitted[1].length !== 8) { return false; }
-            if (typeValidation.hex(splitted[1]) === false) { return false; }
-    
-            // vout
-            const vout = parseInt(splitted[2], 10);
-            if (isNaN(vout) || typeof vout !== 'number') { return false; }
-            if (vout < 0 || vout % 1 !== 0) { return false; }
-    
-            return true;
-        },
-    }
-};
 const serializer = {
     rawData: {
         toBinary_v1(rawData) {
-            return msgpack.encode(rawData);
+            /** @type {Uint8Array} */
+            const encoded = msgpack.encode(rawData);//, { maxStrLength: }
+            return encoded;
         },
+        /** @param {Uint8Array} encodedData */
         fromBinary_v1(encodedData) {
             return msgpack.decode(encodedData);
         },
@@ -1254,8 +1264,8 @@ const utils = {
     ProgressLogger,
     addressUtils,
     typeValidation,
-    convert,
     serializer,
+    convert,
     compression,
     conditionnals,
     types,

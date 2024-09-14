@@ -45,17 +45,25 @@ export class Node {
         this.utxoCacheSnapshots = [];
         /** @type {Miner} */
         this.miner = null;
+        /** @type {string} */
+        this.minerAddress = null;
         this.useDevArgon2 = false;
         /** @type {Blockchain} */
         this.blockchain = new Blockchain(this.id);
         /** @type {SyncHandler} */
         this.syncHandler = new SyncHandler(this.blockchain);
+        /** @type {Object<string, Function>} */
+        this.callbacks = {
+            digestFinalizedBlock: null,
+        };
     }
 
     async start() {
         await this.blockchain.init();
         this.taskQueue = TaskQueue.buildNewStack(this, ['Conflicting UTXOs', 'Invalid block index:', 'Invalid transaction']);
-        this.miner = new Miner(this.account.address, this.p2pNetwork, this.roles, this.taskQueue);
+        this.miner = new Miner(this.minerAddress || this.account.address, this.p2pNetwork, this.roles, this.taskQueue);
+        this.miner.useDevArgon2 = this.useDevArgon2;
+
         // load the blocks from storage
         const loadedBlocks = this.roles.includes('validator') ? await this.blockchain.recoverBlocksFromStorage() : [];
         for (const block of loadedBlocks) {
@@ -281,6 +289,7 @@ export class Node {
         this.blockCandidate = await this.#createBlockCandidate();
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
+        if (this.callbacks.digestFinalizedBlock) { this.callbacks.digestFinalizedBlock(this.blockCandidate); }
 
         return true;
     }
@@ -291,7 +300,7 @@ export class Node {
         const posTimestamp = this.blockchain.lastBlock ? this.blockchain.lastBlock.timestamp + 1 : Date.now();
 
         // Create the block candidate, genesis block if no lastBlockData
-        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 20, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
+        let blockCandidate = BlockData(0, 0, utils.SETTINGS.blockReward, 100, 0, '0000000000000000000000000000000000000000000000000000000000000000', Txs, posTimestamp);
         if (this.blockchain.lastBlock) {
             await this.vss.calculateRoundLegitimacies(this.blockchain.lastBlock.hash);
             const myLegitimacy = this.vss.getAddressLegitimacy(this.account.address);
@@ -369,7 +378,7 @@ export class Node {
     }
     /**
      * @param {string} topic
-     * @param {Uint8Array} message
+     * @param {any} message
      */
     async p2pBroadcast(topic, message) {
         await this.p2pNetwork.broadcast(topic, message);

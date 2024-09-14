@@ -1,10 +1,16 @@
 console.log('run/nodeDashboardScript.mjs');
 
+import utils from '../src/utils.mjs';
+/**
+* @typedef {import("../src/block.mjs").BlockData} BlockData
+* @typedef {import("./transaction.mjs").Transaction} Transaction
+*/
+
 let ws;
 const reconnectInterval = 5000;
 let pingInterval;
 
-function connect() {
+function connectWS() {
     ws = new WebSocket('ws://localhost:3000');
   
     ws.onopen = function() {
@@ -15,7 +21,7 @@ function connect() {
     ws.onclose = function() {
         console.info('Connection closed');
         clearInterval(pingInterval);
-        setTimeout(connect, reconnectInterval); // retry connection
+        setTimeout(connectWS, reconnectInterval); // retry connection
     };
     ws.onerror = function(error) { console.info('WebSocket error: ' + error); };
   
@@ -26,6 +32,15 @@ function connect() {
             case 'node_info':
                 displayNodeInfo(data);
                 break;
+            case 'broadcast_new_candidate':
+                console.log('broadcast_new_candidate', data);
+                break;
+            case 'broadcast_finalized_block':
+                console.log('broadcast_finalized_block', data);
+                break;
+            case 'hash_rate_updated':
+                console.log('hash_rate_updated', data);
+                break;
             default:
                 break;
         }
@@ -35,50 +50,59 @@ function connect() {
         }
     };
 }
-connect();
+connectWS();
 
 const eHTML = {
     dashboard: document.getElementById('dashboard'),
-    address: document.getElementById('address'),
     roles: document.getElementById('roles'),
-    currentHeight: document.getElementById('currentHeight'),
+
+    validatorAddress: document.getElementById('validatorAddress'),
+    validatorBalance: document.getElementById('validatorBalance'),
+    validatorHeight: document.getElementById('validatorHeight'),
+
+    minerAddress: document.getElementById('minerAddress'),
+    minerBalance: document.getElementById('minerBalance'),
+    minerHeight: document.getElementById('minerHeight'),
+    hashRate: document.getElementById('hashRate'),
+
+    minerThreads: {
+        wrap: document.getElementById('minerThreadsIncrementalInput'),
+        input: document.getElementById('minerThreadsIncrementalInput').getElementsByTagName('input')[0],
+        decrementBtn: document.getElementById('minerThreadsIncrementalInput').getElementsByTagName('button')[0],
+        incrementBtn: document.getElementById('minerThreadsIncrementalInput').getElementsByTagName('button')[1],
+    }
 }
 
 function displayNodeInfo(data) {
-    const nodeInfo = {
-        address: data.address,
-        roles: data.roles.join(' - '),
-        currentHeight: data.currentHeight,
-        blockCandidate: data.blockCandidate
-    };
+    console.log(`toto : ${data.minerThreads}`);
+    eHTML.roles.textContent = data.roles.join(' - ')
 
-    eHTML.address.textContent = nodeInfo.address;
-    eHTML.roles.textContent = nodeInfo.roles;
-    eHTML.currentHeight.textContent = nodeInfo.currentHeight;
+    eHTML.validatorAddress.textContent = data.validatorAddress, // utils.addressUtils.formatAddress(data.validatorAddress, " ");
+    eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.validatorBalance);
+    eHTML.validatorHeight.textContent = data.currentHeight;
+
+    eHTML.minerAddress.textContent = data.minerAddress;
+    eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
+    eHTML.minerHeight.textContent = data.highestBlockIndex;
+    eHTML.hashRate.textContent = data.hashRate.toFixed(2);
+    eHTML.minerThreads.input.value = data.minerThreads;
 }
 
-function createAddressesUTXOLine(address, amount, anchor, rule) {
-    const line = document.createElement('li');
-    line.classList.add('utxoLine');
-    // add div for each element
-    const addressDiv = document.createElement('div');
-    addressDiv.style.width = '220px';
-    addressDiv.textContent = address;
-    line.appendChild(addressDiv);
+eHTML.minerThreads.input.addEventListener('change', function() {
+    console.log('set_miner_threads', eHTML.minerThreads.input.value);
+    ws.send(JSON.stringify({ type: 'set_miner_threads', data: eHTML.minerThreads.input.value }));
+});
+eHTML.minerThreads.decrementBtn.addEventListener('click', () => adjustValue(eHTML.minerThreads.input, -1));
+eHTML.minerThreads.incrementBtn.addEventListener('click', () => adjustValue(eHTML.minerThreads.input, 1));
 
-    const amountDiv = document.createElement('div');
-    amountDiv.style.width = '140px';
-    amountDiv.textContent = amount;
-    line.appendChild(amountDiv);
-
-    const anchorDiv = document.createElement('div');
-    anchorDiv.style.width = '160px';
-    anchorDiv.textContent = anchor;
-    line.appendChild(anchorDiv);
-
-    const ruleDiv = document.createElement('div');
-    ruleDiv.textContent = rule;
-    line.appendChild(ruleDiv);
-
-    return line;
+//#region FUNCTIONS -------------------------------------------------------
+function adjustValue(targetInput, delta, min = 1, max = 16) {
+    const currentValue = parseInt(targetInput.value);
+    if (delta < 0) {
+        targetInput.value = Math.max(currentValue + delta, min);
+    } else {
+        targetInput.value = Math.min(currentValue + delta, max);
+    }
+    targetInput.dispatchEvent(new Event('change'));
 }
+//#endregion --------------------------------------------------------------
