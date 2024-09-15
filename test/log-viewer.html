@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Configuration Tool</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
+    <style>
+        /* Basic Styling */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+
+        h1 {
+            color: #444;
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        /* File Input Section */
+        .file-input {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        /* Controls Section */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .controls input[type="text"],
+        .controls select {
+            padding: 5px 8px;
+            font-size: 0.9em;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            min-width: 140px;
+            background-color: #fff;
+        }
+
+        /* Categories Styling */
+        .category {
+            margin-bottom: 20px;
+            padding: 12px 16px;
+            border-radius: 5px;
+            background-color: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .category-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .category-header input[type="checkbox"] {
+            margin-right: 6px;
+            transform: scale(1.1);
+        }
+
+        .category-header label {
+            font-size: 1em;
+            color: #555;
+            flex-grow: 1;
+        }
+
+        /* Log Entries Styling */
+        .log-entry {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.1);
+        }
+
+        .log-details {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+
+        .log-type {
+            font-weight: bold;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 3px;
+            display: inline-block;
+            color: #fff;
+            font-size: 0.75em;
+            margin-right: 8px;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        .log-content {
+            flex: 1;
+            font-size: 0.9em;
+            word-break: break-word;
+            color: #333;
+        }
+
+        .log-location {
+            font-size: 0.75em;
+            color: #777;
+            margin-left: 10px;
+        }
+
+        /* Styling per Log Type */
+        .log-info {
+            background-color: #17a2b8;
+        }
+
+        .log-warn {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .log-error {
+            background-color: #dc3545;
+        }
+
+        .log-debug {
+            background-color: #6c757d;
+        }
+
+        .log-trace {
+            background-color: #28a745;
+        }
+
+        /* Buttons Styling */
+        .export-button {
+            display: block;
+            margin: 20px auto 0 auto;
+            padding: 8px 16px;
+            background-color: #28a745;
+            color: #fff;
+            border: none;
+            border-radius: 18px;
+            font-size: 0.95em;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .export-button:hover {
+            background-color: #218838;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 600px) {
+            .log-entry {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .log-entry input[type="checkbox"] {
+                margin-bottom: 4px;
+                margin-top: 0;
+            }
+
+            .log-details {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .log-type {
+                margin-right: 0;
+                margin-bottom: 4px;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .controls input[type="text"],
+            .controls select {
+                width: 100%;
+            }
+
+            .log-location {
+                margin-left: 0;
+                margin-top: 4px;
+            }
+        }
+
+        /* Highlight.js Styling Overrides */
+        pre {
+            margin: 0;
+            background-color: #f1f1f1;
+            padding: 6px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Log Configuration Tool</h1>
+    <div class="file-input">
+        <input type="file" id="configFile" accept=".json" aria-label="Upload Log Configuration JSON">
+    </div>
+
+    <div class="controls">
+        <input type="text" id="searchInput" placeholder="Search logs..." aria-label="Search Logs">
+        <select id="filterType" aria-label="Filter by Log Type">
+            <option value="">All Types</option>
+            <option value="info">Info</option>
+            <option value="warn">Warn</option>
+            <option value="error">Error</option>
+            <option value="debug">Debug</option>
+            <option value="trace">Trace</option>
+        </select>
+        <select id="sortOption" aria-label="Sort Logs">
+            <option value="file">Sort by File</option>
+            <option value="type">Sort by Type</option>
+            <option value="line">Sort by Line Number</option>
+            <option value="id">Sort by ID</option>
+        </select>
+    </div>
+
+    <div id="logConfig"></div>
+    <button id="exportConfig" class="export-button">Export Configuration</button>
+
+    <!-- Highlight.js Library for Syntax Highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script>
+        // Initialize logConfig
+        let logConfig = {};
+
+        /**
+         * Event listener for file input change.
+         * Reads and parses the uploaded JSON file.
+         */
+        document.getElementById('configFile').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    logConfig = JSON.parse(e.target.result);
+                    displayLogConfig();
+                } catch (error) {
+                    alert('Failed to parse JSON file. Please ensure it is valid.');
+                    console.error('JSON Parse Error:', error);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        /**
+         * Displays the log configuration grouped by file.
+         * Applies search, filter, and sort functionalities.
+         */
+        function displayLogConfig() {
+            const logConfigElement = document.getElementById('logConfig');
+            logConfigElement.innerHTML = ''; // Clear previous content
+
+            const searchQuery = document.getElementById('searchInput').value.toLowerCase();
+            const filterType = document.getElementById('filterType').value;
+            const sortOption = document.getElementById('sortOption').value;
+
+            const categories = groupLogsByFile(logConfig);
+
+            // Iterate over each file/category
+            for (const [file, logs] of Object.entries(categories)) {
+                // Apply filtering
+                let filteredLogs = logs.filter(log => {
+                    const matchesType = filterType ? log.type === filterType : true;
+                    const matchesSearch = searchQuery ? (
+                        log.id.toLowerCase().includes(searchQuery) ||
+                        log.type.toLowerCase().includes(searchQuery) ||
+                        log.content.toLowerCase().includes(searchQuery) ||
+                        log.file.toLowerCase().includes(searchQuery) ||
+                        log.line.toString().includes(searchQuery)
+                    ) : true;
+                    return matchesType && matchesSearch;
+                });
+
+                // Apply sorting
+                filteredLogs = sortLogs(filteredLogs, sortOption);
+
+                if (filteredLogs.length === 0) continue; // Skip empty categories after filtering
+
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'category';
+
+                // Create category header with master toggle
+                const categoryHeader = document.createElement('div');
+                categoryHeader.className = 'category-header';
+
+                const masterCheckbox = document.createElement('input');
+                masterCheckbox.type = 'checkbox';
+                masterCheckbox.id = `master-${sanitizeId(file)}`;
+                masterCheckbox.setAttribute('aria-label', `Toggle all logs in ${file}`);
+
+                const masterLabel = document.createElement('label');
+                masterLabel.htmlFor = `master-${sanitizeId(file)}`;
+                masterLabel.textContent = `Toggle All in "${file}"`;
+
+                categoryHeader.appendChild(masterCheckbox);
+                categoryHeader.appendChild(masterLabel);
+                categoryDiv.appendChild(categoryHeader);
+
+                // Create log entries
+                filteredLogs.forEach(log => {
+                    const logEntryDiv = document.createElement('div');
+                    logEntryDiv.className = 'log-entry';
+
+                    const logCheckbox = document.createElement('input');
+                    logCheckbox.type = 'checkbox';
+                    logCheckbox.id = `log-${sanitizeId(log.id)}`;
+                    logCheckbox.checked = log.active;
+                    logCheckbox.setAttribute('aria-label', `Toggle log ID ${log.id}`);
+
+                    const logDetailsDiv = document.createElement('div');
+                    logDetailsDiv.className = 'log-details';
+
+                    const logTypeSpan = document.createElement('span');
+                    logTypeSpan.className = `log-type log-${log.type}`;
+                    logTypeSpan.textContent = capitalizeFirstLetter(log.type);
+
+                    const logContentSpan = document.createElement('span');
+                    logContentSpan.className = 'log-content';
+                    logContentSpan.textContent = extractMessageContent(log);
+
+                    // Check if content is a JSON object
+                    const parsedContent = tryParseJSON(extractMessageContent(log));
+                    if (parsedContent) {
+                        const pre = document.createElement('pre');
+                        pre.textContent = JSON.stringify(parsedContent, null, 2);
+                        logContentSpan.innerHTML = ''; // Clear previous text
+                        logContentSpan.appendChild(pre);
+                        hljs.highlightElement(pre); // Apply syntax highlighting
+                    }
+
+                    const logLocationSpan = document.createElement('span');
+                    logLocationSpan.className = 'log-location';
+                    logLocationSpan.textContent = `File: ${log.file}, Line: ${log.line}`;
+
+                    logDetailsDiv.appendChild(logTypeSpan);
+                    logDetailsDiv.appendChild(logContentSpan);
+                    logDetailsDiv.appendChild(logLocationSpan);
+
+                    logEntryDiv.appendChild(logCheckbox);
+                    logEntryDiv.appendChild(logDetailsDiv);
+                    categoryDiv.appendChild(logEntryDiv);
+
+                    // Event listener for individual log toggle
+                    logCheckbox.addEventListener('change', function (e) {
+                        logConfig[log.id].active = e.target.checked;
+                        updateMasterCheckbox(masterCheckbox, filteredLogs);
+                    });
+                });
+
+                // Event listener for master toggle
+                masterCheckbox.addEventListener('change', function (e) {
+                    const isChecked = e.target.checked;
+                    filteredLogs.forEach(log => {
+                        logConfig[log.id].active = isChecked;
+                        const logCheckbox = document.getElementById(`log-${sanitizeId(log.id)}`);
+                        if (logCheckbox) {
+                            logCheckbox.checked = isChecked;
+                        }
+                    });
+                    updateMasterCheckbox(masterCheckbox, filteredLogs);
+                });
+
+                // Initialize master checkbox state
+                updateMasterCheckbox(masterCheckbox, filteredLogs);
+
+                logConfigElement.appendChild(categoryDiv);
+            }
+        }
+
+        /**
+         * Groups logs by their respective files.
+         * @param {Object} logs - The logConfig object.
+         * @returns {Object} - Logs grouped by file.
+         */
+        function groupLogsByFile(logs) {
+            const categories = {};
+            for (const [id, log] of Object.entries(logs)) {
+                if (!categories[log.file]) {
+                    categories[log.file] = [];
+                }
+                categories[log.file].push({ id, ...log });
+            }
+            return categories;
+        }
+
+        /**
+         * Extracts the message content by removing the ID prefix.
+         * @param {Object} log - A single log entry.
+         * @returns {string} - The message content without the ID.
+         */
+        function extractMessageContent(log) {
+            const idLength = log.id.length;
+            const fullMessage = log.content;
+            if (fullMessage.length <= idLength) {
+                return ''; // No message content
+            }
+            return fullMessage.substring(idLength).trim();
+        }
+
+        /**
+         * Attempts to parse a string as JSON.
+         * @param {string} str - The string to parse.
+         * @returns {Object|null} - Parsed JSON object or null if parsing fails.
+         */
+        function tryParseJSON(str) {
+            try {
+                return JSON.parse(str);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        /**
+         * Updates the master checkbox based on the state of individual log checkboxes.
+         * Sets to checked if all are active, unchecked if none are active, or indeterminate otherwise.
+         * @param {HTMLInputElement} masterCheckbox - The master checkbox element.
+         * @param {Array} logs - Array of log entries within the category.
+         */
+        function updateMasterCheckbox(masterCheckbox, logs) {
+            const allActive = logs.every(log => logConfig[log.id].active);
+            const noneActive = logs.every(log => !logConfig[log.id].active);
+
+            if (allActive) {
+                masterCheckbox.checked = true;
+                masterCheckbox.indeterminate = false;
+            } else if (noneActive) {
+                masterCheckbox.checked = false;
+                masterCheckbox.indeterminate = false;
+            } else {
+                masterCheckbox.checked = false;
+                masterCheckbox.indeterminate = true;
+            }
+        }
+
+        /**
+         * Sanitizes strings to be used as HTML element IDs by replacing invalid characters.
+         * @param {string} str - The string to sanitize.
+         * @returns {string} - The sanitized string.
+         */
+        function sanitizeId(str) {
+            return str.replace(/[^a-zA-Z0-9-_]/g, '_');
+        }
+
+        /**
+         * Escapes HTML special characters to prevent XSS attacks.
+         * @param {string} text - The text to escape.
+         * @returns {string} - The escaped text.
+         */
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+            };
+            return text.replace(/[&<>"']/g, function (m) { return map[m]; });
+        }
+
+        /**
+         * Capitalizes the first letter of a string.
+         * @param {string} string - The string to capitalize.
+         * @returns {string} - The capitalized string.
+         */
+        function capitalizeFirstLetter(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+
+        /**
+         * Sorts logs based on the selected option.
+         * @param {Array} logs - Array of log entries.
+         * @param {string} sortOption - The selected sort option.
+         * @returns {Array} - Sorted array of log entries.
+         */
+        function sortLogs(logs, sortOption) {
+            switch (sortOption) {
+                case 'type':
+                    return logs.sort((a, b) => a.type.localeCompare(b.type));
+                case 'line':
+                    return logs.sort((a, b) => a.line - b.line);
+                case 'id':
+                    return logs.sort((a, b) => a.id.localeCompare(b.id));
+                case 'file':
+                default:
+                    return logs.sort((a, b) => a.file.localeCompare(b.file));
+            }
+        }
+
+        /**
+         * Adds event listeners to search and filter inputs.
+         */
+        function addControlListeners() {
+            document.getElementById('searchInput').addEventListener('input', debounce(displayLogConfig, 300));
+            document.getElementById('filterType').addEventListener('change', displayLogConfig);
+            document.getElementById('sortOption').addEventListener('change', displayLogConfig);
+        }
+
+        /**
+         * Debounce function to limit the rate of function execution.
+         * @param {Function} func - The function to debounce.
+         * @param {number} wait - The delay in milliseconds.
+         * @returns {Function} - The debounced function.
+         */
+        function debounce(func, wait) {
+            let timeout;
+            return function (...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        /**
+         * Initializes the tool by adding necessary event listeners.
+         */
+        function initializeTool() {
+            addControlListeners();
+        }
+
+        // Initialize the tool on page load
+        initializeTool();
+
+        /**
+         * Exports the current log configuration to a JSON file.
+         */
+        document.getElementById('exportConfig').addEventListener('click', function () {
+            if (Object.keys(logConfig).length === 0) {
+                alert('No configuration to export.');
+                return;
+            }
+
+            const configJson = JSON.stringify(logConfig, null, 2);
+            const blob = new Blob([configJson], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'updated-log-config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+
+</html>
