@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Configuration Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1,
+        h2 {
+            color: #333;
+        }
+
+        .file-input {
+            margin-bottom: 20px;
+        }
+
+        .category {
+            margin-bottom: 20px;
+        }
+
+        .log-entry {
+            margin-bottom: 10px;
+        }
+
+        .log-entry label {
+            margin-left: 5px;
+        }
+
+        button {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Log Configuration Tool</h1>
+    <div class="file-input">
+        <input type="file" id="configFile" accept=".json">
+    </div>
+    <div id="logConfig"></div>
+    <button id="exportConfig">Export Configuration</button>
+
+    <script>
+        let logConfig = {};
+
+        document.getElementById('configFile').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                logConfig = JSON.parse(e.target.result);
+                displayLogConfig();
+            };
+            reader.readAsText(file);
+        });
+
+        function displayLogConfig() {
+            const logConfigElement = document.getElementById('logConfig');
+            logConfigElement.innerHTML = '';
+
+            const categories = {};
+            for (const [id, log] of Object.entries(logConfig)) {
+                if (!categories[log.file]) {
+                    categories[log.file] = [];
+                }
+                categories[log.file].push({ id, ...log });
+            }
+
+            for (const [file, logs] of Object.entries(categories)) {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'category';
+                categoryDiv.innerHTML = `<h2>${file}</h2>`;
+
+                logs.forEach(log => {
+                    const logDiv = document.createElement('div');
+                    logDiv.className = 'log-entry';
+                    logDiv.innerHTML = `
+                        <input type="checkbox" id="${log.id}" ${log.active ? 'checked' : ''}>
+                        <label for="${log.id}">${log.type}: ${log.content}</label>
+                    `;
+                    logDiv.querySelector('input').addEventListener('change', function (e) {
+                        logConfig[log.id].active = e.target.checked;
+                    });
+                    categoryDiv.appendChild(logDiv);
+                });
+
+                logConfigElement.appendChild(categoryDiv);
+            }
+        }
+
+        document.getElementById('exportConfig').addEventListener('click', function () {
+            const configJson = JSON.stringify(logConfig, null, 2);
+            const blob = new Blob([configJson], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'updated-log-config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+
+</html>
