@@ -9,7 +9,10 @@ import utils from '../src/utils.mjs';
 */
 
 let ws;
-const reconnectInterval = 5000;
+const WS_SETTINGS = {
+    RECONNECT_INTERVAL: 5000,
+    GET_NODE_INFO_INTERVAL: 10000,
+}
 let pingInterval;
 /** @type {UTXO[]} */
 let validatorUTXOs = [];
@@ -20,17 +23,18 @@ function connectWS() {
     ws.onopen = function() {
         console.log('Connection opened');
         if (pingInterval) clearInterval(pingInterval);
-        pingInterval = setInterval(() => { ws.send(JSON.stringify({ type: 'get_node_info', data: Date.now() })); }, 1000);
+        pingInterval = setInterval(() => { ws.send(JSON.stringify({ type: 'get_node_info', data: Date.now() })); }, WS_SETTINGS.GET_NODE_INFO_INTERVAL);
     };
     ws.onclose = function() {
         console.info('Connection closed');
         clearInterval(pingInterval);
-        setTimeout(connectWS, reconnectInterval); // retry connection
+        setTimeout(connectWS, WS_SETTINGS.RECONNECT_INTERVAL); // retry connection
     };
     ws.onerror = function(error) { console.info('WebSocket error: ' + error); };
   
     ws.onmessage = function(event) {
         const message = JSON.parse(event.data);
+        const trigger = message.trigger;
         const data = message.data;
         switch (message.type) {
             case 'node_info':
@@ -47,6 +51,10 @@ function connectWS() {
             case 'hash_rate_updated':
                 if (isNaN(data)) { console.error(`hash_rate_updated: ${data} is not a number`); return; }
                 eHTML.hashRate.textContent = data.toFixed(2);
+                break;
+            case 'balance_updated':
+                if(trigger === eHTML.validatorAddress.textContent) { eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data); }
+                if(trigger === eHTML.minerAddress.textContent) { eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data); }
                 break;
             default:
                 break;

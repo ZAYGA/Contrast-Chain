@@ -20,25 +20,17 @@ export const WebSocketCallBack = (fnc, triggers, active = true) => {
         fnc,
         triggers,
         execute: (data, trigger = 'all') => {
-            const wsClients = triggers[trigger];
-            if (!wsClients) { console.error(`Trigger ${trigger} not found`); return; }
-            fnc(data, wsClients);
+            const wsClients = triggers.all ? triggers.all : triggers[trigger];
+            if (!wsClients) { console.error(`No clients found for trigger: ${trigger}`); return; }
+            if (wsClients.length === 0) { return; }
+
+            fnc(data, wsClients, trigger);
         }
     }
 }
 
 export class CallBackManager {
-    static CALLBACKS_RELATED_TO_MODE = { // HERE ARE THE GENERIC CALLBACKS - THOSE THAT SPEND EVENT TO ALL CLIENTS
-        dashboard: {
-            node: ['onBroadcastNewCandidate'],
-            miner: ['onBroadcastFinalizedBlock', 'onHashRateUpdated'],
-            memPool: ['pushTransaction', 'uxtoSpent'],
-            utxoCache: ['onBalanceUpdated'],
-        },
-        observer: {
-            node: ['onBroadcastNewCandidate'],
-        },
-    }
+    #CALLBACKS_RELATED_TO_MODE;
 
     /** @param {Node} node @param {WebSocketServer} wss */
     constructor(node, wss) {
@@ -46,50 +38,68 @@ export class CallBackManager {
         this.node = node;
         /** @type {WebSocketServer} */
         this.wss = wss;
+        
+        this.#CALLBACKS_RELATED_TO_MODE = { // HERE ARE THE GENERIC CALLBACKS - THOSE THAT SPEND EVENT TO ALL CLIENTS
+            validatorDashboard: {
+                node: ['onBroadcastNewCandidate:all'],
+                memPool: ['pushTransaction:all', 'uxtoSpent:all'],
+                utxoCache: [`onBalanceUpdated:${this.node.account.address}`],
+            },
+            minerDashboard: {
+                miner: ['onBroadcastFinalizedBlock:all', 'onHashRateUpdated:all'],
+                utxoCache: [`onBalanceUpdated:${this.node.miner.address}`],
+            },
+            observer: {
+                node: ['onBroadcastNewCandidate:all'],
+            },
+        }
     }
-
     /** @param { string[] | string } modes */
     initAllCallbacksOfMode(modes = ['dashboard']) {
         const modesArray = Array.isArray(modes) ? modes : [modes];
         /** @type {Object<string, string[]>} */
-        const callBacksRelatedToMode = CallBackManager.buildCallBacksFunctionsListToSubscribe(modesArray);
+        const callBacksRelatedToMode = this.#buildCallBacksFunctionsListToSubscribe(modesArray);
         const targetModules = Object.keys(callBacksRelatedToMode);
         for (const module of targetModules) {
-            for (const fncName of callBacksRelatedToMode[module]) {
-                /** @type {Function} */
-                const fnc = CALLBACKS_FUNCTIONS[module][fncName];
-                if (!fnc) { console.error(`Function ${fncName} not found`); continue; }
-
-                const webSocketCallBack = WebSocketCallBack(fnc, {'all': this.wss.clients}, true);
-                this.#attachWebSocketCallBackToModule(webSocketCallBack, fncName, module);
+            for (const fncKey of callBacksRelatedToMode[module]) {
+                this.attachWsCallBackToModule(module, fncKey, this.wss.clients); // we attach the callback to all clients
             };
         }
     }
-    
-    /** @param { WebSocketCallBack } webSocketCallBack */
-    #attachWebSocketCallBackToModule(webSocketCallBack, fncName = 'onBroadcastNewCandidate', moduleName = 'node') {
+    /** 
+     * @param {string} moduleName - 'node' | 'miner' | 'memPool' | 'utxoCache'
+     * @param {string} fncKey -  "fncName:trigger"  ex: 'balance_updated:W9bxy4aLJiQjX1kNgoAC'
+     * @param {WebSocket[]} wsClients - clients to send the message
+     */
+    attachWsCallBackToModule(moduleName, fncKey, wsClients) {
         let targetModule;
         switch (moduleName) {
             case 'node':
                 targetModule = this.node;
                 break;
-            case 'miner':
-                targetModule = this.node.miner;
-                break;
-            case 'memPool':
-                targetModule = this.node.memPool;
-                break;
             default:
+                targetModule = this.node[moduleName];
                 break;
         }
-
         if (!targetModule) { console.error(`Module ${moduleName} not found`); return; }
-        if (!targetModule.webSocketCallbacks) { console.error(`Module ${moduleName} has no webSocketCallbacks`); return; }
+        if (!targetModule.wsCallbacks) { console.error(`Module ${moduleName} has no wsCallbacks`); return; }
 
-        targetModule.webSocketCallbacks[fncName] = webSocketCallBack;
+        const fncName = fncKey.split(':')[0];
+        const trigger = fncKey.split(':')[1] || 'all';
+        /** @type {Function} */
+        const fnc = CALLBACKS_FUNCTIONS[moduleName][fncName];
+        if (!fnc) { console.error(`Function ${fncName} not found`); return; }
+
+        if (!targetModule.wsCallbacks[fncName]) {
+            // if the function is not already attached, we create it
+            targetModule.wsCallbacks[fncName] = WebSocketCallBack(fnc, {[trigger]: wsClients}, true);
+        } else {
+            // if the function is already attached, we add the trigger
+            targetModule.wsCallbacks[fncName].triggers[trigger] = wsClients;
+        }
     }
     /** @param { string[] | string } modes */
-    static buildCallBacksFunctionsListToSubscribe(modes = ['dashboard']) {
+    #buildCallBacksFunctionsListToSubscribe(modes = ['dashboard']) {
         const modesArray = Array.isArray(modes) ? modes : [modes];
         const aggregatedCallBacksNames = {
             node: [],
@@ -98,10 +108,10 @@ export class CallBackManager {
         };
 
         for (const mode of modesArray) {
-            const modulesToAttach = Object.keys(CallBackManager.CALLBACKS_RELATED_TO_MODE[mode]);
+            const modulesToAttach = Object.keys(this.#CALLBACKS_RELATED_TO_MODE[mode]);
 
             for (const module of modulesToAttach) {
-                const functionsNames = CallBackManager.CALLBACKS_RELATED_TO_MODE[mode][module];
+                const functionsNames = this.#CALLBACKS_RELATED_TO_MODE[mode][module];
                 for (const fncName of functionsNames) {
                     if (!aggregatedCallBacksNames[module]) { aggregatedCallBacksNames[module] = []; }
                     if (!aggregatedCallBacksNames[module].includes(fncName)) { aggregatedCallBacksNames[module].push(fncName); }
@@ -117,7 +127,7 @@ export class CallBackManager {
  * @param {any} message 
  * @param {WebSocket[]} wsClients
  */
-function sendToAllClients(message, wsClients) {
+function sendToClients(message, wsClients) {
     for (const client of wsClients) {
         if (client.readyState !== 1) { continue; }
         client.send(JSON.stringify(message));
@@ -130,35 +140,55 @@ function sendToAllClients(message, wsClients) {
 // developpers can change the "type" of the message to send to the client's websockets
 const CALLBACKS_FUNCTIONS = {
     node: {
-        /** send the finalized block when the local node confirmed it @param {BlockData} blockCandidate */
-        onBroadcastNewCandidate: (blockCandidate, wsClients = []) => {
-            sendToAllClients({ type: 'broadcast_new_candidate', data: blockCandidate }, wsClients);
+        /** send the finalized block when the local node confirmed it
+         * @param {BlockData} blockCandidate
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'broadcast_new_candidate', data: blockCandidate, trigger }
+         */
+        onBroadcastNewCandidate: (blockCandidate, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'broadcast_new_candidate', data: blockCandidate, trigger }, wsClients);
         },
     },
     miner: {
-        /** send the finalized block when local miner broadcast it @param {BlockData} finalizedBlock */
-        onBroadcastFinalizedBlock: (finalizedBlock, wsClients = []) => {
-            sendToAllClients({ type: 'broadcast_finalized_block', data: finalizedBlock }, wsClients);
+        /** send the finalized block when local miner broadcast it
+         * @param {BlockData} finalizedBlock
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'broadcast_finalized_block', data: finalizedBlock, trigger }
+        */
+        onBroadcastFinalizedBlock: (finalizedBlock, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'broadcast_finalized_block', data: finalizedBlock, trigger }, wsClients);
         },
-        /** send the local miner hashRate to the clients */
-        onHashRateUpdated: (hashRate = 0, wsClients = []) => {
-            sendToAllClients({ type: 'hash_rate_updated', data: hashRate }, wsClients);
+        /** send the local miner hashRate to the clients
+         * @param {number} hashRate - hash rate of the miner
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'hash_rate_updated', data: hashRate, trigger }
+        */
+        onHashRateUpdated: (hashRate = 0, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'hash_rate_updated', data: hashRate, trigger }, wsClients);
         },
     },
     memPool: {
-        /** send info of tx inclusion when the memPool try to push a tx */
-        pushTransaction: (txInfo = {}, wsClients = []) => {
-            sendToAllClients({ type: 'transaction_broadcasted', data: txInfo }, wsClients);
+        /** send info of tx inclusion when the memPool try to push a tx
+         * @param {Object} txInfo - { broadcasted, pushedInLocalMempool, error }
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'transaction_broadcasted', data: txInfo, trigger }
+        */
+        pushTransaction: (txInfo = {}, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'transaction_broadcasted', data: txInfo, trigger }, wsClients);
         },
-        /** send tx reference when the uxto is spent. @param {string} txReference tx ref: height:TxID - '0:ffffff' */
-        uxtoSpent: (txReference = '0:ffffff', wsClients = []) => {
-            sendToAllClients({ type: 'uxto_spent', data: txReference }, wsClients);
+        /** send tx reference when the uxto is spent.
+         * @param {string} txReference tx ref: height:TxID - '0:ffffff'
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'uxto_spent', data: txReference, trigger }
+        */
+        uxtoSpent: (txReference = '0:ffffff', wsClients = [], trigger = '') => {
+            sendToClients({ type: 'uxto_spent', data: txReference, trigger }, wsClients);
         },
     },
     utxoCache: {
         /** send the updated balance of the related account when the balance is updated */
-        onBalanceUpdated: (balanceInfo = {}, wsClients = []) => {
-            sendToAllClients({ type: 'balance_updated', data: balanceInfo }, wsClients);
+        onBalanceUpdated: (balance = 0, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'balance_updated', data: balance, trigger }, wsClients);
         },
     },
 }

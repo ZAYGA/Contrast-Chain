@@ -121,4 +121,4 @@ function extractNodeInfo(node) {
 // CALLBACKS
 const readableNow = () => { return `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}` };
 const callBackManager = new CallBackManager(multiNode, wss);
-callBackManager.initAllCallbacksOfMode('dashboard');
+callBackManager.initAllCallbacksOfMode(['validatorDashboard', 'minerDashboard']);

@@ -40,9 +40,8 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         if (this.addressesBalances[address] === undefined) { this.addressesBalances[address] = 0; }
 
         this.addressesBalances[address] += amount;
-        if (this.wsCallbacks.onBalanceUpdated && this.wsCallbacks.onBalanceUpdated.triggers[address]) {
-            this.wsCallbacks.onBalanceUpdated.execute(this.addressesBalances[address], address);
-        }
+
+        if (this.wsCallbacks.onBalanceUpdated) { this.wsCallbacks.onBalanceUpdated.execute(this.addressesBalances[address], address); }
         // console.log(`Balance of ${address} changed by ${amount} => ${this.addressesBalances[address]}`);
     }
     /**
