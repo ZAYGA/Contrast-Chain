@@ -1,6 +1,7 @@
 import fsPromises from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import util from 'util';
 
 class Logger {
     constructor(idLength = 8) {
@@ -68,13 +69,19 @@ class Logger {
                 const id = match[2];
                 const messageContent = match[3]; // Preserved without trimming
                 const fullMessage = id + messageContent; // Combine ID and message
-                this.logCalls.push({
-                    id,
-                    file: fileName,
-                    line: index + 1,
-                    type,
-                    content: fullMessage
-                });
+
+                // Validate 'type' before adding to logCalls
+                if (['log', 'info', 'warn', 'error', 'debug', 'trace'].includes(type)) {
+                    this.logCalls.push({
+                        id,
+                        file: fileName,
+                        line: index + 1,
+                        type,
+                        content: fullMessage
+                    });
+                } else {
+                    console.warn(`Invalid log type "${type}" found in ${fileName} at line ${index + 1}.`);
+                }
             }
         });
     }
@@ -197,17 +204,18 @@ class Logger {
     /**
      * Logs data based on the type and configuration
      * @param {string} type - The type of log (e.g., info, error)
-     * @param {string} message - The message to log
+     * @param {string} message - The message to log (first X characters as ID)
+     * @param {...any} args - Optional additional data objects to log
      */
-    log(type, message) {
+    dolog(type, message, ...args) {
         if (typeof message !== 'string') {
-            console.error('Logger expects a string message.' + message);
+            console.error('Logger expects the second argument to be a string message.');
             return;
         }
 
         const { id, content } = this.extractIdAndContent(message);
         if (!id) {
-            console.error('Log message must be at least 8 characters long to extract ID.');
+            console.error('Log message must be at least', this.idLength, 'characters long to extract ID.');
             return;
         }
 
@@ -221,21 +229,43 @@ class Logger {
         }
 
         if (this.logConfig[id].active) {
-            // To avoid logging the ID as part of the message, log only the content excluding the ID
-            const messageWithoutId = content.substring(this.idLength);
+            let fullMessage = content; // Exclude ID from console output
 
+            if (args.length > 0) {
+                // Serialize each additional argument
+                const serializedArgs = args.map(arg => {
+                    if (typeof arg === 'object') {
+                        return util.inspect(arg, { depth: null, colors: false });
+                    }
+                    return String(arg);
+                }).join(' ');
+                fullMessage += ' ' + serializedArgs;
+
+            }
             // Validate 'type' before calling
             if (typeof console[type] === 'function') {
-                console[type](content);
+                console[type](fullMessage);
             } else {
-                console.error(`Invalid log type "${type}". Falling back to console.log. Message: ${messageWithoutId}`);
-                console.log(content);
+                console.error(`Invalid log type "${type}". Falling back to console.log. Message: ${fullMessage}`);
+                console.log(fullMessage);
             }
         } else {
-            console.log(`Log ${id} is not active. Type: ${type}, Content: ${content.substring(this.idLength)}`);
+            let fullMessage = content.substring(this.idLength).trim(); // Exclude ID from console output
+
+            if (args.length > 0) {
+                // Serialize each additional argument
+                const serializedArgs = args.map(arg => {
+                    if (typeof arg === 'object') {
+                        return util.inspect(arg, { depth: null, colors: false });
+                    }
+                    return String(arg);
+                }).join(' ');
+                fullMessage += ' ' + serializedArgs;
+
+            }
+            console.log(`Log ${id} is not active. Type: ${type}, Content: ${fullMessage}`);
         }
     }
-
 
     /**
      * Extracts the first X characters as ID and retains the entire message as content
@@ -252,11 +282,12 @@ class Logger {
     }
 
     // Convenience methods for different log types
-    debug(message) { this.log('debug', message); }
-    info(message) { this.log('info', message); }
-    warn(message) { this.log('warn', message); }
-    error(message) { this.log('error', message); }
-    trace(message) { this.log('trace', message); }
+    debug(message, ...args) { this.dolog('debug', message, ...args); }
+    info(message, ...args) { this.dolog('info', message, ...args); }
+    warn(message, ...args) { this.dolog('warn', message, ...args); }
+    error(message, ...args) { this.dolog('error', message, ...args); }
+    trace(message, ...args) { this.dolog('trace', message, ...args); }
+    log(message, ...args) { this.dolog('log', message, ...args); }
 }
 
 export default Logger;
