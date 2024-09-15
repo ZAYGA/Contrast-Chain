@@ -7,6 +7,7 @@ import utils from './utils.mjs';
  * @typedef {import("./account.mjs").Account} Account
  * @typedef {import("./p2p.mjs").P2PNetwork} P2PNetwork
  * @typedef {import("./taskQueue.mjs").TaskQueue} TaskQueue
+ * @typedef {import("./websocketCallback.mjs").WebSocketCallBack} WebSocketCallBack
  */
 
 export class Miner {
@@ -42,11 +43,8 @@ export class Miner {
         /** @type {TaskQueue} */
         this.taskQueue = taskQueue; // only for multiNode (validator + miner)
 
-        /** @type {Object<string, Function>} */
-        this.callbacks = {
-            broadcastFinalizedBlock: null,
-            hashRateUpdated: null,
-        };
+        /** @type {Object<string, WebSocketCallBack>} */
+        this.webSocketCallbacks = {};
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
@@ -112,20 +110,21 @@ export class Miner {
         return sortedCandidates[0];
     }
     /** @param {number} hashTime - ms */
-    #hashRateNew(hashTime = 50) {
+    #hashRateNew(hashTime = 50, hashBeforeAveraging = 20) {
         this.hashTimings.push(hashTime);
-        if (this.hashTimings.length < 9) { return; } // wait for 10 hash timings to be collected
+        if (this.hashTimings.length < hashBeforeAveraging - 1) { return; } // wait for 10 hash timings to be collected
 
         const hashRate = 1000 / (this.hashTimings.reduce((acc, timing) => acc + timing, 0) / this.hashTimings.length);
         this.hashRate = hashRate;
         this.hashTimings = [];
+        if (this.webSocketCallbacks.onHashRateUpdated) { this.webSocketCallbacks.onHashRateUpdated.execute(hashRate); }
     }
     /** @param {BlockData} finalizedBlock */
     async #broadcastBlockCandidate(finalizedBlock) {
         console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`);
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
         await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
-        if (this.callbacks.broadcastFinalizedBlock) { this.callbacks.broadcastFinalizedBlock(finalizedBlock); }
+        if (this.webSocketCallbacks.onBroadcastFinalizedBlock) { this.webSocketCallbacks.onBroadcastFinalizedBlock.execute(finalizedBlock); }
     }
     #createMissingWorkers(workersStatus = []) {
         const missingWorkers = this.nbOfWorkers - this.workers.length;

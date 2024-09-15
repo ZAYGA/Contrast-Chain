@@ -4,6 +4,7 @@ import utils from './utils.mjs';
 /**
  * @typedef {{ [feePerByte: string]: Transaction[] }} TransactionsByFeePerByte
  * @typedef {import('./block.mjs').BlockData} BlockData
+ * @typedef {import("./websocketCallback.mjs").WebSocketCallBack} WebSocketCallBack
  */
 
 export class MemPool { // Store transactions that are not yet included in a block
@@ -18,6 +19,9 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.maxPubKeysToRemember = 1_000_000; // ~45MB
         this.knownPubKeysAddresses = {}; // used to avoid excessive address ownership confirmation
         this.useDevArgon2 = false;
+
+        /** @type {Object<string, WebSocketCallBack>} */
+        this.webSocketCallbacks = {};
     }
 
     /**

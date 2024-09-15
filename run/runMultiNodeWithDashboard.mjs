@@ -6,9 +6,11 @@ import { WebSocketServer } from 'ws';
 
 import contrast from '../src/contrast.mjs';
 import { NodeFactory } from '../src/node-factory.mjs';
+import { CallBackManager, WebSocketCallBack } from '../src/websocketCallback.mjs';
 /**
 * @typedef {import("../src/account.mjs").Account} Account
 * @typedef {import("../src/node.mjs").Node} Node
+* @typedef {import("../src/block.mjs").BlockData} BlockData
 */
 
 //#region NODE INITIALIZATION -------------------------------------------
@@ -91,15 +93,16 @@ function updateBalance(node) {
 /** @param {Node} node */
 function extractNodeInfo(node) {
     updateBalance(node);
-    const { spendableBalance, balance, UTXOs } = node.utxoCache.getBalanceSpendableAndUTXOs(node.account.address);
+    const validatorAccountInfo = node.utxoCache.getBalanceSpendableAndUTXOs(node.account.address);
+    const minerAccountInfo = node.utxoCache.getBalanceSpendableAndUTXOs(node.miner.address);
     return {
         roles: node.roles,
 
         // validator
         validatorAddress: node.account.address,
-        validatorBalance: node.account.balance,
-        validatorUTXOs: UTXOs,
-        validatorSpendableBalance: node.account.spendableBalance,
+        validatorBalance: validatorAccountInfo.balance,
+        validatorUTXOs: validatorAccountInfo.UTXOs,
+        validatorSpendableBalance: validatorAccountInfo.spendableBalance,
         //validatorStake: node.vss.getAddressLegitimacy
         validatorStakes: node.vss.getAddressStakesInfo(node.account.address),
         validatorUtxos: node.account.UTXOs,
@@ -107,45 +110,15 @@ function extractNodeInfo(node) {
 
         // miner
         minerAddress: node.miner.address,
-        minerBalance: balance,
-        minerSpendableBalance: spendableBalance,
-        minerUtxos: UTXOs,
+        minerBalance: minerAccountInfo.balance,
+        minerUTXOs: minerAccountInfo.UTXOs,
+        minerSpendableBalance: minerAccountInfo.spendableBalance,
         highestBlockIndex: node.miner.highestBlockIndex,
-        hashRate: node.miner.hashRate,
         minerThreads: node.miner.nbOfWorkers,
     };
 }
-// CALLBACKS
-const readableNow = `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}`;
-const callBacks = {
-    node: {
-        digestFinalizedBlock: (finalizedBlock) => {
-            wss.clients.forEach(function each(client) {
-                if (client.readyState !== 1) { return; }
-                client.send(JSON.stringify({ type: 'broadcast_new_candidate', data: finalizedBlock }));
-            });
-        },
-    },
-    miner: {
-        broadcastFinalizedBlock: (finalizedBlock) => {
-            wss.clients.forEach(function each(client) {
-                if (client.readyState !== 1) { return; }
-                client.send(JSON.stringify({ type: 'broadcast_finalized_block', data: finalizedBlock }));
-            });
-        },
-        hashRateUpdated: (hashRate = 0) => {
-            wss.clients.forEach(function each(client) {
-                if (client.readyState !== 1) { return; }
-                client.send(JSON.stringify({ type: 'hash_rate_updated', data: hashRate }));
-            });
-        },
-    },
-}
 
-for (const [key, value] of Object.entries(callBacks.node)) {
-    multiNode.callbacks[key] = value;
-}
-for (const [key, value] of Object.entries(callBacks.miner)) {
-    if (!multiNode.miner) { continue; }
-    multiNode.miner.callbacks[key] = value;
-}
+// CALLBACKS
+const readableNow = () => { return `${new Date().toLocaleTimeString()}:${new Date().getMilliseconds()}` };
+const callBackManager = new CallBackManager(multiNode, wss);
+callBackManager.initAllCallbacksOfMode('dashboard');

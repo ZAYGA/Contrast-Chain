@@ -14,6 +14,7 @@ import { SyncHandler } from './sync.mjs';
 /**
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
+* @typedef {import("./websocketCallback.mjs").WebSocketCallBack} WebSocketCallBack
 */
 
 export class Node {
@@ -52,10 +53,9 @@ export class Node {
         this.blockchain = new Blockchain(this.id);
         /** @type {SyncHandler} */
         this.syncHandler = new SyncHandler(this.blockchain);
-        /** @type {Object<string, Function>} */
-        this.callbacks = {
-            digestFinalizedBlock: null,
-        };
+
+        /** @type {Object<string, WebSocketCallBack>} */
+        this.webSocketCallbacks = {};
     }
 
     async start() {
@@ -82,22 +82,25 @@ export class Node {
         const uniqueTopics = [...new Set(topicsToSubscribe)];
 
         // subscribe to the topics
-        await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
+        //await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this)); // MOVED BELOW
         await this.syncHandler.start(this.p2pNetwork);
         // miners start their workers, we dont await here
         if (this.roles.includes('miner')) { this.miner.startWithWorker(); }
 
         // wait for the p2p network to be ready
         console.info(`Node ${this.id.toString()}, ${this.roles.join('_')} started - ${loadedBlocks.length} blocks loaded`);
-        if (!await this.#waitSomePeers(1, 30)) { this.stop(); return; }
+        if (!await this.#waitSomePeers()) { this.stop(); return; }
 
         console.log('P2P network is ready - we are connected baby!');
 
         if (this.roles.includes('validator')) {
             //await this.syncWithKnownPeers(); // validators start the sync process with known peers
             this.taskQueue.push('createBlockCandidateAndBroadcast', null, true);
-            this.taskQueue.push('syncWithKnownPeers', null, true);
-            //await this.createBlockCandidateAndBroadcast(); // validators start the block candidate creation process
+            this.taskQueue.push('syncWithKnownPeers', null, true); // will be placed first in the queue
+            setTimeout(async () => { // will handle event after the sync
+                await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
+                console.log('Subscribed to topics');
+            }, 1000);
         }
 
         // control the peers connection to avoid being a lone peer
@@ -303,7 +306,7 @@ export class Node {
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         try {
             await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
-            if (this.callbacks.digestFinalizedBlock) { this.callbacks.digestFinalizedBlock(this.blockCandidate); }
+            if (this.webSocketCallbacks.onBroadcastNewCandidate) { this.webSocketCallbacks.onBroadcastNewCandidate.execute(this.blockCandidate); }
         } catch (error) {
             console.error(`Failed to broadcast new block candidate: ${error}`);
         }

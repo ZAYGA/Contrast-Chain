@@ -13,6 +13,7 @@ const reconnectInterval = 5000;
 let pingInterval;
 /** @type {UTXO[]} */
 let validatorUTXOs = [];
+let minerUTXOs = [];
 function connectWS() {
     ws = new WebSocket('ws://localhost:3000');
   
@@ -35,6 +36,7 @@ function connectWS() {
             case 'node_info':
                 displayNodeInfo(data);
                 validatorUTXOs = data.validatorUTXOs;
+                minerUTXOs = data.minerUTXOs;
                 break;
             case 'broadcast_new_candidate':
                 console.log('broadcast_new_candidate', data);
@@ -43,7 +45,8 @@ function connectWS() {
                 console.log('broadcast_finalized_block', data);
                 break;
             case 'hash_rate_updated':
-                console.log('hash_rate_updated', data);
+                if (isNaN(data)) { console.error(`hash_rate_updated: ${data} is not a number`); return; }
+                eHTML.hashRate.textContent = data.toFixed(2);
                 break;
             default:
                 break;
@@ -94,7 +97,6 @@ function displayNodeInfo(data) {
     eHTML.minerAddress.textContent = data.minerAddress;
     eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
     eHTML.minerHeight.textContent = data.highestBlockIndex;
-    eHTML.hashRate.textContent = data.hashRate.toFixed(2);
     eHTML.minerThreads.input.value = data.minerThreads;
 }
 // not 'change' event because it's triggered by the browser when the input loses focus, not when the value changes
