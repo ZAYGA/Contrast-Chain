@@ -44,7 +44,7 @@ export class Miner {
         this.taskQueue = taskQueue; // only for multiNode (validator + miner)
 
         /** @type {Object<string, WebSocketCallBack>} */
-        this.webSocketCallbacks = {};
+        this.wsCallbacks = {};
     }
     /** @param {BlockData} blockCandidate */
     async #prepareBlockCandidateBeforeMining(blockCandidate) {
@@ -117,14 +117,14 @@ export class Miner {
         const hashRate = 1000 / (this.hashTimings.reduce((acc, timing) => acc + timing, 0) / this.hashTimings.length);
         this.hashRate = hashRate;
         this.hashTimings = [];
-        if (this.webSocketCallbacks.onHashRateUpdated) { this.webSocketCallbacks.onHashRateUpdated.execute(hashRate); }
+        if (this.wsCallbacks.onHashRateUpdated) { this.wsCallbacks.onHashRateUpdated.execute(hashRate); }
     }
     /** @param {BlockData} finalizedBlock */
     async #broadcastBlockCandidate(finalizedBlock) {
         console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`);
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
         await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
-        if (this.webSocketCallbacks.onBroadcastFinalizedBlock) { this.webSocketCallbacks.onBroadcastFinalizedBlock.execute(finalizedBlock); }
+        if (this.wsCallbacks.onBroadcastFinalizedBlock) { this.wsCallbacks.onBroadcastFinalizedBlock.execute(finalizedBlock); }
     }
     #createMissingWorkers(workersStatus = []) {
         const missingWorkers = this.nbOfWorkers - this.workers.length;

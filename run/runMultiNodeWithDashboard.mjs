@@ -100,7 +100,7 @@ function extractNodeInfo(node) {
 
         // validator
         validatorAddress: node.account.address,
-        validatorBalance: validatorAccountInfo.balance,
+        //validatorBalance: validatorAccountInfo.balance,
         validatorUTXOs: validatorAccountInfo.UTXOs,
         validatorSpendableBalance: validatorAccountInfo.spendableBalance,
         //validatorStake: node.vss.getAddressLegitimacy
@@ -110,7 +110,7 @@ function extractNodeInfo(node) {
 
         // miner
         minerAddress: node.miner.address,
-        minerBalance: minerAccountInfo.balance,
+        //minerBalance: minerAccountInfo.balance,
         minerUTXOs: minerAccountInfo.UTXOs,
         minerSpendableBalance: minerAccountInfo.spendableBalance,
         highestBlockIndex: node.miner.highestBlockIndex,

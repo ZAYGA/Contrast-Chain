@@ -5,6 +5,7 @@ import { TxValidation } from './validation.mjs';
 
 /**
 * @typedef {import("./block.mjs").BlockData} BlockData
+* @typedef {import("./websocketCallback.mjs").WebSocketCallBack} WebSocketCallBack
 */
 
 export class UtxoCache { // Used to store, addresses's UTXOs and balance.
@@ -19,6 +20,9 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
 
         /** @type {BlockMiningData[]} */
         this.blockMiningData = blockMiningData; // .csv mining datas research
+
+        /** @type {Object<string, WebSocketCallBack>} */
+        this.wsCallbacks = {};
     }
 
     #calculateTotalOfBalances() {
@@ -36,6 +40,9 @@ export class UtxoCache { // Used to store, addresses's UTXOs and balance.
         if (this.addressesBalances[address] === undefined) { this.addressesBalances[address] = 0; }
 
         this.addressesBalances[address] += amount;
+        if (this.wsCallbacks.onBalanceUpdated && this.wsCallbacks.onBalanceUpdated.triggers[address]) {
+            this.wsCallbacks.onBalanceUpdated.execute(this.addressesBalances[address], address);
+        }
         // console.log(`Balance of ${address} changed by ${amount} => ${this.addressesBalances[address]}`);
     }
     /**

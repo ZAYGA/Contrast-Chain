@@ -55,7 +55,7 @@ export class Node {
         this.syncHandler = new SyncHandler(this.blockchain);
 
         /** @type {Object<string, WebSocketCallBack>} */
-        this.webSocketCallbacks = {};
+        this.wsCallbacks = {};
     }
 
     async start() {
@@ -306,7 +306,7 @@ export class Node {
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         try {
             await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
-            if (this.webSocketCallbacks.onBroadcastNewCandidate) { this.webSocketCallbacks.onBroadcastNewCandidate.execute(this.blockCandidate); }
+            if (this.wsCallbacks.onBroadcastNewCandidate) { this.wsCallbacks.onBroadcastNewCandidate.execute(this.blockCandidate); }
         } catch (error) {
             console.error(`Failed to broadcast new block candidate: ${error}`);
         }

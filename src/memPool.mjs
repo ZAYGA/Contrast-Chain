@@ -21,7 +21,7 @@ export class MemPool { // Store transactions that are not yet included in a bloc
         this.useDevArgon2 = false;
 
         /** @type {Object<string, WebSocketCallBack>} */
-        this.webSocketCallbacks = {};
+        this.wsCallbacks = {};
     }
 
     /**

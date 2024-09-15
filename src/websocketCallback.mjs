@@ -30,18 +30,17 @@ export const WebSocketCallBack = (fnc, triggers, active = true) => {
 export class CallBackManager {
     static CALLBACKS_RELATED_TO_MODE = { // HERE ARE THE GENERIC CALLBACKS - THOSE THAT SPEND EVENT TO ALL CLIENTS
         dashboard: {
-            node: [ 'onBroadcastNewCandidate' ],
-            miner: [ 'onBroadcastFinalizedBlock', 'onHashRateUpdated' ],
+            node: ['onBroadcastNewCandidate'],
+            miner: ['onBroadcastFinalizedBlock', 'onHashRateUpdated'],
+            memPool: ['pushTransaction', 'uxtoSpent'],
+            utxoCache: ['onBalanceUpdated'],
         },
         observer: {
-            node: [ 'onBroadcastNewCandidate' ],
+            node: ['onBroadcastNewCandidate'],
         },
     }
 
-    /** 
-     * @param {Node} node
-     * @param {WebSocketServer} wss
-     */
+    /** @param {Node} node @param {WebSocketServer} wss */
     constructor(node, wss) {
         /** @type {Node} */
         this.node = node;
@@ -59,13 +58,14 @@ export class CallBackManager {
             for (const fncName of callBacksRelatedToMode[module]) {
                 /** @type {Function} */
                 const fnc = CALLBACKS_FUNCTIONS[module][fncName];
-                if (!fnc) { console.error(`Function ${fncName} not found`); return; }
+                if (!fnc) { console.error(`Function ${fncName} not found`); continue; }
 
                 const webSocketCallBack = WebSocketCallBack(fnc, {'all': this.wss.clients}, true);
                 this.#attachWebSocketCallBackToModule(webSocketCallBack, fncName, module);
             };
         }
     }
+    
     /** @param { WebSocketCallBack } webSocketCallBack */
     #attachWebSocketCallBackToModule(webSocketCallBack, fncName = 'onBroadcastNewCandidate', moduleName = 'node') {
         let targetModule;
@@ -119,7 +119,7 @@ export class CallBackManager {
  */
 function sendToAllClients(message, wsClients) {
     for (const client of wsClients) {
-        if (client.readyState !== 1) { return; }
+        if (client.readyState !== 1) { continue; }
         client.send(JSON.stringify(message));
         //console.info(`[WS] ${message.type} sent to client: ${client.url}`);
     };
@@ -130,15 +130,13 @@ function sendToAllClients(message, wsClients) {
 // developpers can change the "type" of the message to send to the client's websockets
 const CALLBACKS_FUNCTIONS = {
     node: {
-        /** send the finalized block when the local node confirmed it
-         * @param {BlockData} finalizedBlock */
-        onBroadcastNewCandidate: (finalizedBlock, wsClients = []) => {
-            sendToAllClients({ type: 'broadcast_new_candidate', data: finalizedBlock }, wsClients);
+        /** send the finalized block when the local node confirmed it @param {BlockData} blockCandidate */
+        onBroadcastNewCandidate: (blockCandidate, wsClients = []) => {
+            sendToAllClients({ type: 'broadcast_new_candidate', data: blockCandidate }, wsClients);
         },
     },
     miner: {
-        /** send the finalized block when local miner broadcast it
-         * @param {BlockData} finalizedBlock */
+        /** send the finalized block when local miner broadcast it @param {BlockData} finalizedBlock */
         onBroadcastFinalizedBlock: (finalizedBlock, wsClients = []) => {
             sendToAllClients({ type: 'broadcast_finalized_block', data: finalizedBlock }, wsClients);
         },
@@ -152,9 +150,15 @@ const CALLBACKS_FUNCTIONS = {
         pushTransaction: (txInfo = {}, wsClients = []) => {
             sendToAllClients({ type: 'transaction_broadcasted', data: txInfo }, wsClients);
         },
-        /** send tx reference when the uxto is spent. tx ref: height:TxID - '0:ffffff' */
+        /** send tx reference when the uxto is spent. @param {string} txReference tx ref: height:TxID - '0:ffffff' */
         uxtoSpent: (txReference = '0:ffffff', wsClients = []) => {
             sendToAllClients({ type: 'uxto_spent', data: txReference }, wsClients);
         },
-    }
+    },
+    utxoCache: {
+        /** send the updated balance of the related account when the balance is updated */
+        onBalanceUpdated: (balanceInfo = {}, wsClients = []) => {
+            sendToAllClients({ type: 'balance_updated', data: balanceInfo }, wsClients);
+        },
+    },
 }

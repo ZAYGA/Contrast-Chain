@@ -90,12 +90,12 @@ function displayNodeInfo(data) {
     eHTML.roles.textContent = data.roles.join(' - ')
 
     eHTML.validatorAddress.textContent = data.validatorAddress, // utils.addressUtils.formatAddress(data.validatorAddress, " ");
-    eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.validatorBalance);
+    //eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.validatorBalance);
     eHTML.validatorHeight.textContent = data.currentHeight;
     eHTML.validatorStaked.textContent = utils.convert.number.formatNumberAsCurrency(validatorStaked);
 
     eHTML.minerAddress.textContent = data.minerAddress;
-    eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
+    //eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
     eHTML.minerHeight.textContent = data.highestBlockIndex;
     eHTML.minerThreads.input.value = data.minerThreads;
 }
