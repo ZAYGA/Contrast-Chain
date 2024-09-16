@@ -155,7 +155,7 @@ export class SyncHandler {
     async getMissingBlocks(p2pNetwork, peerMultiaddr, processBlock) {
         try {
             const peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
-            let currentHeight = this.blockchain.currentHeight;
+            let currentHeight = this.blockchain.currentHeight + 1;
 
             if (currentHeight >= peerStatus.currentHeight) {
                 this.logger.debug('No sync needed');
