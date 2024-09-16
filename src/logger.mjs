@@ -153,6 +153,21 @@ class Logger {
     }
 
     /**
+     * Formats the log message
+     * @param {string} type - Log type (e.g., info, error)
+     * @param {string} message - Log message
+     * @returns {string} - Formatted log string
+     */
+    formatStructuredJson(type, message) {
+        const timestamp = new Date().toISOString();
+        const logObject = {
+            timestamp,
+            type: type.toUpperCase(),
+            message,
+        };
+        return JSON.stringify(logObject) + '\n';
+    }
+    /**
      * Writes a log message to the rotating log file
      * @param {string} type - Log type
      * @param {string} message - Log message
@@ -369,7 +384,7 @@ class Logger {
      */
     dolog(type, message, ...args) {
         if (typeof message !== 'string') {
-            //console.error('Logger expects the second argument to be a string message.');
+            console.error('Logger expects the second argument to be a string message.');
             return;
         }
 
@@ -413,23 +428,8 @@ class Logger {
             // Additionally, write to file
             this.writeToFile(type, fullMessage);
         } else {
-            let fullMessage = content.substring(this.idLength).trim(); // Exclude ID from console output
-
-            if (args.length > 0) {
-                // Serialize each additional argument
-                const serializedArgs = args.map(arg => {
-                    if (typeof arg === 'object') {
-                        return util.inspect(arg, { depth: null, colors: false });
-                    }
-                    return String(arg);
-                }).join(' ');
-                fullMessage += ' ' + serializedArgs;
-            }
-            const inactiveMessage = `Log ${id} is not active. Type: ${type}, Content: ${fullMessage}`;
-            console.log(inactiveMessage);
-
-            // Optionally, write inactive log attempts to file as well
-            this.writeToFile(type, inactiveMessage);
+            // Log is inactive
+            console.warn(`Log ID ${id} is inactive. Message not logged: ${content}`);
         }
     }
 
