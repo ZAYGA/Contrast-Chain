@@ -8,9 +8,9 @@ import P2PNetwork from './p2p.mjs';
  * @typedef {import("./blockchain.mjs").Blockchain} Blockchain
  */
 
-const MAX_BLOCKS_PER_REQUEST = 1000;
+const MAX_BLOCKS_PER_REQUEST = 2000;
 const RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 1000; // 1 second
+const RETRY_DELAY = 2000; // 1 second
 const BATCH_SIZE = 100; // For batch processing
 
 export class SyncHandler {
@@ -33,8 +33,8 @@ export class SyncHandler {
      * @param {P2PNetwork} p2pNetwork - The P2P network instance.
      */
     async start(p2pNetwork) {
+        this.p2pNetworkMaxMessageSize = p2pNetwork.maxMessageSize;
         try {
-            this.p2pNetworkMaxMessageSize = p2pNetwork.maxMessageSize;
             p2pNetwork.p2pNode.handle(P2PNetwork.SYNC_PROTOCOL, this.handleIncomingStream.bind(this));
             this.logger.info({ protocol: P2PNetwork.SYNC_PROTOCOL }, 'Sync node started');
         } catch (error) {
@@ -47,6 +47,7 @@ export class SyncHandler {
      * Stops the sync handler.
      */
     async stop() {
+        // Implement any necessary cleanup here if required
         this.logger.info('Sync node stopped');
     }
 
@@ -60,15 +61,26 @@ export class SyncHandler {
         try {
             const req = await lp.read({ maxSize: this.p2pNetworkMaxMessageSize });
             const message = utils.serializer.rawData.fromBinary_v1(req.subarray());
-            if (!message || !message.type) { throw new Error('Invalid message format'); }
+
+            if (!message || typeof message.type !== 'string') {
+                throw new Error('Invalid message format');
+            }
 
             const response = await this.#handleMessage(message);
             await lp.write(utils.serializer.rawData.toBinary_v1(response));
         } catch (err) {
             this.logger.error({ error: err.message }, 'Error handling incoming stream');
-            await lp.write(utils.serializer.rawData.toBinary_v1({ status: 'error', message: err.message }));
+            try {
+                await lp.write(utils.serializer.rawData.toBinary_v1({ status: 'error', message: err.message }));
+            } catch (writeErr) {
+                this.logger.error({ error: writeErr.message }, 'Failed to send error response');
+            }
         } finally {
-            await stream.close();
+            try {
+                await stream.close();
+            } catch (closeErr) {
+                this.logger.error({ error: closeErr.message }, 'Failed to close stream');
+            }
         }
     }
 
@@ -106,7 +118,12 @@ export class SyncHandler {
         this.logger.debug(message, 'Received getBlocks request');
         const { startIndex, endIndex } = message;
 
-        if (typeof startIndex !== 'number' || typeof endIndex !== 'number' || startIndex > endIndex) {
+        if (
+            typeof startIndex !== 'number' ||
+            typeof endIndex !== 'number' ||
+            startIndex > endIndex ||
+            startIndex < 0
+        ) {
             throw new Error('Invalid block range');
         }
 
@@ -122,22 +139,33 @@ export class SyncHandler {
      * @returns {Promise<Array>} An array of blocks.
      */
     async #getBlocks(startIndex, endIndex) {
-        if (this.blockchain.getBlocksByRange) {
+        const maxIndex = Math.min(endIndex, this.blockchain.currentHeight);
+        if (startIndex > maxIndex) {
+            return [];
+        }
+
+        if (typeof this.blockchain.getBlocksByRange === 'function') {
             // Efficient bulk fetch if supported
-            return await this.blockchain.getBlocksByRange(startIndex, endIndex);
+            return await this.blockchain.getBlocksByRange(startIndex, maxIndex);
         } else {
             // Fallback to batch processing
             const blocks = [];
-            for (let i = startIndex; i <= endIndex && i <= this.blockchain.currentHeight; i += BATCH_SIZE) {
-                const batchEnd = Math.min(i + BATCH_SIZE - 1, endIndex, this.blockchain.currentHeight);
+            for (let i = startIndex; i <= maxIndex; i += BATCH_SIZE) {
+                const batchEnd = Math.min(i + BATCH_SIZE - 1, maxIndex);
                 const batchIndices = Array.from({ length: batchEnd - i + 1 }, (_, idx) => i + idx);
+
                 const batchBlocks = await Promise.all(
                     batchIndices.map(async (index) => {
-                        const block = await this.blockchain.getBlockByIndex(index);
-                        if (!block) {
-                            this.logger.warn({ height: index }, 'Block not found');
+                        try {
+                            const block = await this.blockchain.getBlockByIndex(index);
+                            if (!block) {
+                                this.logger.warn({ height: index }, 'Block not found');
+                            }
+                            return block;
+                        } catch (error) {
+                            this.logger.error({ height: index, error: error.message }, 'Error fetching block');
+                            return null;
                         }
-                        return block;
                     })
                 );
                 blocks.push(...batchBlocks.filter(Boolean));
@@ -154,15 +182,23 @@ export class SyncHandler {
      */
     async getMissingBlocks(p2pNetwork, peerMultiaddr, processBlock) {
         try {
-            const peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
-            let currentHeight = this.blockchain.currentHeight;
+            let peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
 
-            if (currentHeight >= peerStatus.currentHeight) {
-                this.logger.debug('No sync needed');
+            if (!peerStatus || peerStatus.status !== 'success') {
+                throw new Error('Failed to get peer status');
+            }
+
+            let currentHeight = this.blockchain.currentHeight + 1;
+
+            if (currentHeight > peerStatus.currentHeight) {
+                this.logger.info('No sync needed, local blockchain is up-to-date');
                 return;
             }
 
-            console.log('Syncing blocks from  at height', peerStatus.currentHeight);
+            this.logger.info(
+                { peerHeight: peerStatus.currentHeight },
+                'Starting block synchronization from peer'
+            );
 
             while (currentHeight <= peerStatus.currentHeight) {
                 const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerStatus.currentHeight);
@@ -178,21 +214,29 @@ export class SyncHandler {
                     break;
                 }
 
-                // Ensure we await the processBlock callback
                 for (const block of blocks) {
-                    await processBlock(block);
+                    try {
+                        await processBlock(block);
+                    } catch (blockError) {
+                        this.logger.error({ error: blockError.message }, 'Error processing block');
+                        // Depending on the criticality, you might want to throw here
+                    }
                 }
 
                 this.logger.info({ count: blocks.length }, 'Synchronized blocks from peer');
                 currentHeight = endIndex + 1;
+
+                // Optionally refresh peer status in case the peer has new blocks
+                peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
+                if (!peerStatus || peerStatus.status !== 'success') {
+                    throw new Error('Failed to refresh peer status during sync');
+                }
             }
         } catch (error) {
             this.logger.error({ error: error.message }, 'Error during sync');
             throw error;
         }
     }
-
-
 
     /**
      * Gets the status of a peer.
@@ -202,7 +246,15 @@ export class SyncHandler {
      */
     async #getPeerStatus(p2pNetwork, peerMultiaddr) {
         const peerStatusMessage = { type: 'getStatus' };
-        return await this.#retryOperation(() => p2pNetwork.sendMessage(peerMultiaddr, peerStatusMessage));
+        const response = await this.#retryOperation(() =>
+            p2pNetwork.sendMessage(peerMultiaddr, peerStatusMessage)
+        );
+
+        if (response.status !== 'success' || typeof response.currentHeight !== 'number') {
+            throw new Error('Invalid peer status response');
+        }
+
+        return response;
     }
 
     /**
@@ -215,8 +267,11 @@ export class SyncHandler {
      */
     async #requestBlocksFromPeer(p2pNetwork, peerMultiaddr, startIndex, endIndex) {
         const message = { type: 'getBlocks', startIndex, endIndex };
-        this.logger.debug({ startIndex, endIndex }, 'Requesting blocks');
-        const response = await this.#retryOperation(() => p2pNetwork.sendMessage(peerMultiaddr, message));
+        this.logger.debug({ startIndex, endIndex }, 'Requesting blocks from peer');
+
+        const response = await this.#retryOperation(() =>
+            p2pNetwork.sendMessage(peerMultiaddr, message)
+        );
 
         if (response.status === 'success' && Array.isArray(response.blocks)) {
             return response.blocks;
@@ -232,13 +287,29 @@ export class SyncHandler {
      * @returns {Promise<any>} The result of the operation.
      */
     async #retryOperation(operation) {
-        for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+        let attempt = 0;
+        let delay = RETRY_DELAY;
+
+        while (attempt < RETRY_ATTEMPTS) {
             try {
-                return await operation();
+                const result = await operation();
+                return result;
             } catch (error) {
-                if (attempt === RETRY_ATTEMPTS) throw error;
-                this.logger.warn({ attempt, error: error.message }, 'Operation failed, retrying');
-                await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY * Math.pow(2, attempt - 1)));
+                attempt++;
+                if (attempt >= RETRY_ATTEMPTS) {
+                    this.logger.error(
+                        { attempt, error: error.message },
+                        'Operation failed after maximum retries'
+                    );
+                    throw error;
+                } else {
+                    this.logger.warn(
+                        { attempt, error: error.message },
+                        `Operation failed, retrying in ${delay}ms`
+                    );
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    delay *= 2; // Exponential backoff
+                }
             }
         }
     }

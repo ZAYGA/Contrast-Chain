@@ -107,12 +107,7 @@ export class Node {
         //this.#controlPeersConnection();
     }
     async stop() {
-        this.taskQueue = null;
-        this.miner = null;
-        await this.p2pNetwork.stop();
-        await this.syncHandler.stop(); // That do nothing lol!
-        if (this.miner) { this.miner.terminate(); }
-        await this.blockchain.close();
+
 
         console.log(`Node ${this.id} (${this.roles.join('_')}) => stopped`);
     }
@@ -136,22 +131,20 @@ export class Node {
         const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
         if (peerInfo.length === 0) { console.warn('No peers found'); return; }
 
-        for (const peer of peerInfo) {
-            const peerId = peer.id;
-            const peerAddresses = peer.addresses;
-            const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
-            if (peerId.toString() === myPeerId) {
-                console.warn(`we are in the list of peers!! skipping ${myPeerId}`);
-                continue;
-            }
+        const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
 
-            if (peerAddresses.length === 0) {
-                console.warn(`No addresses found for peer ${peerId.toString()}`);
-                continue;
-            }
+        for (const peer of peerInfo) {
+            const peerId = peer.id.toString();
+            const peerAddresses = peer.addresses;
+
+            if (peerId === myPeerId) { console.warn(`Skipping own peer ID: ${myPeerId}`); continue; }
+            if (peerAddresses.length === 0) { console.warn(`No addresses found for peer ${peerId}`); continue; }
 
             for (const addr of peerAddresses) {
-                const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId.toString()}`);
+                const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId}`);
+
+                // Check if this address belongs to the current node
+                if (fullAddr.toString().includes(myPeerId)) { console.warn(`Skipping own address: ${fullAddr.toString()}`); continue; }
 
                 try {
                     await this.syncHandler.getMissingBlocks(
@@ -159,36 +152,19 @@ export class Node {
                         fullAddr,
                         async (block) => {
                             try {
-                                await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
+                                await this.digestFinalizedBlock(block, { skipValidation: false, broadcastNewCandidate: false, persistToDisk: true });
                             } catch (error) {
                                 console.error(`Failed to digest block from peer ${fullAddr.toString()}:`, error);
                             }
                         }
                     );
-
-                    break; // If successful, move to next peer
-                } catch (error) {
-                    console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error);
-                }
+                    // Sync successful with this peer, move to the next one
+                    break;
+                } catch (error) { console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error); }
             }
         }
     }
 
-    async #controlPeersConnection() {
-        while (true) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
-
-            const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
-            const isSlefCountedAsPeer = this.p2pNetwork.getConnectedPeers().findIndex(peer => peer === myPeerId) !== -1;
-            let nbOfConnectedPeers = this.p2pNetwork.getConnectedPeers().length;
-            if (isSlefCountedAsPeer) { nbOfConnectedPeers--; }
-            if (nbOfConnectedPeers >= 1) { continue; }
-
-            await this.stop();
-            await this.start();
-            return;
-        }
-    }
     async createBlockCandidateAndBroadcast() {
         try {
             if (!this.roles.includes('validator')) { throw new Error('Only validator can create a block candidate'); }

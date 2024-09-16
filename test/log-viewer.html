@@ -7,209 +7,135 @@
     <title>Log Configuration Tool</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/default.min.css">
     <style>
-        /* Basic Styling */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Courier New', monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
             margin: 0;
             padding: 20px;
-            background-color: #f9f9f9;
-            color: #333;
+            line-height: 1.6;
         }
 
         h1 {
-            color: #444;
+            color: #ffffff;
             text-align: center;
-            margin-bottom: 15px;
-            font-size: 1.8em;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            font-weight: normal;
         }
 
-        /* File Input Section */
-        .file-input {
-            text-align: center;
-            margin-bottom: 15px;
+        .file-input,
+        .controls,
+        #logConfig {
+            background-color: #2d2d2d;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        /* Controls Section */
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
-            margin-bottom: 15px;
+        .file-input input[type="file"] {
+            background-color: #3d3d3d;
+            color: #ffffff;
+            border: 1px solid #4d4d4d;
+            padding: 8px;
+            border-radius: 4px;
         }
 
         .controls input[type="text"],
         .controls select {
-            padding: 5px 8px;
-            font-size: 0.9em;
-            border: 1px solid #ccc;
+            background-color: #3d3d3d;
+            color: #ffffff;
+            border: 1px solid #4d4d4d;
+            padding: 8px;
             border-radius: 4px;
-            min-width: 140px;
-            background-color: #fff;
         }
 
-        /* Categories Styling */
+        .controls input[type="text"]:focus,
+        .controls select:focus {
+            outline: none;
+            border-color: #6d6d6d;
+        }
+
         .category {
-            margin-bottom: 20px;
-            padding: 12px 16px;
-            border-radius: 5px;
-            background-color: #fff;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
-
-        .category-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .category-header input[type="checkbox"] {
-            margin-right: 6px;
-            transform: scale(1.1);
+            background-color: #3d3d3d;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 15px;
         }
 
         .category-header label {
-            font-size: 1em;
-            color: #555;
-            flex-grow: 1;
+            color: #ffffff;
         }
 
-        /* Log Entries Styling */
         .log-entry {
-            display: flex;
-            align-items: center;
-            margin-bottom: 6px;
-            padding: 6px 0;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #4d4d4d;
         }
 
-        .log-entry:last-child {
-            border-bottom: none;
-        }
-
-        .log-entry input[type="checkbox"] {
-            margin-right: 8px;
-            transform: scale(1.1);
-        }
-
-        .log-details {
-            display: flex;
-            align-items: center;
-            flex: 1;
-        }
-
-        .log-type {
-            font-weight: bold;
-            text-transform: uppercase;
-            padding: 2px 6px;
-            border-radius: 3px;
-            display: inline-block;
-            color: #fff;
-            font-size: 0.75em;
-            margin-right: 8px;
-            min-width: 50px;
-            text-align: center;
+        .log-entry:hover {
+            background-color: #4d4d4d;
         }
 
         .log-content {
-            flex: 1;
-            font-size: 0.9em;
-            word-break: break-word;
-            color: #333;
+            color: #ffffff;
         }
 
         .log-location {
-            font-size: 0.75em;
-            color: #777;
-            margin-left: 10px;
+            color: #a0a0a0;
         }
 
-        /* Styling per Log Type */
+        .log-type {
+            color: #000000;
+            font-weight: bold;
+        }
+
         .log-info {
-            background-color: #17a2b8;
+            background-color: #3498db;
         }
 
         .log-warn {
-            background-color: #ffc107;
-            color: #333;
+            background-color: #f39c12;
         }
 
         .log-error {
-            background-color: #dc3545;
+            background-color: #e74c3c;
         }
 
         .log-debug {
-            background-color: #6c757d;
+            background-color: #95a5a6;
         }
 
         .log-trace {
-            background-color: #28a745;
+            background-color: #2ecc71;
         }
 
-        /* Buttons Styling */
         .export-button {
-            display: block;
-            margin: 20px auto 0 auto;
-            padding: 8px 16px;
-            background-color: #28a745;
-            color: #fff;
+            background-color: #3498db;
+            color: #ffffff;
             border: none;
-            border-radius: 18px;
-            font-size: 0.95em;
+            padding: 10px 20px;
+            border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.3s ease;
         }
 
         .export-button:hover {
-            background-color: #218838;
+            background-color: #2980b9;
         }
 
-        /* Responsive Design */
-        @media (max-width: 600px) {
-            .log-entry {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .log-entry input[type="checkbox"] {
-                margin-bottom: 4px;
-                margin-top: 0;
-            }
-
-            .log-details {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .log-type {
-                margin-right: 0;
-                margin-bottom: 4px;
-            }
-
-            .controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .controls input[type="text"],
-            .controls select {
-                width: 100%;
-            }
-
-            .log-location {
-                margin-left: 0;
-                margin-top: 4px;
-            }
-        }
-
-        /* Highlight.js Styling Overrides */
         pre {
-            margin: 0;
-            background-color: #f1f1f1;
-            padding: 6px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 0.85em;
+            background-color: #3d3d3d;
+            border: 1px solid #4d4d4d;
+            color: #ffffff;
+        }
+
+        code {
+            color: #e74c3c;
+        }
+
+        /* Override checkbox styles for better visibility */
+        input[type="checkbox"] {
+            accent-color: #3498db;
         }
     </style>
 </head>
@@ -420,7 +346,7 @@
             if (fullMessage.length <= idLength) {
                 return ''; // No message content
             }
-            return fullMessage.substring(idLength).trim();
+            return fullMessage;
         }
 
         /**
