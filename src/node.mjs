@@ -159,7 +159,7 @@ export class Node {
                         fullAddr,
                         async (block) => {
                             try {
-                                await this.digestFinalizedBlock(block, { skipValidation: true, broadcastNewCandidate: false, persistToDisk: false });
+                                await this.digestFinalizedBlock(block, { skipValidation: false, broadcastNewCandidate: false, persistToDisk: true });
                             } catch (error) {
                                 console.error(`Failed to digest block from peer ${fullAddr.toString()}:`, error);
                             }
