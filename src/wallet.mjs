@@ -131,7 +131,7 @@ export class Wallet {
 
         return new Account(keyPair.pubKeyHex, keyPair.privKeyHex, addressBase58);
     }
-
+    // PUBLIC
     async loadOrCreateAccounts(params) {
         if (params === undefined) {
             console.warn('No params provided, using default dev params to derive accounts');

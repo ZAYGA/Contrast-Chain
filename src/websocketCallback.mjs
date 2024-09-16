@@ -32,12 +32,10 @@ export const WebSocketCallBack = (fnc, triggers, active = true) => {
 export class CallBackManager {
     #CALLBACKS_RELATED_TO_MODE;
 
-    /** @param {Node} node @param {WebSocketServer} wss */
-    constructor(node, wss) {
+    /** @param {Node} node */
+    constructor(node) {
         /** @type {Node} */
         this.node = node;
-        /** @type {WebSocketServer} */
-        this.wss = wss;
         
         this.#CALLBACKS_RELATED_TO_MODE = { // HERE ARE THE GENERIC CALLBACKS - THOSE THAT SPEND EVENT TO ALL CLIENTS
             validatorDashboard: {
@@ -54,15 +52,18 @@ export class CallBackManager {
             },
         }
     }
-    /** @param { string[] | string } modes */
-    initAllCallbacksOfMode(modes = ['dashboard']) {
+    /** 
+     * @param { string[] | string } modes - 'validatorDashboard' | 'minerDashboard' | 'observer'
+     * @param {WebSocket[]} wsClients - clients to send the message (wss.clients for all)
+     */
+    initAllCallbacksOfMode(modes, wsClients) {
         const modesArray = Array.isArray(modes) ? modes : [modes];
         /** @type {Object<string, string[]>} */
         const callBacksRelatedToMode = this.#buildCallBacksFunctionsListToSubscribe(modesArray);
         const targetModules = Object.keys(callBacksRelatedToMode);
         for (const module of targetModules) {
             for (const fncKey of callBacksRelatedToMode[module]) {
-                this.attachWsCallBackToModule(module, fncKey, this.wss.clients); // we attach the callback to all clients
+                this.attachWsCallBackToModule(module, fncKey, wsClients); // we attach the callback to all clients
             };
         }
     }

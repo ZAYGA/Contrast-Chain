@@ -10,6 +10,8 @@ import utils from '../src/utils.mjs';
 
 let ws;
 const WS_SETTINGS = {
+    DOMAIN: 'localhost',
+    PORT: 27269,
     RECONNECT_INTERVAL: 5000,
     GET_NODE_INFO_INTERVAL: 10000,
 }
@@ -18,12 +20,13 @@ let pingInterval;
 let validatorUTXOs = [];
 let minerUTXOs = [];
 function connectWS() {
-    ws = new WebSocket('ws://localhost:3000');
+    ws = new WebSocket(`ws://${WS_SETTINGS.DOMAIN}:${WS_SETTINGS.PORT}`);
   
     ws.onopen = function() {
         console.log('Connection opened');
         if (pingInterval) clearInterval(pingInterval);
         pingInterval = setInterval(() => { ws.send(JSON.stringify({ type: 'get_node_info', data: Date.now() })); }, WS_SETTINGS.GET_NODE_INFO_INTERVAL);
+        ws.send(JSON.stringify({ type: 'get_node_info', data: Date.now() })); // do it once at the beginning
     };
     ws.onclose = function() {
         console.info('Connection closed');
@@ -92,20 +95,22 @@ const eHTML = {
 
 function displayNodeInfo(data) {
     /** @type {StakeReference[]} */
-    const validatorStakesReference = data.validatorStakes;
-    const validatorStaked = validatorStakesReference.reduce((acc, stake) => acc + stake.amount, 0);
+    const validatorStakesReference = data.validatorStakes ? data.validatorStakes : false;
+    const validatorStaked = validatorStakesReference ? validatorStakesReference.reduce((acc, stake) => acc + stake.amount, 0) : 0;
+    const validatorBalance = data.validatorBalance ? data.validatorBalance : 0;
+    const minerBalance = data.minerBalance ? data.minerBalance : 0;
 
     eHTML.roles.textContent = data.roles.join(' - ')
 
-    eHTML.validatorAddress.textContent = data.validatorAddress, // utils.addressUtils.formatAddress(data.validatorAddress, " ");
-    //eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.validatorBalance);
-    eHTML.validatorHeight.textContent = data.currentHeight;
+    eHTML.validatorAddress.textContent = data.validatorAddress ? data.validatorAddress : '', // utils.addressUtils.formatAddress(data.validatorAddress, " ");
+    eHTML.validatorBalance.textContent = utils.convert.number.formatNumberAsCurrency(validatorBalance);
+    eHTML.validatorHeight.textContent = data.currentHeight ? data.currentHeight : 0;
     eHTML.validatorStaked.textContent = utils.convert.number.formatNumberAsCurrency(validatorStaked);
 
-    eHTML.minerAddress.textContent = data.minerAddress;
-    //eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(data.minerBalance);
-    eHTML.minerHeight.textContent = data.highestBlockIndex;
-    eHTML.minerThreads.input.value = data.minerThreads;
+    eHTML.minerAddress.textContent = data.minerAddress ? data.minerAddress : '',
+    eHTML.minerBalance.textContent = utils.convert.number.formatNumberAsCurrency(minerBalance);
+    eHTML.minerHeight.textContent = data.highestBlockIndex ? data.highestBlockIndex : 0;
+    eHTML.minerThreads.input.value = data.minerThreads ? data.minerThreads : 1;
 }
 // not 'change' event because it's triggered by the browser when the input loses focus, not when the value changes
 eHTML.stakeInput.input.addEventListener('input', () => {

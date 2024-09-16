@@ -173,6 +173,7 @@ const addressUtils = {
     /** ==> Second verification, low computation cost.
      *
      * ( ALWAYS use conformity check first )
+     * - (address + pubKeyHex) are concatenated and hashed with SHA-256 -> condition: start with zeros
      * @param {string} addressBase58 - Address to validate
      * @param {string} pubKeyHex - Public key to derive the address from
      */
