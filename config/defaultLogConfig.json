@@ -1,0 +1,72 @@
+{
+  "Finding ": {
+    "active": true,
+    "file": "src\\block-tree.mjs",
+    "line": 195,
+    "type": "debug",
+    "content": "Finding heaviest leaf"
+  },
+  "Initiali": {
+    "active": true,
+    "file": "src\\blockchain.mjs",
+    "line": 74,
+    "type": "info",
+    "content": "Initializing blockchain"
+  },
+  "Loading ": {
+    "active": true,
+    "file": "src\\blockchain.mjs",
+    "line": 84,
+    "type": "info",
+    "content": "Loading blockchain from disk..."
+  },
+  "No block": {
+    "active": true,
+    "file": "src\\blockchain.mjs",
+    "line": 96,
+    "type": "info",
+    "content": "No blocks loaded from disk"
+  },
+  "Failed t": {
+    "active": true,
+    "file": "src\\blockchain.mjs",
+    "line": 281,
+    "type": "error",
+    "content": "Failed to get reorganization path"
+  },
+  "Connecte": {
+    "active": true,
+    "file": "src\\p2p.mjs",
+    "line": 134,
+    "type": "info",
+    "content": "Connected to bootstrap node"
+  },
+  "aaFailed": {
+    "active": true,
+    "file": "src\\p2p.mjs",
+    "line": 136,
+    "type": "error",
+    "content": "aaFailed to connect to bootstrap node"
+  },
+  "Peer con": {
+    "active": true,
+    "file": "src\\p2p.mjs",
+    "line": 152,
+    "type": "debug",
+    "content": "Peer connected"
+  },
+  "Sync nod": {
+    "active": true,
+    "file": "src\\sync.mjs",
+    "line": 51,
+    "type": "info",
+    "content": "Sync node stopped"
+  },
+  "No sync ": {
+    "active": true,
+    "file": "src\\sync.mjs",
+    "line": 194,
+    "type": "info",
+    "content": "No sync needed, local blockchain is up-to-date"
+  }
+}
