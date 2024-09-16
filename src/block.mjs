@@ -198,4 +198,9 @@ export class BlockUtils {
 
         return jsonClone;
     }
+    /** @param {BlockData} blockData */
+    static getBlockHeader(blockData) {
+        const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp, timestamp, hash, nonce } = blockData;
+        return BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, [], posTimestamp, timestamp, hash, nonce);
+    }
 }

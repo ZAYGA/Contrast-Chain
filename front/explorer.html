@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contrast Explorer v1.0</title>
+    <script crossorigin src="https://unpkg.com/@msgpack/msgpack"></script>
+    <script src="./front/explorerScript.mjs" type="module"></script>
+    <style>
+        @font-face {
+            font-family: "IBM Plex Mono";
+            src: url("front/fonts/IBM_Plex_Mono_Woff/IBMPlexMono-Regular.woff") format("woff");
+            font-weight: 400;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: "IBM Plex Mono";
+            src: url("front/fonts/IBM_Plex_Mono_Woff/IBMPlexMono-Medium.woff") format("woff");
+            font-weight: 500;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: "IBM Plex Mono";
+            src: url("front/fonts/IBM_Plex_Mono_Woff/IBMPlexMono-SemiBold.woff") format("woff");
+            font-weight: 600;
+            font-style: normal;
+        }
+        :root {
+            --color1: #161a1e;
+            --color2: #3b3b3b;
+            --color3: #4f4f4f;
+            --color4: #787878;
+        }
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        body {
+            font-family: "IBM Plex Mono", monospace;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            background-color: var(--color1);
+            color: white;
+        }
+        button {
+            font-family: 'IBM Plex Mono';
+            font-weight: 500;
+            background: var(--color2);
+            border-radius: 6px;
+            color: white;
+            padding: 5px;
+        }
+        input {
+            background: var(--color3);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            margin: 0 10px;
+            border: solid 1px #ff000000;
+            font-size: large;
+        }
+        input[type="text"] {
+            text-align: right;
+            width: 194px;
+            padding: 2px 10px;
+            margin: 0;
+        }
+        #contrastChainExplorer {
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 80%;
+            background-color: var(--color2);
+            padding: 0 20px;
+            border-radius: 20px;
+        }
+        .spacedText {
+            display: flex;
+            justify-content: space-between;
+        }
+        .spacedText.textColorLight {
+            color: var(--color4);
+        }
+        .spacedText:not(:last-child) {
+            border-bottom: solid 1px var(--color3);
+        }
+        .heightText {
+            height: fit-content;
+            padding: 10px;
+            border-radius: 10px;
+            background-color: var(--color3);
+        }
+        .incrementalInput {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .incrementalInput input {
+            background: var(--color3);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+            margin: 0 10px;
+            border: solid 1px #ff000000;
+            font-size: large;
+        }
+        .incrementalInput button:first-child {
+            color: white;
+            background: var(--color3);
+            border-radius: 10px 0px 0px 10px;
+            font-size: large;
+            font-weight: 600;
+        }
+        .incrementalInput button:last-child {
+            color: white;
+            background: var(--color3);
+            border-radius: 0px 10px 10px 0px;
+            font-size: large;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="text-align: center;">
+        <h3>Contrast explorer</h3>
+    </div>
+
+    <div id="contrastBlockExplorer">
+        
+    </div>
+
+    <div id="contrastChainExplorer">
+        <div class="container">
+            <div class="spacedText">
+                <h1>Chain overview</h1>
+                <h3 class="heightText">Height: <span id="chainHeight">0</span></h3>
+            </div>
+
+            <div class="spacedText textColorLight">
+                <h3>Max supply:</h3>
+                <h3 id="maxSupply">27,000,000.000000</h3>
+            </div>
+            <div class="spacedText">
+                <h3>Circulating supply:</h3>
+                <h3 id="circulatingSupply">0.000000</h3>
+            </div>
+
+
+            <div class="spacedText textColorLight">
+                <h3>Average blockTime:</h3>
+                <h3 id="targetBlocktime">~120s</h3>
+            </div>
+            <div class="spacedText textColorLight">
+                <h3>Blocks/day:</h3>
+                <h3 id="targetBlockday">720</h3>
+            </div>
+            <div class="spacedText">
+                <h3>Last blockTime:</h3>
+                <h3 id="lastBlocktime">~120s</h3>
+            </div>
+        </div>
+    </div>
+</body>

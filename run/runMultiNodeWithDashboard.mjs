@@ -1,5 +1,5 @@
 'use strict';
-import { DashboardWsApp } from './apps.mjs';
+import { DashboardWsApp, ObserverWsApp } from './apps.mjs';
 
 import contrast from '../src/contrast.mjs';
 import { NodeFactory } from '../src/node-factory.mjs';
@@ -36,4 +36,8 @@ console.log(`Multi node started, account : ${multiNode.account.address}`);
 
 // DASHBOARD APP INITIALIZATION -----------------------------------------
 const dashboardWsApp = new DashboardWsApp(multiNode);
-dashboardWsApp.init('localhost', 27269);
+dashboardWsApp.init(); // local port 27269
+
+// OBSERVER APP INITIALIZATION -----------------------------------------
+const observerWsApp = new ObserverWsApp(multiNode);
+observerWsApp.init(); // network port 27270

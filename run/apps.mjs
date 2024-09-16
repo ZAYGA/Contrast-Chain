@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 
 import { CallBackManager, WebSocketCallBack } from '../src/websocketCallback.mjs';
+import { BlockUtils } from '../src/block.mjs';
 
 /**
 * @typedef {import("../src/account.mjs").Account} Account
@@ -159,7 +160,7 @@ export class ObserverWsApp {
     /** @param {string} domain - default '0.0.0.0' @param {number} port - default 27270*/
     init(domain = '0.0.0.0', port = 27270) {
         this.app.use(express.static(APPS_VARS.__parentDirname));
-        this.app.get('/', (req, res) => { res.sendFile(APPS_VARS.__parentDirname + '/front/nodeDashboard.html'); });
+        this.app.get('/', (req, res) => { res.sendFile(APPS_VARS.__parentDirname + '/front/explorer.html'); });
         const server = this.app.listen(port, () => { console.log(`Server running on http://${domain}:${port}`); });
         this.wss = new WebSocketServer({ server });
 
@@ -175,8 +176,10 @@ export class ObserverWsApp {
         console.log('Client connected');
         ws.on('close', function close() { console.log('Connection closed'); });
         //ws.on('ping', function incoming(data) { console.log('received: %s', data); });
+
+        const lastBlockHeader = BlockUtils.getBlockHeader(this.node.blockchain.lastBlock);
+        ws.send(JSON.stringify({ type: 'last_confirmed_block', data: lastBlockHeader }));
         
-        //ws.onmessage = this.onMessage(event);
         const messageHandler = (message) => { this.#onMessage(message, ws); };
         ws.on('message', messageHandler);
     }

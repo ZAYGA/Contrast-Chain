@@ -285,6 +285,7 @@ export class Node {
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlocksTransactions(blocksData);
 
+        if (this.wsCallbacks.onBlockConfirmed) { this.wsCallbacks.onBlockConfirmed.execute(BlockUtils.getBlockHeader(finalizedBlock)); }
         if (storeAsFiles) this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
         //#region - log
@@ -306,7 +307,7 @@ export class Node {
         if (this.roles.includes('miner')) { this.miner.pushCandidate(this.blockCandidate); }
         try {
             await this.p2pBroadcast('new_block_candidate', this.blockCandidate);
-            if (this.wsCallbacks.onBroadcastNewCandidate) { this.wsCallbacks.onBroadcastNewCandidate.execute(this.blockCandidate); }
+            if (this.wsCallbacks.onBroadcastNewCandidate) { this.wsCallbacks.onBroadcastNewCandidate.execute(BlockUtils.getBlockHeader(this.blockCandidate)); }
         } catch (error) {
             console.error(`Failed to broadcast new block candidate: ${error}`);
         }

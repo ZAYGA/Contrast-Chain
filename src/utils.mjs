@@ -1118,7 +1118,6 @@ const compression = {
         }
     }
 };
-
 const mining = {
     /**
     * @param {BlockMiningData[]} blockMiningData
@@ -1255,6 +1254,7 @@ const devParams = {
 };
 
 const utils = {
+    blockchainSettings: SETTINGS,
     ed25519,
     base58Alphabet,
     isNode,

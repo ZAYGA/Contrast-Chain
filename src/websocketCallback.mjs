@@ -1,5 +1,8 @@
 import { Node } from './node.mjs';
 import { WebSocketServer } from 'ws';
+/**
+* @typedef {import("../src/block.mjs").BlockData} BlockData
+*/
 
 /** @typedef {Object} WebSocketCallBack
  * @property {Function} fnc
@@ -48,7 +51,7 @@ export class CallBackManager {
                 utxoCache: [`onBalanceUpdated:${this.node.miner.address}`],
             },
             observer: {
-                node: ['onBroadcastNewCandidate:all'],
+                node: ['onBroadcastNewCandidate:all',  'onBlockConfirmed:all'],
             },
         }
     }
@@ -141,23 +144,31 @@ function sendToClients(message, wsClients) {
 // developpers can change the "type" of the message to send to the client's websockets
 const CALLBACKS_FUNCTIONS = {
     node: {
-        /** send the finalized block when the local node confirmed it
-         * @param {BlockData} blockCandidate
+        /** send the block candidate when the local node broadcast it
+         * @param {BlockData} blockHeader
          * @param {WebSocket[]} wsClients
-         * @emits msgSent: { type: 'broadcast_new_candidate', data: blockCandidate, trigger }
+         * @emits msgSent: { type: 'broadcast_new_candidate', data: blockHeader, trigger }
          */
-        onBroadcastNewCandidate: (blockCandidate, wsClients = [], trigger = '') => {
-            sendToClients({ type: 'broadcast_new_candidate', data: blockCandidate, trigger }, wsClients);
+        onBroadcastNewCandidate: (blockHeader, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'broadcast_new_candidate', data: blockHeader, trigger }, wsClients);
         },
+        /** send the confirmed block header (without Txs) when the local node validate it
+         * @param {BlockData} blockHeader
+         * @param {WebSocket[]} wsClients
+         * @emits msgSent: { type: 'new_block_confirmed', data: blockHeader, trigger }
+         */
+        onBlockConfirmed: (blockHeader, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'new_block_confirmed', data: blockHeader, trigger }, wsClients);
+        }
     },
     miner: {
         /** send the finalized block when local miner broadcast it
-         * @param {BlockData} finalizedBlock
+         * @param {BlockData} blockHeader
          * @param {WebSocket[]} wsClients
-         * @emits msgSent: { type: 'broadcast_finalized_block', data: finalizedBlock, trigger }
+         * @emits msgSent: { type: 'broadcast_finalized_block', data: blockHeader, trigger }
         */
-        onBroadcastFinalizedBlock: (finalizedBlock, wsClients = [], trigger = '') => {
-            sendToClients({ type: 'broadcast_finalized_block', data: finalizedBlock, trigger }, wsClients);
+        onBroadcastFinalizedBlock: (blockHeader, wsClients = [], trigger = '') => {
+            sendToClients({ type: 'broadcast_finalized_block', data: blockHeader, trigger }, wsClients);
         },
         /** send the local miner hashRate to the clients
          * @param {number} hashRate - hash rate of the miner

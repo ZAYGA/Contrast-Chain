@@ -124,7 +124,7 @@ export class Miner {
         console.info(`[MINER] SENDING: Block finalized (Height: ${finalizedBlock.index}) | Diff = ${finalizedBlock.difficulty} | coinBase = ${utils.convert.number.formatNumberAsCurrency(finalizedBlock.coinBase)}`);
         if (this.roles.includes('validator')) { this.taskQueue.push('digestPowProposal', finalizedBlock); };
         await this.p2pNetwork.broadcast('new_block_finalized', finalizedBlock);
-        if (this.wsCallbacks.onBroadcastFinalizedBlock) { this.wsCallbacks.onBroadcastFinalizedBlock.execute(finalizedBlock); }
+        if (this.wsCallbacks.onBroadcastFinalizedBlock) { this.wsCallbacks.onBroadcastFinalizedBlock.execute(BlockUtils.getBlockHeader(finalizedBlock)); }
     }
     #createMissingWorkers(workersStatus = []) {
         const missingWorkers = this.nbOfWorkers - this.workers.length;
