@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 describe('Logger', function () {
     let logger;
     const testDir = path.join(__dirname, '../src');
-    const configPath = path.join(__dirname, 'test-log-config.json');
+    const configPath = path.join(__dirname, '../config/log-config.json');
 
     before(async function () {
         logger = new Logger();
