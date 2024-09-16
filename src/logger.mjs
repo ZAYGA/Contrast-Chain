@@ -447,6 +447,79 @@ class Logger {
         return { id, content };
     }
 
+    /**
+ * Synchronizes the log configuration with the current log calls in the codebase.
+ * - Loads the existing configuration from the specified file.
+ * - Scans all loggable files to identify current log calls.
+ * - Updates the configuration:
+ *   - Retains existing entries and their active states.
+ *   - Removes entries that no longer exist.
+ *   - Adds new entries with default active state.
+ * @param {string} configFilePath - Path to the existing configuration file.
+ */
+    async syncConfig(configFilePath) {
+        try {
+            // Resolve the config file path relative to project root if not absolute
+            const resolvedConfigPath = path.isAbsolute(configFilePath)
+                ? configFilePath
+                : path.resolve(this.projectRoot, configFilePath);
+
+            // Check if the config file exists
+            if (!existsSync(resolvedConfigPath)) {
+                throw new Error(`Configuration file not found at ${resolvedConfigPath}`);
+            }
+
+            // Read and parse the existing config file
+            const configContent = await fsPromises.readFile(resolvedConfigPath, 'utf-8');
+            let existingConfig;
+            try {
+                existingConfig = JSON.parse(configContent);
+            } catch (parseError) {
+                throw new Error(`Invalid JSON in configuration file: ${parseError.message}`);
+            }
+
+            // Ensure log calls are up-to-date by rescanning files
+            await this.scanFiles();
+
+            const currentLogCalls = this.logCalls;
+            const updatedConfig = {};
+
+            // Retain existing configurations for current log calls
+            currentLogCalls.forEach(log => {
+                if (existingConfig[log.id]) {
+                    // Preserve existing configuration
+                    updatedConfig[log.id] = existingConfig[log.id];
+                } else {
+                    // Add new log call with default configuration
+                    updatedConfig[log.id] = {
+                        active: true,
+                        file: log.file,
+                        line: log.line,
+                        type: log.type,
+                        content: log.content
+                    };
+                }
+            });
+
+            // Identify and remove obsolete log entries (those not in current log calls)
+            const obsoleteLogIds = Object.keys(existingConfig).filter(id => !updatedConfig[id]);
+            if (obsoleteLogIds.length > 0) {
+                console.log(`Removing obsolete log entries: ${obsoleteLogIds.join(', ')}`);
+            }
+
+            // Update the internal log configuration
+            this.logConfig = updatedConfig;
+
+            // Export the updated configuration back to the config file
+            await this.exportLogConfig(resolvedConfigPath);
+
+            console.log('Log configuration synchronized successfully.');
+        } catch (error) {
+            console.error('Failed to synchronize log configuration:', error.message);
+            throw error; // Re-throw the error for the caller to handle if necessary
+        }
+    }
+
     // Convenience methods for different log types
     debug(message, ...args) { this.dolog('debug', message, ...args); }
     info(message, ...args) { this.dolog('info', message, ...args); }
