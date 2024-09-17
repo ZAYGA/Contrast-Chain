@@ -167,16 +167,13 @@ export class Node {
         }
     }
     async syncWithKnownPeers() {
-        const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
-        if (peerInfo.length === 0) { console.warn('No peers found'); return; }
-
         const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
-
+        const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
         const peersToSync = peerInfo.filter(peer => { return peer.id.toString() !== myPeerId && peer.addresses.length > 0; });
         if (peersToSync.length === 0) { console.warn('No peers found'); return; }
 
-        const peerIdByAddress = {};
         const addresses = [];
+        const peerIdByAddress = {};
         for (const peer of peersToSync) {
             for (const addr of peer.addresses) {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peer.id.toString()}`);
@@ -188,21 +185,16 @@ export class Node {
         const processBlock = async (block, peerId) => {
             try {
                 await this.digestFinalizedBlock(block, { skipValidation: false, broadcastNewCandidate: false, persistToDisk: true });
-            } catch (error) {
-                console.error(`Failed to digest block from peer ${peerId}:`, error);
-            }
+            } catch (error) { console.error(`Failed to digest block from peer ${peerId}:`, error); }
         };
 
         const successfulSyncs = {};
         for (const fullAddr of addresses) {
             const peerId = peerIdByAddress[fullAddr.toString()];
             if (successfulSyncs[peerId]) { continue; }
+            
             try {
-                await this.syncHandler.getMissingBlocks(
-                    this.p2pNetwork,
-                    fullAddr,
-                    block => processBlock(block, peerId)
-                );
+                await this.syncHandler.getMissingBlocks(this.p2pNetwork, fullAddr, block => processBlock(block, peerId));
                 successfulSyncs[peerId] = true;
             } catch (error) { console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error); }
         }
