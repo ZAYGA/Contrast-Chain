@@ -129,7 +129,7 @@ export class Node {
         console.warn('P2P network failed to initialize within the expected time');
         return false;
     }
-    async syncWithKnownPeers() {
+    async syncWithKnownPeers_OLD() {
         const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
         if (peerInfo.length === 0) { console.warn('No peers found'); return; }
 
@@ -164,6 +164,47 @@ export class Node {
                     break;
                 } catch (error) { console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error); }
             }
+        }
+    }
+    async syncWithKnownPeers() {
+        const peerInfo = await this.p2pNetwork.p2pNode.peerStore.all();
+        if (peerInfo.length === 0) { console.warn('No peers found'); return; }
+
+        const myPeerId = this.p2pNetwork.p2pNode.peerId.toString();
+
+        const peersToSync = peerInfo.filter(peer => { return peer.id.toString() !== myPeerId && peer.addresses.length > 0; });
+        if (peersToSync.length === 0) { console.warn('No peers found'); return; }
+
+        const peerIdByAddress = {};
+        const addresses = [];
+        for (const peer of peersToSync) {
+            for (const addr of peer.addresses) {
+                const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peer.id.toString()}`);
+                addresses.push(fullAddr);
+                peerIdByAddress[fullAddr.toString()] = peer.id.toString();
+            }
+        }
+
+        const processBlock = async (block, peerId) => {
+            try {
+                await this.digestFinalizedBlock(block, { skipValidation: false, broadcastNewCandidate: false, persistToDisk: true });
+            } catch (error) {
+                console.error(`Failed to digest block from peer ${peerId}:`, error);
+            }
+        };
+
+        const successfulSyncs = {};
+        for (const fullAddr of addresses) {
+            const peerId = peerIdByAddress[fullAddr.toString()];
+            if (successfulSyncs[peerId]) { continue; }
+            try {
+                await this.syncHandler.getMissingBlocks(
+                    this.p2pNetwork,
+                    fullAddr,
+                    block => processBlock(block, peerId)
+                );
+                successfulSyncs[peerId] = true;
+            } catch (error) { console.error(`Failed to sync with peer ${fullAddr.toString()}:`, error); }
         }
     }
 
