@@ -128,47 +128,50 @@ export class SyncHandler {
         }
 
         const blocks = await this.#getBlocks(startIndex, endIndex);
-        this.logger.debug({ startIndex, endIndex, count: blocks.length }, 'Sending blocks in response');
+        this.logger.debug({ count: blocks.length }, 'Sending blocks in response');
         return { status: 'success', blocks };
     }
 
-    /** Gets blocks within a specified range efficiently.
+    /**
+     * Gets blocks within a specified range efficiently.
      * @param {number} startIndex - The starting block index.
      * @param {number} endIndex - The ending block index.
      * @returns {Promise<Array>} An array of blocks.
      */
     async #getBlocks(startIndex, endIndex) {
         const maxIndex = Math.min(endIndex, this.blockchain.currentHeight);
-        if (startIndex > maxIndex) { return []; }
+        if (startIndex > maxIndex) {
+            return [];
+        }
 
         if (typeof this.blockchain.getBlocksByRange === 'function') {
             // Efficient bulk fetch if supported
             return await this.blockchain.getBlocksByRange(startIndex, maxIndex);
-        }
-        
-        // Fallback to batch processing
-        const blocks = [];
-        for (let i = startIndex; i <= maxIndex; i += BATCH_SIZE) {
-            const batchEnd = Math.min(i + BATCH_SIZE - 1, maxIndex);
-            const batchIndices = Array.from({ length: batchEnd - i + 1 }, (_, idx) => i + idx);
+        } else {
+            // Fallback to batch processing
+            const blocks = [];
+            for (let i = startIndex; i <= maxIndex; i += BATCH_SIZE) {
+                const batchEnd = Math.min(i + BATCH_SIZE - 1, maxIndex);
+                const batchIndices = Array.from({ length: batchEnd - i + 1 }, (_, idx) => i + idx);
 
-            const batchBlocks = await Promise.all(
-                batchIndices.map(async (index) => {
-                    try {
-                        const block = await this.blockchain.getBlockByIndex(index);
-                        if (!block) {
-                            this.logger.warn({ height: index }, 'Block not found');
+                const batchBlocks = await Promise.all(
+                    batchIndices.map(async (index) => {
+                        try {
+                            const block = await this.blockchain.getBlockByIndex(index);
+                            if (!block) {
+                                this.logger.warn({ height: index }, 'Block not found');
+                            }
+                            return block;
+                        } catch (error) {
+                            this.logger.error({ height: index, error: error.message }, 'Error fetching block');
+                            return null;
                         }
-                        return block;
-                    } catch (error) {
-                        this.logger.error({ height: index, error: error.message }, 'Error fetching block');
-                        return null;
-                    }
-                })
-            );
-            blocks.push(...batchBlocks.filter(Boolean));
+                    })
+                );
+                blocks.push(...batchBlocks.filter(Boolean));
+            }
+            return blocks;
         }
-        return blocks;
     }
 
     /**
@@ -185,9 +188,9 @@ export class SyncHandler {
                 throw new Error('Failed to get peer status');
             }
 
-            let desiredBlock = this.blockchain.currentHeight + 1;
+            let currentHeight = this.blockchain.currentHeight + 1;
 
-            if (desiredBlock > peerStatus.currentHeight) {
+            if (currentHeight > peerStatus.currentHeight) {
                 this.logger.info('No sync needed, local blockchain is up-to-date');
                 return;
             }
@@ -197,13 +200,12 @@ export class SyncHandler {
                 'Starting block synchronization from peer'
             );
 
-            let lastDesiredBlock = desiredBlock;
-            while (desiredBlock <= peerStatus.currentHeight) {
-                const endIndex = Math.min(desiredBlock + MAX_BLOCKS_PER_REQUEST - 1, peerStatus.currentHeight);
+            while (currentHeight <= peerStatus.currentHeight) {
+                const endIndex = Math.min(currentHeight + MAX_BLOCKS_PER_REQUEST - 1, peerStatus.currentHeight);
                 const blocks = await this.#requestBlocksFromPeer(
                     p2pNetwork,
                     peerMultiaddr,
-                    desiredBlock,
+                    currentHeight,
                     endIndex
                 );
 
@@ -215,8 +217,6 @@ export class SyncHandler {
                 for (const block of blocks) {
                     try {
                         await processBlock(block);
-                        desiredBlock = this.blockchain.currentHeight + 1; // This is a temporary fix to avoid infinite loop
-                        if (lastDesiredBlock === desiredBlock) { throw new Error(`Block synchronization stuck at height ${desiredBlock}`); }
                     } catch (blockError) {
                         this.logger.error({ error: blockError.message }, 'Error processing block');
                         // Depending on the criticality, you might want to throw here
@@ -224,7 +224,7 @@ export class SyncHandler {
                 }
 
                 this.logger.info({ count: blocks.length }, 'Synchronized blocks from peer');
-                //currentHeight = endIndex + 1; // removed to avoid infinite loop
+                currentHeight = endIndex + 1;
 
                 // Optionally refresh peer status in case the peer has new blocks
                 peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
@@ -255,12 +255,14 @@ export class SyncHandler {
         return response;
     }
 
-    /** Requests blocks from a peer.
+    /**
+     * Requests blocks from a peer.
      * @param {P2PNetwork} p2pNetwork - The P2P network instance.
      * @param {string} peerMultiaddr - The multiaddress of the peer.
      * @param {number} startIndex - The starting block index.
      * @param {number} endIndex - The ending block index.
-     * @returns {Promise<Array>} An array of blocks. */
+     * @returns {Promise<Array>} An array of blocks.
+     */
     async #requestBlocksFromPeer(p2pNetwork, peerMultiaddr, startIndex, endIndex) {
         const message = { type: 'getBlocks', startIndex, endIndex };
         this.logger.debug({ startIndex, endIndex }, 'Requesting blocks from peer');

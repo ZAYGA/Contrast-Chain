@@ -146,7 +146,7 @@ export class Node {
                 const fullAddr = addr.multiaddr.encapsulate(`/p2p/${peerId}`);
 
                 // Check if this address belongs to the current node
-                if (fullAddr.toString().includes(myPeerId)) { console.warn(`Skipping own address: ${fullAddr.toString()}`); continue; }
+                if (fullAddr.toString().includes(myPeerId) || fullAddr.toString().includes('127.0.0.1')) { continue; }
 
                 try {
                     await this.syncHandler.getMissingBlocks(
