@@ -27,10 +27,10 @@
             font-style: normal;
         }
         :root {
-            --color1: #161a1e;
-            --color2: #3b3b3b;
-            --color3: #4f4f4f;
-            --color4: #787878;
+            --cbe-color1: #161a1e; /* customizable */
+            --cbe-color2: #3b3b3b; /* customizable */
+            --cbe-color3: #4f4f4f; /* customizable */
+            --cbe-color4: #787878; /* customizable */
         }
         input::-webkit-outer-spin-button,
         input::-webkit-inner-spin-button {
@@ -42,13 +42,13 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            background-color: var(--color1);
+            background-color: var(--cbe-color1);
             color: white;
         }
         button {
             font-family: 'IBM Plex Mono';
             font-weight: 500;
-            background: var(--color2);
+            background: var(--cbe-color2);
             border-radius: 6px;
             color: white;
             padding: 5px;
@@ -68,39 +68,39 @@
             padding: 2px 10px;
             margin: 0;
         }
-        #contrastChainExplorer {
+        #cbe-contrastChainExplorer {
             display: flex;
             justify-content: center;
         }
-        .container {
+        .cbe-container {
             width: 80%;
-            background-color: var(--color2);
+            background-color: var(--cbe-color2);
             padding: 0 20px;
             border-radius: 20px;
         }
-        .spacedText {
+        .cbe-spacedText {
             display: flex;
             justify-content: space-between;
         }
-        .spacedText.textColorLight {
-            color: var(--color4);
+        .cbe-spacedText.cbe-textColorLight {
+            color: var(--cbe-color4);
         }
-        .spacedText:not(:last-child) {
-            border-bottom: solid 1px var(--color3);
+        .cbe-spacedText:not(:last-child) {
+            border-bottom: solid 1px var(--cbe-color3);
         }
-        .heightText {
+        .cbe-heightText {
             height: fit-content;
             padding: 10px;
             border-radius: 10px;
-            background-color: var(--color3);
+            background-color: var(--cbe-color3);
         }
-        .incrementalInput {
+        .cbe-incrementalInput {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        .incrementalInput input {
-            background: var(--color3);
+        .cbe-incrementalInput input {
+            background: var(--cbe-color3);
             color: white;
             border-radius: 10px;
             text-align: center;
@@ -108,60 +108,159 @@
             border: solid 1px #ff000000;
             font-size: large;
         }
-        .incrementalInput button:first-child {
+        .cbe-incrementalInput button:first-child {
             color: white;
-            background: var(--color3);
+            background: var(--cbe-color3);
             border-radius: 10px 0px 0px 10px;
             font-size: large;
             font-weight: 600;
         }
-        .incrementalInput button:last-child {
+        .cbe-incrementalInput button:last-child {
             color: white;
-            background: var(--color3);
+            background: var(--cbe-color3);
             border-radius: 0px 10px 10px 0px;
             font-size: large;
             font-weight: 600;
         }
     </style>
+    <style> /* THE WIDGET CSS */
+        :root {
+            --inner-height: 140px;   /* customizable */
+            --wrap-border-radius: 20px; /* customizable */
+        }
+        #cbe-contrastBlockExplorer {
+            position: relative; /* customizable */
+            margin: 10%; /* customizable */
+            left: 40%; /* customizable */
+            border-radius: var(--wrap-border-radius);
+            transform: translateX(-50%); /* customizable */
+            height: var(--inner-height);
+            padding: 10px;
+            background-color: var(--cbe-color2); /* customizable */
+            box-shadow: rgba(20, 16, 23, 0.14) 11px 43px 106px -11px inset, rgba(0, 0, 0, 0.16) -13px -8px 40px 16px inset;
+        }
+        #cbe-blockExplorerWrapUpperBackground {
+            pointer-events: none;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: var(--wrap-border-radius);
+            background: radial-gradient(ellipse farthest-side at 45% 52%, rgba(255, 255, 255, 0) 80%, rgb(255 255 255 / 12%) 120%),
+            linear-gradient(90deg, rgba(0, 0, 0, 0) 90%, var(--cbe-color2) 100%),
+            radial-gradient(ellipse closest-side at 46% 47%, rgba(255, 255, 255, 0) 80%, rgb(255 255 255 / 0%) 148%);
+            z-index: 1;
+        }
+        #cbe-blockExplorerWrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            height: 100%;
+        }
+        #cbe-C-magnet-img {
+            height: 100%;
+            filter: contrast(0.45) blur(.2px) drop-shadow(2px 4px 6px rgba(0,0,0,.1)) brightness(1.2)
+        }
+        #cbe-chainWrap {
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+        .cbe-blockWrap {
+            position: relative;
+            height: var(--inner-height);
+            width: var(--inner-height);
+        }
+        .cbe-blockSquare {
+            position: relative;
+            height: 80%;
+            width: 80%;
+            margin: 10% 0 0 20%;
+            background-color: var(--cbe-color2); /* customizable */
+            box-shadow: rgba(200, 200, 200, .01) -14px -3px 8px -2px,
+             rgba(127, 127, 127, .06) 7px -5px 12px 8px,
+              rgba(255, 255, 255, 1) 1px -1px 4px -2px,
+             rgba(245, 245, 255, .4) 0px 0px 4px -2px;
+        }
+        .cbe-blockSquare:hover {
+            cursor: pointer;
+            transform: scale(1.04);
+            background-color: var(--cbe-color3); /* customizable */
+        }
+        .cbe-blockIndex {
+            position: absolute;
+            top: 5%;
+            right: 10%;
+            opacity: 0.8;
+        }
+        .cbe-weight {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 100%;
+            text-align: center;
+            transform: translate(-50%, -50%);
+            opacity: 0.6;
+            font-size: 90%;
+        }
+        .cbe-timeAgo {
+            position: absolute;
+            bottom: 20%;
+            font-size: 56%;
+            width: 100%;
+            text-align: center;
+            opacity: 0.8;
+        }
+        .cbe-nbTx {
+            position: absolute;
+            bottom: 7%;
+            font-size: 50%;
+            width: 100%;
+            text-align: center;
+            opacity: 0.6;
+        }
+    </style>
 </head>
 
 <body>
-    <div style="text-align: center;">
+    <!--<div style="text-align: center;">
         <h3>Contrast explorer</h3>
-    </div>
+    </div>-->
 
-    <div id="contrastBlockExplorer">
+    <div id="cbe-contrastBlockExplorer">
         
     </div>
 
-    <div id="contrastChainExplorer">
-        <div class="container">
-            <div class="spacedText">
+    <div id="cbe-contrastChainExplorer">
+        <div class="cbe-container">
+            <div class="cbe-spacedText">
                 <h1>Chain overview</h1>
-                <h3 class="heightText">Height: <span id="chainHeight">0</span></h3>
+                <h3 class="cbe-heightText">Height: <span id="cbe-chainHeight">0</span></h3>
             </div>
 
-            <div class="spacedText textColorLight">
+            <div class="cbe-spacedText cbe-textColorLight">
                 <h3>Max supply:</h3>
-                <h3 id="maxSupply">27,000,000.000000</h3>
+                <h3 id="cbe-maxSupply">27,000,000.000000</h3>
             </div>
-            <div class="spacedText">
+            <div class="cbe-spacedText">
                 <h3>Circulating supply:</h3>
-                <h3 id="circulatingSupply">0.000000</h3>
+                <h3 id="cbe-circulatingSupply">0.000000</h3>
             </div>
 
 
-            <div class="spacedText textColorLight">
+            <div class="cbe-spacedText cbe-textColorLight">
                 <h3>Average blockTime:</h3>
                 <h3 id="targetBlocktime">~120s</h3>
             </div>
-            <div class="spacedText textColorLight">
+            <div class="cbe-spacedText cbe-textColorLight">
                 <h3>Blocks/day:</h3>
-                <h3 id="targetBlockday">720</h3>
+                <h3 id="cbe-targetBlockday">720</h3>
             </div>
-            <div class="spacedText">
+            <div class="cbe-spacedText">
                 <h3>Last blockTime:</h3>
-                <h3 id="lastBlocktime">~120s</h3>
+                <h3 id="cbe-lastBlocktime">~120s</h3>
             </div>
         </div>
     </div>

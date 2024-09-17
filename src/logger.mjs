@@ -19,6 +19,7 @@ class Logger {
      * @param {string} [options.compress] - Compression method for rotated files (e.g., 'gzip').
      */
     constructor(idLength = 8, options = {}) {
+        this.lastLogId = 0;
         this.logCalls = [];
         this.logConfig = {};
         this.idLength = idLength;
@@ -48,7 +49,10 @@ class Logger {
         this.initializeLogStream();
 
         // Start scanning files for log calls
-        this.scanFiles().catch(error => {
+        this.scanFilesAndSetMissingLogIDs().catch(error => {
+            console.error('Failed to scan files during Logger initialization:', error);
+        });
+        this.scanFiles().catch(error => { //TODO: ACTIVATE AFTER TESTING
             console.error('Failed to scan files during Logger initialization:', error);
         });
 
@@ -188,6 +192,29 @@ class Logger {
         this.closeLogStream();
     }
 
+    async scanFilesAndSetMissingLogIDs(directory = this.projectRoot) {
+        try {
+            // synchroneously read the files in the project root
+            //const entries = fs.readdirSync(directory, { withFileTypes: true });
+            const entries = fs.readdirSync(directory, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(directory, entry.name);
+                if (entry.isDirectory()) {
+                    // Skip node_modules and hidden directories for efficiency
+                    if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+                        continue;
+                    }
+                    await this.scanFilesAndSetMissingLogIDs(fullPath); // Recursive scan
+                } else if (entry.isFile() && this.isLoggableFile(entry.name)) {
+                    const content = fs.readFileSync(fullPath, 'utf-8');
+                    const relativePath = path.relative(this.projectRoot, fullPath);
+                    this.extractLogCalls(content, relativePath);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to scan files during Logger initialization:', error);
+        }
+    }
     /**
      * Recursively scans files in the given directory for log calls
      * @param {string} directory - The directory to scan
@@ -196,6 +223,7 @@ class Logger {
         try {
             const entries = await fsPromises.readdir(directory, { withFileTypes: true });
             for (const entry of entries) {
+                //if (entry.name !== 'p2p') { continue; } // TODO: REMOVE AFTER TESTING
                 const fullPath = path.join(directory, entry.name);
                 if (entry.isDirectory()) {
                     // Skip node_modules and hidden directories for efficiency
@@ -235,12 +263,13 @@ class Logger {
         const lines = content.split('\n');
         // Regex to match logger method calls with different quote types
         const logPattern = /this\.logger\.(log|info|warn|error|debug|trace)\(\s*[`'"]([\s\S]{8})([\s\S]*?)['"`]\s*\)/g;
-
+        if (!fileName.includes('p2p.mjs')) { return; } // TODO: REMOVE AFTER TESTING
         lines.forEach((line, index) => {
             let match;
             while ((match = logPattern.exec(line)) !== null) {
                 const type = match[1];
                 const id = match[2];
+                const newId = id.trim(); "&-"
                 const messageContent = match[3]; // Preserved without trimming
                 const fullMessage = id + messageContent; // Combine ID and message
 
@@ -528,6 +557,10 @@ class Logger {
     trace(message, ...args) { this.dolog('trace', message, ...args); }
     log(message, ...args) { this.dolog('log', message, ...args); }
 }
+
+// TODO: REMOVE AFTER TESTING
+const newLogger = new Logger();
+newLogger.scanFiles();
 
 export default Logger;
 export { Logger };

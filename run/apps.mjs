@@ -172,13 +172,17 @@ export class ObserverWsApp {
     #initWebSocket() {
         this.wss.on('connection', this.#onConnection.bind(this));
     }
-    #onConnection(ws) {
+    async #onConnection(ws) {
         console.log('Client connected');
         ws.on('close', function close() { console.log('Connection closed'); });
         //ws.on('ping', function incoming(data) { console.log('received: %s', data); });
 
-        const lastBlockHeader = BlockUtils.getBlockHeader(this.node.blockchain.lastBlock);
-        ws.send(JSON.stringify({ type: 'last_confirmed_block', data: lastBlockHeader }));
+        //const lastBlockHeader = this.node.blockchain.lastBlock ? BlockUtils.getBlockHeader(this.node.blockchain.lastBlock) : null;
+        //if (lastBlockHeader) { ws.send(JSON.stringify({ type: 'last_confirmed_block', data: lastBlockHeader })); }
+        const toHeight = this.node.blockchain.currentHeight - 1 < 0 ? 0 : this.node.blockchain.currentHeight - 1;
+        const startHeight = toHeight - 3 < 0 ? 0 : toHeight - 3;
+        const last5BlocksInfo = this.node.blockchain.lastBlock ? await this.node.getBlocksInfo(startHeight, toHeight) : [];
+        ws.send(JSON.stringify({ type: 'last_confirmed_blocks', data: last5BlocksInfo }));
         
         const messageHandler = (message) => { this.#onMessage(message, ws); };
         ws.on('message', messageHandler);

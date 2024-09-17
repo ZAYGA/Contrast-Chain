@@ -3,6 +3,73 @@ import { HashFunctions } from './conCrypto.mjs';
 import { Transaction_Builder } from './transaction.mjs';
 import { TxValidation } from './validation.mjs';
 
+
+
+/**
+ * @typedef {Object} BlockHeader
+ * @property {number} index - The block height
+ * @property {number} supply - The total supply before the coinbase reward
+ * @property {number} coinBase - The coinbase reward
+ * @property {number} difficulty - The difficulty of the block
+ * @property {number} legitimacy - The legitimacy of the validator who created the block candidate
+ * @property {string} prevHash - The hash of the previous block
+ * @property {number} posTimestamp - The timestamp of the block creation
+ * @property {number | undefined} timestamp - The timestamp of the block
+ * @property {string | undefined} hash - The hash of the block
+ * @property {number | undefined} nonce - The nonce of the block
+ */
+/**
+ * @param {number} index - The block height
+ * @param {number} supply - The total supply before the coinbase reward
+ * @param {number} coinBase - The coinbase reward
+ * @param {number} difficulty - The difficulty of the block
+ * @param {number} legitimacy - The legitimacy of the validator who created the block candidate
+ * @param {string} prevHash - The hash of the previous block
+ * @param {number} posTimestamp - The timestamp of the block creation
+ * @param {number | undefined} timestamp - The timestamp of the block
+ * @param {string | undefined} hash - The hash of the block
+ * @param {number | undefined} nonce - The nonce of the block
+ * @returns {BlockHeader}
+ */
+export const BlockHeader = (index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp, timestamp, hash, nonce) => {
+    return {
+        index,
+        supply,
+        coinBase,
+        difficulty,
+        legitimacy,
+        prevHash,
+        posTimestamp,
+        timestamp,
+        hash,
+        nonce,
+    };
+};
+
+/**
+ * @typedef {Object} BlockInfo
+ * @property {BlockHeader} header
+ * @property {number} totalFees
+ * @property {number} lowerFeePerByte
+ * @property {number} blockBytes
+ * @property {number} nbOfTxs
+ */
+/**
+ * @param {BlockHeader} header
+ * @param {number} totalFees
+ * @param {number} lowerFeePerByte
+ * @param {number} blockBytes
+ * @param {number} nbOfTxs
+ * @returns {BlockInfo}
+ */
+export const BlockInfo = (header, totalFees, lowerFeePerByte, blockBytes, nbOfTxs) => {
+    header,
+    totalFees, 
+    lowerFeePerByte, 
+    blockBytes, 
+    nbOfTxs 
+};
+
 /**
 * @typedef {Object} BlockMiningData
 * @property {number} index - The block height
@@ -202,5 +269,23 @@ export class BlockUtils {
     static getBlockHeader(blockData) {
         const { index, supply, coinBase, difficulty, legitimacy, prevHash, posTimestamp, timestamp, hash, nonce } = blockData;
         return BlockData(index, supply, coinBase, difficulty, legitimacy, prevHash, [], posTimestamp, timestamp, hash, nonce);
+    }
+    /** 
+     * @param {Object<string, UTXO>} utxosByAnchor
+     * @param {BlockData} blockData
+     * @returns {BlockInfo}
+     */
+    static getFinalizedBlockInfo(utxosByAnchor, blockData) {
+        const header = this.getBlockHeader(blockData);
+        const totalFees = this.calculateTxsTotalFees(utxosByAnchor, blockData.Txs);
+
+        const lastTx = blockData.Txs[blockData.Txs.length - 1];
+        const lastTxWieght = Transaction_Builder.getTxWeight(lastTx);
+        const ignoreFee = Transaction_Builder.isMinerOrValidatorTx(lastTx);
+        const lowerFeePerByte = ignoreFee ? 0 : (TxValidation.calculateRemainingAmount(utxosByAnchor, lastTx) / lastTxWieght).toFixed(6);
+
+        const blockBytes = utils.serializer.block_finalized.toBinary_v2(blockData).length; // in bytes
+        const nbOfTxs = blockData.Txs.length;
+        return { header, totalFees, lowerFeePerByte, blockBytes, nbOfTxs };
     }
 }

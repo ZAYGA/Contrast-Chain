@@ -75,6 +75,11 @@ class P2PNetwork extends EventEmitter {
             this.p2pNode = await this.#createLibp2pNode();
             await this.p2pNode.start();
 
+            this.logger.debug('this is a test log 1');
+            this.logger.debug('this is a test log 2');
+            this.logger.debug('this is a test log 3');
+            this.logger.debug('this is a test log 4');
+            this.logger.debug('this is a test log 5');
             this.logger.debug({ component: 'P2PNetwork', peerId: this.p2pNode.peerId.toString() },);
 
             this.#setupEventListeners();

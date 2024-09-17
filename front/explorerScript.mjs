@@ -4,6 +4,8 @@ import { StakeReference } from '../src/vss.mjs';
 import utils from '../src/utils.mjs';
 import { BlockData } from '../src/block.mjs';
 /**
+* @typedef {import("../src/block.mjs").BlockHeader} BlockHeader
+* @typedef {import("../src/block.mjs").BlockInfo} BlockInfo
 * @typedef {import("../src/block.mjs").BlockData} BlockData
 * @typedef {import("./transaction.mjs").Transaction} Transaction
 */
@@ -42,15 +44,19 @@ function connectWS() {
                 console.log('node_info', data);
                 //displayNodeInfo(data);
                 break;
-            case 'last_confirmed_block':
-                displayLastConfirmedBlock(data);
+            case 'last_confirmed_blocks':
+                console.log('last_confirmed_block', data[data.length - 1]);
+                displayLastConfirmedBlock(data[data.length - 1].header);
+                for (const blockInfo of data) {
+                    blockExplorerWidget.fillBlockInfo(blockInfo);
+                }
                 break;
             case 'broadcast_new_candidate':
                 console.log('broadcast_new_candidate', data);
                 break;
             case 'new_block_confirmed':
                 console.log('new_block_confirmed', data);
-                displayLastConfirmedBlock(data);
+                displayLastConfirmedBlock(data.header);
                 break;
             case 'hash_rate_updated':
                 if (isNaN(data)) { console.error(`hash_rate_updated: ${data} is not a number`); return; }
@@ -68,87 +74,144 @@ function connectWS() {
 connectWS();
 
 const eHTML = {
-    contrastBlockExplorer: document.getElementById('contrastBlockExplorer'),
-    contrastExplorer: document.getElementById('contrastExplorer'),
-    chainHeight: document.getElementById('chainHeight'),
-    circulatingSupply: document.getElementById('circulatingSupply'),
-    lastBlocktime: document.getElementById('lastBlocktime'),
+    contrastBlockExplorer: document.getElementById('cbe-contrastBlockExplorer'),
+    contrastExplorer: document.getElementById('cbe-contrastExplorer'),
+    chainHeight: document.getElementById('cbe-chainHeight'),
+    circulatingSupply: document.getElementById('cbe-circulatingSupply'),
+    lastBlocktime: document.getElementById('cbe-lastBlocktime'),
+}
+const cbeHTML = {
+    chainWrap: () => { return document.getElementById('cbe-chainWrap') },
 }
 //#region HTML ONE-SHOT FILLING -------------------------------------------
-if (SETTINGS.ROLES.includes('chainExplorer')) {
-    document.getElementById('maxSupply').textContent = utils.convert.number.formatNumberAsCurrency(utils.blockchainSettings.maxSupply)
-    document.getElementById('targetBlocktime').textContent = `${utils.blockchainSettings.targetBlockTime / 1000}s`;
-    document.getElementById('targetBlockday').textContent = `${(24 * 60 * 60) / (utils.blockchainSettings.targetBlockTime / 1000)}`;
+if (SETTINGS.ROLES.includes('cbe-chainExplorer')) {
+    document.getElementById('cbe-maxSupply').textContent = utils.convert.number.formatNumberAsCurrency(utils.blockchainSettings.maxSupply)
+    document.getElementById('cbe-targetBlocktime').textContent = `${utils.blockchainSettings.targetBlockTime / 1000}s`;
+    document.getElementById('cbe-targetBlockday').textContent = `${(24 * 60 * 60) / (utils.blockchainSettings.targetBlockTime / 1000)}`;
 }
-if (SETTINGS.ROLES.includes('blockExplorer')) {
+if (SETTINGS.ROLES.includes('cbe-blockExplorer')) {
     const blockExplorerContent = BlockExplorerWidget.createBlockExplorerContent();
-    document.getElementById('contrastBlockExplorer').appendChild(blockExplorerContent);
+    document.getElementById('cbe-contrastBlockExplorer').appendChild(blockExplorerContent);
 }
 //#endregion --------------------------------------------------------------
 
 class BlockExplorerWidget {
-    constructor() {
-        this.ep = 'cbe-'; // HTML class/id prefix - to avoid conflicts
-    }
+    constructor(divToInjectId = 'cbe-contrastBlockExplorer') {
+        this.containerDiv = document.getElementById(divToInjectId);
 
-    static createBlockExplorerContent() {
+        /** @type {BlockChainElementsManager} */
+        this.bcElmtsManager = new BlockChainElementsManager();
+        this.initBlockExplorerContent(this.containerDiv);
+
+        /** @type {BlockData[]} */
+        this.blocksData = [];
+    }
+    /** @param {HTMLElement} element */
+    initBlockExplorerContent(element) {
+        const upperBackground = createHtmlElement('div', 'cbe-blockExplorerWrapUpperBackground', []);
+        element.appendChild(upperBackground);
+
         // create wrap
-        const wrap = document.createElement('div');
-        wrap.classList.add('blockExplorerWrap');
+        const wrap = createHtmlElement('div', 'cbe-blockExplorerWrap');
+        element.appendChild(wrap);
 
         // C magnet img on left side
-        const img = document.createElement('img');
-        img.src = 'img/C_magnet.png';
+        const img = createHtmlElement('img', 'cbe-C-magnet-img');
+        img.src = 'front/img/C_magnet.png';
         img.alt = 'C magnet';
         wrap.appendChild(img);
 
         // create block chain wrap
-        const chainWrap = document.createElement('div');
-        chainWrap.classList.add('chainWrap');
+        const chainWrap = createHtmlElement('div', 'cbe-chainWrap');
         wrap.appendChild(chainWrap);
 
-        // fill chainWrap with blocks
-
-        return wrap;
+        // fill chainWrap with empty blocks
+        this.bcElmtsManager.createChainOfEmptyBlocksUntilFillTheDiv(chainWrap);
     }
-    static createChainOfBlocks(nbBlocks = 10) {
-        const chain = document.createElement('div');
-        chain.classList.add('chain');
-        for (let i = 0; i < nbBlocks; i++) {
-            const block = this.createBlockElement();
-            chain.appendChild(block);
-        }
-        return chain;
-    }
-    static createBlockElement() {
-        // create wrap
-        const wrap = document.createElement('div');
-        wrap.classList.add(`${this.ep}blockWrap`);
-
-        // fill header with block data
-        const blockIndex = document.createElement('div');
-        blockIndex.classList.add(`${this.ep}blockIndex`);
-        blockIndex.textContent = '#...';
-        header.appendChild(blockIndex);
-
-        // weight
-        const weight = document.createElement('span');
-        weight.classList.add('weight');
-        weight.textContent = 'weight: ...';
-
-        return wrap;
+    fillBlockInfo(blockInfo) {
+        this.blocksData.push(blockInfo);
+        const index = this.blocksData.length - 1;
+        this.bcElmtsManager.fillBlockElement(blockInfo, index);
     }
 }
 class BlockChainElementsManager {
     constructor() {
-        this.blocks = [];
+        this.blocksElements = [];
     }
+    /** @param {HTMLElement} chainWrap @param {number} nbBlocks */
+    createChainOfEmptyBlocksUntilFillTheDiv(chainWrap, nbBlocks = 10) {
+        const parentRect = chainWrap.parentElement.getBoundingClientRect();
+        for (let i = 0; i < nbBlocks; i++) {
+            const block = BlockChainElementsManager.createEmptyBlockElement();
+            this.blocksElements.push(block);
+            chainWrap.appendChild(block);
 
-    addBlock(blockData) {
+            const blockRect = block.getBoundingClientRect();
+            if (blockRect.left > parentRect.right) { break; }
+        }
+    }
+    static createEmptyBlockElement() {
+        // create wrap
+        const wrap = createHtmlElement('div', undefined, ['cbe-blockWrap']);
+        const blockSquare = createHtmlElement('div', undefined, ['cbe-blockSquare']);
+
+        // fill header with block data
+        const blockIndex = createHtmlElement('div', undefined, ['cbe-blockIndex']);
+        blockIndex.textContent = '#...';
+        blockSquare.appendChild(blockIndex);
+
+        // weight
+        const weight = createHtmlElement('div', undefined, ['cbe-weight']);
+        weight.textContent = '... Ko';
+        blockSquare.appendChild(weight);
+
+        // time ago
+        const timeAgo = createHtmlElement('div', undefined, ['cbe-timeAgo']);
+        timeAgo.textContent = `~... min ago`;
+        blockSquare.appendChild(timeAgo);
+
+        // nb of tx
+        const nbTx = createHtmlElement('div', undefined, ['cbe-nbTx']);
+        nbTx.textContent = '... transactions';
+        blockSquare.appendChild(nbTx);
+
+        wrap.appendChild(blockSquare);
+        return wrap;
+    }
+    /** @param {BlockInfo} blockInfo */
+    fillBlockElement(blockInfo, elmntIndex = null) {
+        console.log('elmntIndex', elmntIndex);
+        const blockElement = elmntIndex === null ? this.getCorrespondingBlockElement(blockInfo.header.index) : this.blocksElements[elmntIndex];
+        if (!blockElement || blockElement === -1) { console.error(`Block not found: ${elmntIndex === null ? blockInfo.header.index : elmntIndex}`); return; }
+
+        const blockSquare = blockElement.querySelector('.cbe-blockSquare');
+        const blockIndex = blockSquare.querySelector('.cbe-blockIndex');
+        blockIndex.textContent = `#${blockInfo.header.index}`;
+
+        const weight = blockSquare.querySelector('.cbe-weight');
+        weight.textContent = `${(blockInfo.blockBytes / 1024).toFixed(2)} Ko`;
+
+        const timeAgo = blockSquare.querySelector('.cbe-timeAgo');
+        timeAgo.textContent = getTimeSinceBlockConfirmedString(blockInfo.header.timestamp);
+
+        const nbTx = blockSquare.querySelector('.cbe-nbTx');
+        nbTx.textContent = `${blockInfo.nbOfTxs} transactions`;
+    }
+    getCorrespondingBlockElement(blockHeight) {
+        return this.blocksElements.find(block => block.index === blockHeight);
     }
 }
 
+const blockExplorerWidget = new BlockExplorerWidget();
+
 //#region FUNCTIONS -------------------------------------------------------
+function getTimeSinceBlockConfirmedString(timestamp) {
+    const minuteSince = Math.floor((Date.now() - timestamp) / 60000);
+    if (minuteSince >= 1) { return `~${minuteSince} min ago`; }
+
+    const secondsSince = Math.floor((Date.now() - timestamp) / 1000);
+    return `~${secondsSince} s ago`;
+}
 /** @param {BlockData} blockHeader */
 function displayLastConfirmedBlock(blockHeader) {
     // 1. contrastChainExplorer
@@ -160,8 +223,14 @@ function displayLastConfirmedBlock(blockHeader) {
 
     // 2. contrastBlockExplorer
     if (SETTINGS.ROLES.includes('blockExplorer')) {
-        eHTML.contrastBlockExplorer.innerHTML = '';
-        eHTML.contrastBlockExplorer.appendChild(createBlockExplorerElement(blockHeader));
+        
+        
     }
+}
+function createHtmlElement(tag, id, classes = []) {
+    const element = document.createElement(tag);
+    if (id) { element.id = id; }
+    classes.forEach(cl => element.classList.add(cl));
+    return element;
 }
 //#endregion --------------------------------------------------------------

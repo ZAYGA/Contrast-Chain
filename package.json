@@ -32,6 +32,7 @@
     "path": "^0.12.7",
     "pino": "^9.3.2",
     "pino-pretty": "^11.2.2",
+    "rotating-file-stream": "^3.2.4",
     "sinon": "^18.0.0",
     "ws": "^8.18.0"
   }

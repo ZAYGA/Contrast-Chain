@@ -15,6 +15,8 @@ import { SyncHandler } from './sync.mjs';
 * @typedef {import("./account.mjs").Account} Account
 * @typedef {import("./transaction.mjs").Transaction} Transaction
 * @typedef {import("./websocketCallback.mjs").WebSocketCallBack} WebSocketCallBack
+* @typedef {import("./block.mjs").BlockHeader} BlockHeader
+* @typedef {import("./block.mjs").BlockInfo} BlockInfo
 */
 
 export class Node {
@@ -97,11 +99,11 @@ export class Node {
             //await this.syncWithKnownPeers(); // validators start the sync process with known peers
             this.taskQueue.push('createBlockCandidateAndBroadcast', null, true);
             this.taskQueue.push('syncWithKnownPeers', null, true); // will be placed first in the queue
-            setTimeout(async () => { // will handle event after the sync
-                await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
-                console.log('Subscribed to topics');
-            }, 1000);
         }
+        setTimeout(async () => { // will handle event after the sync
+            await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
+            console.log('Subscribed to topics');
+        }, this.roles.includes('validator') ? 1000 : 0);
 
         // control the peers connection to avoid being a lone peer
         //this.#controlPeersConnection();
@@ -261,7 +263,10 @@ export class Node {
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlocksTransactions(blocksData);
 
-        if (this.wsCallbacks.onBlockConfirmed) { this.wsCallbacks.onBlockConfirmed.execute(BlockUtils.getBlockHeader(finalizedBlock)); }
+        if (!skipValidation && this.wsCallbacks.onBlockConfirmed) {
+            const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, finalizedBlock);
+            this.wsCallbacks.onBlockConfirmed.execute(blockInfo); 
+        }
         if (storeAsFiles) this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
         //#region - log
@@ -399,6 +404,26 @@ export class Node {
         } catch (error) {
             console.error(error);
             return { broadcasted: false, pushedInLocalMempool: false, error: error.message };
+        }
+    }
+    async getBlocksInfo(fromHeight = 0, toHeight = 10) {
+        try {
+            if (fromHeight > toHeight) { throw new Error(`Invalid range: ${fromHeight} > ${toHeight}`); }
+            if (toHeight - fromHeight > 10) { throw new Error('Cannot retrieve more than 10 blocks at once'); }
+    
+            /** @type {BlockInfo[]} */
+            const blocksInfo = [];
+            for (let i = fromHeight; i < toHeight; i++) {
+                const block = await this.blockchain.getBlockByIndex(i);
+                if (!block) { throw new Error(`Block not found at height: ${i}`); }
+                const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, block);
+                blocksInfo.push(blockInfo);
+            }
+    
+            return blocksInfo;
+        } catch (error) {
+            console.error(error);
+            return [];
         }
     }
 }
