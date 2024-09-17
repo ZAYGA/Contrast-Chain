@@ -228,9 +228,7 @@ export class SyncHandler {
 
                 // Optionally refresh peer status in case the peer has new blocks
                 peerStatus = await this.#getPeerStatus(p2pNetwork, peerMultiaddr);
-                if (!peerStatus || peerStatus.status !== 'success') {
-                    throw new Error('Failed to refresh peer status during sync');
-                }
+                if (!peerStatus || peerStatus.status !== 'success') { throw new Error('Failed to refresh peer status during sync'); }
             }
         } catch (error) {
             this.logger.error({ error: error.message }, 'Error during sync');

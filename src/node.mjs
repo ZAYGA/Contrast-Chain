@@ -192,7 +192,7 @@ export class Node {
         for (const fullAddr of addresses) {
             const peerId = peerIdByAddress[fullAddr.toString()];
             if (successfulSyncs[peerId]) { continue; }
-            
+
             try {
                 await this.syncHandler.getMissingBlocks(this.p2pNetwork, fullAddr, block => processBlock(block, peerId));
                 successfulSyncs[peerId] = true;
@@ -443,10 +443,7 @@ export class Node {
     
             /** @type {BlockInfo[]} */
             const blocksInfo = [];
-            for (let i = fromHeight; i < toHeight; i++) {
-                //const block = await this.blockchain.getBlockByIndex(i);
-                //if (!block) { throw new Error(`Block not found at height: ${i}`); }
-                //const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, block);
+            for (let i = fromHeight; i <= toHeight; i++) {
                 const blockInfo = await this.blockchain.getBlockInfoFromDiskByHeight(i);
                 blocksInfo.push(blockInfo);
             }

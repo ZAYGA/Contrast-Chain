@@ -322,7 +322,7 @@ export class Blockchain {
         const commonAncestorHeight = this.blockTree.getBlockHeight(reorgPath.revert[reorgPath.revert.length - 1]);
         if (commonAncestorHeight === -1) { this.logger.error('Failed to get common ancestor height'); return []; }
 
-        await this.snapshotManager.restoreSnapshot(commonAncestorHeight, utxoCache, this.blockTree);
+        this.snapshotManager.restoreSnapshot(commonAncestorHeight, utxoCache, this.blockTree);
 
         /*for (const hash of reorgPath.apply) {
             const block = await this.getBlock(hash);

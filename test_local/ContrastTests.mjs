@@ -12,8 +12,8 @@ const testParams = {
     nbOfAccounts: 200, // minimum 25
     addressType: 'W',
 
-    nbOfMiners: 1,
-    nbOfValidators: 1,
+    nbOfMiners: 0,
+    nbOfValidators: 2,
     nbOfMultiNodes: 0,
 
     txsSeqs: {

@@ -57,6 +57,7 @@ function connectWS() {
             case 'new_block_confirmed':
                 console.log('new_block_confirmed', data);
                 displayLastConfirmedBlock(data.header);
+                blockExplorerWidget.fillBlockInfo(data);
                 break;
             case 'hash_rate_updated':
                 if (isNaN(data)) { console.error(`hash_rate_updated: ${data} is not a number`); return; }
@@ -105,6 +106,7 @@ class BlockExplorerWidget {
 
         /** @type {BlockData[]} */
         this.blocksData = [];
+        this.nbOfConfirmedBlocks = 3; // constant
     }
     /** @param {HTMLElement} element */
     initBlockExplorerContent(element) {
