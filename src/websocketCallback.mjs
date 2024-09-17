@@ -23,11 +23,16 @@ export const WebSocketCallBack = (fnc, triggers, active = true) => {
         fnc,
         triggers,
         execute: (data, trigger = 'all') => {
-            const wsClients = triggers.all ? triggers.all : triggers[trigger];
-            if (!wsClients) { console.error(`No clients found for trigger: ${trigger}`); return; }
-            if (wsClients.length === 0) { return; }
-
-            fnc(data, wsClients, trigger);
+            try {
+                const wsClients = triggers.all ? triggers.all : triggers[trigger];
+                if (!wsClients && triggers.all) { return; } // we can excepect that no clients are connected
+                if (!wsClients) { throw new Error(`No clients found for trigger: ${trigger}`); }
+                if (wsClients.length === 0) { return; }
+    
+                fnc(data, wsClients, trigger);
+            } catch (error) {
+                console.error(`Error executing WebSocket callback: ${error.message}`);
+            }
         }
     }
 }

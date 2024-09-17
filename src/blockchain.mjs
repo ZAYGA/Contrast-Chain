@@ -11,6 +11,7 @@ import utils from './utils.mjs';
 
 /**
 * @typedef {import("../src/block-tree.mjs").TreeNode} TreeNode
+* @typedef {import("../src/block.mjs").BlockInfo} BlockInfo
 */
 
 /**
@@ -115,7 +116,6 @@ export class Blockchain {
      * @param {UtxoCache} utxoCache - The UTXO cache to use for the block.
      * @param {BlockData[]} blocks - The blocks to add. ordered by height
      * @param {boolean} [persistToDisk=true] - Whether to persist the block to disk.
-     * @returns {Promise<void>}
      * @throws {Error} If the block is invalid or cannot be added.
      */
     async addConfirmedBlocks(utxoCache, blocks, persistToDisk = true) {
@@ -125,7 +125,7 @@ export class Blockchain {
                 this.updateIndices(block);
                 this.inMemoryBlocks.set(block.hash, block);
 
-                if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(); }
+                if (this.inMemoryBlocks.size > this.maxInMemoryBlocks) { await this.persistOldestBlockToDisk(utxoCache.utxosByAnchor); }
 
                 this.blockTree.addBlock({
                     hash: block.hash,
@@ -139,11 +139,18 @@ export class Blockchain {
                 this.lastBlock = block;
                 this.currentHeight = block.index;
 
-                if (persistToDisk) { await this.persistBlockToDisk(block); }
+                /** @type {BlockInfo} */
+                let blockInfo;
+                if (persistToDisk) {
+                    await this.persistBlockToDisk(block);
+                    blockInfo = BlockUtils.getFinalizedBlockInfo(utxoCache.utxosByAnchor, block);
+                    await this.persistBlockInfoToDisk(blockInfo);
+                }
 
                 await this.db.put('currentHeight', this.currentHeight.toString());
 
                 this.logger.info({ blockHeight: block.index, blockHash: block.hash }, 'Block successfully added');
+                return {block, blockInfo};
             } catch (error) {
                 this.logger.error({ error, blockHash: block.hash }, 'Failed to add block');
                 throw error;
@@ -195,7 +202,7 @@ export class Blockchain {
      * @returns {Promise<void>}
      * @private
      */
-    async persistOldestBlockToDisk() {
+    async persistOldestBlockToDisk(utxosByAnchor) {
         const oldestBlockHash = this.inMemoryBlocks.keys().next().value;
         if (!oldestBlockHash) {
             throw new Error('Failed to get oldest block');
@@ -205,6 +212,7 @@ export class Blockchain {
         this.inMemoryBlocks.delete(oldestBlockHash);
 
         await this.persistBlockToDisk(oldestBlock);
+        await this.persistBlockInfoToDisk(BlockUtils.getFinalizedBlockInfo(utxosByAnchor, oldestBlock));
         this.logger.info({ blockHash: oldestBlockHash }, 'Oldest block persisted to disk and removed from memory');
     }
     /**
@@ -227,6 +235,20 @@ export class Blockchain {
             throw error;
         }
     }
+    /** @param {BlockInfo} blockInfo */
+    async persistBlockInfoToDisk(blockInfo) {
+        this.logger.debug({ blockHash: blockInfo.header.hash }, 'Persisting block info to disk');
+        try {
+            const serializedBlockInfo = utils.serializer.rawData.toBinary_v1(blockInfo);
+            const buffer = Buffer.from(serializedBlockInfo);
+            await this.db.put(`info-${blockInfo.header.hash}`, buffer);
+
+            this.logger.debug({ blockHash: blockInfo.header.hash }, 'Block info persisted to disk');
+        } catch (error) {
+            this.logger.error({ error, blockHash: blockInfo.header.hash }, 'Failed to persist block info to disk');
+            throw error;
+        }
+    }
     /**
      * Retrieves a block from disk by its height.
      * @param {number} height - The height of the block to retrieve.
@@ -242,6 +264,23 @@ export class Blockchain {
             const blockData = utils.serializer.block_finalized.fromBinary_v2(serializedBlock);
 
             return blockData;
+        } catch (error) {
+            if (error.type === 'NotFoundError') {
+                return null;
+            }
+            throw error;
+        }
+    }
+    async getBlockInfoFromDiskByHeight(height = 0) {
+        try {
+            const blockHashUint8Array = await this.db.get(`height-${height}`);
+            const blockHash = new TextDecoder().decode(blockHashUint8Array);
+
+            const blockInfoUint8Array = await this.db.get(`info-${blockHash}`);
+            /** @type {BlockInfo} */
+            const blockInfo = utils.serializer.rawData.fromBinary_v1(blockInfoUint8Array);
+
+            return blockInfo;
         } catch (error) {
             if (error.type === 'NotFoundError') {
                 return null;

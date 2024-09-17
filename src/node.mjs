@@ -103,7 +103,7 @@ export class Node {
         setTimeout(async () => { // will handle event after the sync
             await this.p2pNetwork.subscribeMultipleTopics(uniqueTopics, this.p2pHandler.bind(this));
             console.log('Subscribed to topics');
-        }, this.roles.includes('validator') ? 1000 : 0);
+        }, 1000);
 
         // control the peers connection to avoid being a lone peer
         //this.#controlPeersConnection();
@@ -255,7 +255,7 @@ export class Node {
         const hashConfInfo = skipValidation ? false : await this.#validateBlockProposal(finalizedBlock);
         if (!skipValidation && (!hashConfInfo || !hashConfInfo.conform)) { return false; }
 
-        await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock], persistToDisk);
+        const {block, blockInfo} = await this.blockchain.addConfirmedBlocks(this.utxoCache, [finalizedBlock], persistToDisk);
         const blocksData = await this.blockchain.checkAndHandleReorg(this.utxoCache);
         if (!blocksData) { throw new Error('Failed to handle reorg'); }
         await this.blockchain.applyChainReorg(this.utxoCache, this.vss, blocksData);
@@ -263,10 +263,7 @@ export class Node {
         this.memPool.clearTransactionsWhoUTXOsAreSpent(this.utxoCache.utxosByAnchor);
         this.memPool.digestFinalizedBlocksTransactions(blocksData);
 
-        if (!skipValidation && this.wsCallbacks.onBlockConfirmed) {
-            const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, finalizedBlock);
-            this.wsCallbacks.onBlockConfirmed.execute(blockInfo); 
-        }
+        if (!skipValidation && this.wsCallbacks.onBlockConfirmed) { this.wsCallbacks.onBlockConfirmed.execute(blockInfo); }
         if (storeAsFiles) this.#storeConfirmedBlock(finalizedBlock); // Used by developer to check the block data manually
 
         //#region - log
@@ -414,9 +411,10 @@ export class Node {
             /** @type {BlockInfo[]} */
             const blocksInfo = [];
             for (let i = fromHeight; i < toHeight; i++) {
-                const block = await this.blockchain.getBlockByIndex(i);
-                if (!block) { throw new Error(`Block not found at height: ${i}`); }
-                const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, block);
+                //const block = await this.blockchain.getBlockByIndex(i);
+                //if (!block) { throw new Error(`Block not found at height: ${i}`); }
+                //const blockInfo = BlockUtils.getFinalizedBlockInfo(this.utxoCache.utxosByAnchor, block);
+                const blockInfo = await this.blockchain.getBlockInfoFromDiskByHeight(i);
                 blocksInfo.push(blockInfo);
             }
     
